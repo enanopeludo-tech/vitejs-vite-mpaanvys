@@ -269,7 +269,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
 // --------------------------------------------------------
 // 4. EL GUARDIÁN DE RUTAS
 // --------------------------------------------------------
-const RutaProtegida = ({ children, user }: { children: JSX.Element, user: User | null }) => {
+const RutaProtegida = ({ children, user }: { children: React.ReactNode, user: User | null }) => {
   if (!user) return <Navigate to="/admin-login" />;
   return children;
 };
