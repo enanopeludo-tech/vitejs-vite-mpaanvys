@@ -5,8 +5,8 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 
-// Herramientas de Firebase Firestore
-import { collection, addDoc, serverTimestamp, query, where, onSnapshot, getDocs } from 'firebase/firestore';
+// Herramientas de Firebase Firestore (Agregamos doc y updateDoc)
+import { collection, addDoc, serverTimestamp, query, where, onSnapshot, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 // Tu archivo de conexión a Firebase
 import { auth, db } from './firebase'; 
@@ -160,7 +160,7 @@ const LoginAdmin = () => {
 };
 
 // --------------------------------------------------------
-// 3. PANEL DE ADMINISTRACIÓN (Con Lista en Tiempo Real)
+// 3. PANEL DE ADMINISTRACIÓN (Con actualización de estados)
 // --------------------------------------------------------
 const DashboardTaller = ({ user }: { user: User }) => {
   const [marca, setMarca] = useState('');
@@ -198,6 +198,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (error) {
       console.error(error);
       setMensaje('Error al guardar la orden. Verifica la consola.');
+    }
+  };
+
+  // NUEVA FUNCIÓN: Cambiar el estado en Firebase
+  const cambiarEstado = async (idDocumento: string, nuevoEstado: string) => {
+    try {
+      const ordenRef = doc(db, 'ordenes_taller', idDocumento);
+      await updateDoc(ordenRef, { estado: nuevoEstado });
+    } catch (error) {
+      console.error('Error al actualizar estado:', error);
+      alert('Hubo un error al actualizar el estado del equipo.');
     }
   };
 
@@ -248,6 +259,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <th style={{ padding: '10px' }}>Equipo</th>
               <th style={{ padding: '10px' }}>Falla</th>
               <th style={{ padding: '10px' }}>Estado</th>
+              <th style={{ padding: '10px' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -257,6 +269,22 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <td style={{ padding: '10px' }}>{orden.equipo.marca} {orden.equipo.modelo}</td>
                 <td style={{ padding: '10px', fontSize: '14px' }}>{orden.fallaDeclarada}</td>
                 <td style={{ padding: '10px', textTransform: 'uppercase', fontSize: '12px', fontWeight: 'bold' }}>{orden.estado.replace('_', ' ')}</td>
+                <td style={{ padding: '10px' }}>
+                  {/* Botones de acción dinámicos según el estado actual */}
+                  {orden.estado === 'ingresado' && (
+                    <button onClick={() => cambiarEstado(orden.idBaseDatos, 'reparado')} style={{ background: '#28a745', color: 'white', padding: '6px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                      Marcar Reparado
+                    </button>
+                  )}
+                  {orden.estado === 'reparado' && (
+                    <button onClick={() => cambiarEstado(orden.idBaseDatos, 'entregado')} style={{ background: '#6c757d', color: 'white', padding: '6px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                      Marcar Entregado
+                    </button>
+                  )}
+                  {orden.estado === 'entregado' && (
+                    <span style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>✓ Finalizado</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
