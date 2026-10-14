@@ -9,7 +9,7 @@ import { auth, db } from './firebase';
 // 1. E-COMMERCE MAYORISTA (Con imágenes y carrito)
 // ========================================================
 const TiendaPublica = () => {
-  const NUMERO_WHATSAPP = "5491123456789"; // CAMBIA ESTO POR TU NÚMERO
+  const NUMERO_WHATSAPP = "5491165045067"; // CAMBIA ESTO POR TU NÚMERO
   const [productos, setProductos] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
   const [carrito, setCarrito] = useState<any[]>([]);
