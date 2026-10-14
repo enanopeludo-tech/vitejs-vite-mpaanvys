@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO (Filtro Precio y WriteBatch Activo)
+// 4. PANEL ERP AVANZADO (Importador Inteligente)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -397,24 +397,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if (valor === undefined || valor === null || valor === '') return NaN;
     if (typeof valor === 'number') return valor;
     
-    // Convertir a string y limpiar símbolos (dejar solo números, comas, puntos y menos)
     let str = valor.toString().replace(/[^0-9.,-]/g, '');
-    
-    // Si tiene coma y punto, analizamos la posición para saber si es Formato Argentina o USA
     if (str.includes(',') && str.includes('.')) {
-       // Ej: 1.500,50 (La coma está después del punto)
        if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
           str = str.replace(/\./g, '').replace(',', '.');
        } else {
-          // Ej: 1,500.50 (Formato USA)
           str = str.replace(/,/g, '');
        }
-    } 
-    // Si solo tiene coma, asumimos que es el separador decimal (Ej: 1500,50)
-    else if (str.includes(',')) {
+    } else if (str.includes(',')) {
        str = str.replace(',', '.');
     }
-    
     return parseFloat(str);
   };
 
@@ -450,13 +442,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   // ==========================================
-  // IMPORTACIÓN MASIVA AL INVENTARIO (BATCH)
+  // IMPORTACIÓN MASIVA INTELIGENTE (No Duplica)
   // ==========================================
   const importarDatosAlInventario = async () => {
     if (excelData.length === 0) return alert('No hay datos para importar.');
-    if (!window.confirm(`¿Importar filas desde la hoja "${hojaActiva}"? Se procesarán masivamente.`)) return;
+    if (!window.confirm(`¿Importar/Actualizar filas desde la hoja "${hojaActiva}"? Los artículos existentes solo actualizarán su costo y precio.`)) return;
     
-    let importados = 0; 
+    let agregados = 0; 
+    let actualizados = 0;
     let omitidos = 0;
     let marcaActual = 'General';
     setExcelCargando(true);
@@ -482,19 +475,33 @@ const DashboardTaller = ({ user }: { user: User }) => {
           const precioFinal = costoObtenido + (costoObtenido * (Number(config.margenGanancia) / 100));
           const nombreFinal = colMarca === -1 ? nombreObtenido : `${marcaActual} - ${nombreObtenido}`;
           
-          const nuevoDocRef = doc(collection(db, 'productos'));
-          batch.set(nuevoDocRef, { 
-             nombre: nombreFinal, 
-             categoria: hojaActiva, 
-             costoProveedor: costoObtenido, 
-             precio: Math.round(precioFinal), 
-             stock: 0, 
-             descripcion: 'Importado de lista de proveedor', 
-             fecha: serverTimestamp(), 
-             ventas: 0 
-          });
+          // Buscar si el producto ya existe en nuestro estado local (ignorando mayúsculas/minúsculas)
+          const productoExistente = productos.find(p => p.nombre.toLowerCase() === nombreFinal.toLowerCase());
+
+          if (productoExistente) {
+            // Ya existe: Solo actualizamos los precios
+            const docRef = doc(db, 'productos', productoExistente.id);
+            batch.update(docRef, {
+              costoProveedor: costoObtenido,
+              precio: Math.round(precioFinal)
+            });
+            actualizados++;
+          } else {
+            // No existe: Creamos uno nuevo
+            const nuevoDocRef = doc(collection(db, 'productos'));
+            batch.set(nuevoDocRef, { 
+               nombre: nombreFinal, 
+               categoria: hojaActiva, 
+               costoProveedor: costoObtenido, 
+               precio: Math.round(precioFinal), 
+               stock: 0, 
+               descripcion: 'Importado de lista de proveedor', 
+               fecha: serverTimestamp(), 
+               ventas: 0 
+            });
+            agregados++;
+          }
           
-          importados++;
           operacionActual++;
 
           // Firestore permite hasta 500 operaciones por batch. Cortamos a 400 por seguridad.
@@ -513,7 +520,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
          await batch.commit(); 
       }
 
-      alert(`¡Éxito! Se importaron ${importados} productos al instante.\n(Líneas de texto o sin precio omitidas: ${omitidos})`);
+      alert(`¡Proceso Completado!\n\nNuevos Agregados: ${agregados}\nPrecios Actualizados: ${actualizados}\nOmitidos (Vacíos o sin precio): ${omitidos}`);
     } catch (error: any) { 
       alert(`Error en Base de Datos: ${error.message}`); 
     } finally {
@@ -610,7 +617,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     e.preventDefault(); await addDoc(collection(db, 'finanzas'), { tipo: finTipo, concepto: finConcepto, monto: Number(finMonto), metodoPago: finMetodo, fecha: serverTimestamp(), usuario: user.email }); setFinConcepto(''); setFinMonto(''); alert('Movimiento registrado en caja.');
   };
   const guardarConfiguracion = async (e: React.FormEvent) => { e.preventDefault(); await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); alert('Configuración guardada.'); };
-  
+
   const movimientosFiltrados = movimientosFinanzas.filter(m => {
     if (filtroTipoLista !== 'todos' && m.tipo !== filtroTipoLista) return false;
     if (filtroMetodoLista !== 'todos' && m.metodoPago !== filtroMetodoLista) return false;
@@ -627,6 +634,44 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const totalIngresos = movimientosFiltrados.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
   const totalEgresos = movimientosFiltrados.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
   const saldoNeto = totalIngresos - totalEgresos;
+
+  const imprimirReporteFinanzas = () => {
+    const v = window.open('', '_blank');
+    if(!v) return;
+    v.document.write(`
+      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+        <h2 style="text-align:center; border-bottom: 2px solid #333; padding-bottom: 10px;">REPORTE FINANCIERO - ${config.empresaNombre}</h2>
+        <p><b>Fecha de emisión:</b> ${new Date().toLocaleString()}</p>
+        <p><b>Filtros aplicados:</b> Tiempo: ${filtroTiempo.toUpperCase()} | Tipo: ${filtroTipoLista.toUpperCase()} | Método: ${filtroMetodoLista.toUpperCase()}</p>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; background: #f8f9fa; padding: 15px; border: 1px solid #ddd;">
+          <div><h3 style="margin:0; color: #28a745;">Ingresos: $${totalIngresos.toLocaleString()}</h3></div>
+          <div><h3 style="margin:0; color: #dc3545;">Egresos: $${totalEgresos.toLocaleString()}</h3></div>
+          <div><h3 style="margin:0; color: ${saldoNeto >= 0 ? '#007bff' : '#fd7e14'};">Saldo Neto: $${saldoNeto.toLocaleString()}</h3></div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="background: #eee;">
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Fecha</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Concepto</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Método</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: right;">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${movimientosFiltrados.map(m => `
+              <tr>
+                <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px;">${m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${m.concepto}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-transform: capitalize;">${m.metodoPago}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: ${m.tipo === 'ingreso' ? '#28a745' : '#dc3545'}">${m.tipo === 'ingreso' ? '+' : '-'}$${m.monto}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `);
+    v.document.close(); setTimeout(() => v.print(), 500);
+  };
 
   const pedidosPendientesNum = pedidosWeb.filter(p => p.estadoEnvio !== 'entregado').length;
   const inventarioFiltrado = productos.filter(p => p.nombre.toLowerCase().includes(busquedaInventario.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaInventario)));
@@ -662,7 +707,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         <div style={{ marginTop: '20px' }}>
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #6f42c1', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ margin: 0, color: '#6f42c1' }}>📥 Importador Masivo de Listas de Precios (Excel)</h3>
-            <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>Subí el archivo <b>.xlsx</b>. El sistema detectará las pestañas y separará los artículos usando tu <b>Margen de Ganancia del {config.margenGanancia}%</b>.</p>
+            <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>Subí el archivo <b>.xlsx</b>. El sistema verificará tu base de datos: <b>creará</b> los artículos nuevos y <b>actualizará el precio</b> de los que ya existen, sin duplicarlos.</p>
             <input type="file" id="fileExcel" accept=".xlsx, .xls" onChange={procesarArchivoExcel} style={{ padding: '10px', border: '2px dashed #6f42c1', borderRadius: '8px', cursor: 'pointer' }} />
             {excelCargando && <p style={{ color: '#0d6efd', fontWeight: 'bold' }}>Procesando archivo...</p>}
             {excelHojas.length > 0 && !excelCargando && (
@@ -685,7 +730,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     </tbody>
                   </table>
                 </div>
-                <button onClick={importarDatosAlInventario} style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#6f42c1', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>🚀 Iniciar Importación a BD</button>
+                <button onClick={importarDatosAlInventario} style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#6f42c1', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>🚀 Iniciar Importación / Actualización a BD</button>
               </div>
             )}
           </div>
@@ -823,7 +868,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </div>
             </form>
             <div style={{ flex: '1 1 600px', background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #ddd', overflowX: 'auto' }}>
-              <h3 style={{ margin: '0 0 15px 0' }}>Historial Filtrado</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 style={{ margin: 0 }}>Historial Filtrado</h3>
+                <button onClick={imprimirReporteFinanzas} style={{ background: '#17a2b8', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🖨️ Imprimir Reporte</button>
+              </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead><tr style={{ background: '#f8f9fa', borderBottom: '2px solid #ddd' }}><th style={{ padding: '10px', textAlign: 'left' }}>Fecha</th><th style={{ padding: '10px', textAlign: 'left' }}>Concepto</th><th style={{ padding: '10px', textAlign: 'left' }}>Método</th><th style={{ padding: '10px', textAlign: 'right' }}>Monto</th><th style={{ padding: '10px', textAlign: 'center' }}>Acción</th></tr></thead>
                 <tbody>
