@@ -1,28 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 
-// Herramientas de Firebase
+// Herramientas de Firebase Auth
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
+
+// Herramientas de Firebase Firestore
 import { collection, addDoc, serverTimestamp, query, where, onSnapshot, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 import { auth, db } from './firebase'; 
 
 // --------------------------------------------------------
-// 1. E-COMMERCE MAYORISTA (NUEVO)
+// 1. E-COMMERCE MAYORISTA
 // --------------------------------------------------------
 const TiendaPublica = () => {
   const [productos, setProductos] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
 
-  // Escuchamos la colección "productos" en tiempo real
   useEffect(() => {
     const q = query(collection(db, 'productos'));
     const desuscribir = onSnapshot(q, (snapshot) => {
-      const arrayProductos = snapshot.docs.map((doc) => ({
-        idBaseDatos: doc.id,
-        ...doc.data()
-      }));
+      const arrayProductos = snapshot.docs.map((doc) => ({ idBaseDatos: doc.id, ...doc.data() }));
       setProductos(arrayProductos);
       setCargando(false);
     });
@@ -40,28 +38,20 @@ const TiendaPublica = () => {
       
       {productos.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', background: '#f8f9fa', borderRadius: '8px' }}>
-          <p>El catálogo está vacío actualmente. Pronto subiremos stock.</p>
+          <p>El catálogo está vacío actualmente.</p>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '25px' }}>
           {productos.map((prod) => (
             <div key={prod.idBaseDatos} style={{ border: '1px solid #e0e0e0', borderRadius: '8px', padding: '20px', background: 'white', display: 'flex', flexDirection: 'column', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              
-              {/* Imagen (Usa una de marcador si no tiene) */}
-              <div style={{ width: '100%', height: '200px', background: '#f0f0f0', borderRadius: '4px', marginBottom: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                {prod.imagen ? (
-                  <img src={prod.imagen} alt={prod.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <span style={{ color: '#aaa' }}>📷 Sin foto</span>
-                )}
+              <div style={{ width: '100%', height: '160px', background: '#f0f0f0', borderRadius: '4px', marginBottom: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: '#aaa' }}>📷 Imagen</span>
               </div>
-
               <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#333' }}>{prod.nombre}</h3>
-              <p style={{ margin: '0 0 20px 0', color: '#666', fontSize: '14px', flexGrow: 1, lineHeight: '1.5' }}>{prod.descripcion}</p>
-              
+              <p style={{ margin: '0 0 20px 0', color: '#666', fontSize: '14px', flexGrow: 1 }}>{prod.descripcion}</p>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
                 <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#212529' }}>${prod.precio}</span>
-                <button style={{ background: '#0d6efd', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s' }}>
+                <button style={{ background: '#0d6efd', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
                   Comprar
                 </button>
               </div>
@@ -92,7 +82,7 @@ const Seguimiento = () => {
       if (querySnapshot.empty) setErrorBusqueda('No se encontró ninguna orden con ese código.');
       else setResultado(querySnapshot.docs[0].data());
     } catch (error) {
-      setErrorBusqueda('Hubo un error al buscar. Intenta más tarde.');
+      setErrorBusqueda('Error al buscar. Intenta más tarde.');
     } finally {
       setBuscando(false);
     }
@@ -119,7 +109,7 @@ const Seguimiento = () => {
       </form>
       {errorBusqueda && <div style={{ marginTop: '20px', padding: '15px', background: '#f8d7da', color: '#721c24', borderRadius: '4px', fontWeight: 'bold' }}>{errorBusqueda}</div>}
       {resultado && (
-        <div style={{ marginTop: '30px', padding: '25px', background: 'white', borderRadius: '8px', border: '1px solid #ddd', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', textAlign: 'left' }}>
+        <div style={{ marginTop: '30px', padding: '25px', background: 'white', borderRadius: '8px', border: '1px solid #ddd', textAlign: 'left' }}>
           <h3 style={{ marginTop: '0', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>Detalles del Equipo</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
             <div><p style={{ margin: '0', fontSize: '12px', color: '#666', fontWeight: 'bold' }}>MARCA</p><p style={{ margin: '5px 0 0 0', fontSize: '18px' }}>{resultado.equipo.marca}</p></div>
@@ -169,9 +159,16 @@ const LoginAdmin = () => {
 // 4. PANEL DE ADMINISTRACIÓN
 // --------------------------------------------------------
 const DashboardTaller = ({ user }: { user: User }) => {
+  // Estados para Órdenes de Reparación
   const [marca, setMarca] = useState(''); const [modelo, setModelo] = useState('');
-  const [falla, setFalla] = useState(''); const [mensaje, setMensaje] = useState('');
+  const [falla, setFalla] = useState(''); const [mensajeOrden, setMensajeOrden] = useState('');
   const [ordenes, setOrdenes] = useState<any[]>([]);
+
+  // Estados para Nuevo Producto (Catálogo)
+  const [nombreProd, setNombreProd] = useState('');
+  const [descProd, setDescProd] = useState('');
+  const [precioProd, setPrecioProd] = useState('');
+  const [mensajeProd, setMensajeProd] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, 'ordenes_taller'), where('idTiendaOrigen', '==', user.uid));
@@ -181,17 +178,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => desuscribir();
   }, [user.uid]);
 
+  // Guardar nueva Reparación
   const guardarOrden = async (e: React.FormEvent) => {
-    e.preventDefault(); setMensaje('Guardando...');
+    e.preventDefault(); setMensajeOrden('Guardando...');
     try {
       const codigoCorto = Math.random().toString(36).substring(2, 8).toUpperCase();
       await addDoc(collection(db, 'ordenes_taller'), {
         idTiendaOrigen: user.uid, emailTienda: user.email, equipo: { marca, modelo },
         fallaDeclarada: falla, estado: 'ingresado', codigoSeguimiento: codigoCorto, fechaIngreso: serverTimestamp()
       });
-      setMensaje(`¡Exito! Código: ${codigoCorto}`); setMarca(''); setModelo(''); setFalla('');
-      setTimeout(() => setMensaje(''), 4000); 
-    } catch (error) { setMensaje('Error al guardar. Verifica la consola.'); }
+      setMensajeOrden(`¡Exito! Código: ${codigoCorto}`); setMarca(''); setModelo(''); setFalla('');
+      setTimeout(() => setMensajeOrden(''), 4000); 
+    } catch (error) { setMensajeOrden('Error al guardar.'); }
   };
 
   const cambiarEstado = async (idDocumento: string, nuevoEstado: string) => {
@@ -199,51 +197,108 @@ const DashboardTaller = ({ user }: { user: User }) => {
     catch (error) { alert('Hubo un error al actualizar el estado.'); }
   };
 
+  // Guardar nuevo Producto al Catálogo
+  const guardarProducto = async (e: React.FormEvent) => {
+    e.preventDefault(); setMensajeProd('Agregando producto...');
+    try {
+      await addDoc(collection(db, 'productos'), {
+        nombre: nombreProd,
+        descripcion: descProd,
+        precio: precioProd, // Guardado como texto
+        fechaAgregado: serverTimestamp()
+      });
+      setMensajeProd('¡Producto agregado al catálogo!');
+      setNombreProd(''); setDescProd(''); setPrecioProd('');
+      setTimeout(() => setMensajeProd(''), 4000);
+    } catch (error) {
+      console.error(error);
+      setMensajeProd('Error al agregar el producto.');
+    }
+  };
+
   const colorEstado = (est: string) => est === 'ingresado' ? '#ffeeba' : est === 'reparado' ? '#d4edda' : '#e2e3e5';
 
   return (
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>
-        <h2>Panel Taller ({user.email})</h2>
+        <h2>Panel Administrativo ({user.email})</h2>
         <button onClick={() => signOut(auth)} style={{ background: '#dc3545', color: 'white', padding: '8px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cerrar Sesión</button>
       </div>
       
-      <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', marginTop: '20px', border: '1px solid #ddd' }}>
-        <h3 style={{ marginTop: '0' }}>Ingresar Equipo</h3>
-        <form onSubmit={guardarOrden} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1 }}><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Marca</label><input type="text" value={marca} onChange={(e) => setMarca(e.target.value)} required style={{ width: '100%', padding: '8px' }} /></div>
-          <div style={{ flex: 1 }}><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Modelo</label><input type="text" value={modelo} onChange={(e) => setModelo(e.target.value)} required style={{ width: '100%', padding: '8px' }} /></div>
-          <div style={{ flex: 2 }}><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Falla</label><input type="text" value={falla} onChange={(e) => setFalla(e.target.value)} required style={{ width: '100%', padding: '8px' }} /></div>
+      {/* SECCIÓN 1: REPARACIONES */}
+      <h3 style={{ marginTop: '30px', color: '#333' }}>🛠️ Gestión de Reparaciones</h3>
+      
+      <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
+        <h4 style={{ marginTop: '0' }}>Ingresar Nuevo Equipo</h4>
+        <form onSubmit={guardarOrden} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: '150px' }}><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Marca</label><input type="text" value={marca} onChange={(e) => setMarca(e.target.value)} required style={{ width: '100%', padding: '8px' }} /></div>
+          <div style={{ flex: 1, minWidth: '150px' }}><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Modelo</label><input type="text" value={modelo} onChange={(e) => setModelo(e.target.value)} required style={{ width: '100%', padding: '8px' }} /></div>
+          <div style={{ flex: 2, minWidth: '200px' }}><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Falla</label><input type="text" value={falla} onChange={(e) => setFalla(e.target.value)} required style={{ width: '100%', padding: '8px' }} /></div>
           <button type="submit" style={{ background: '#28a745', color: 'white', padding: '10px 15px', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>Guardar</button>
         </form>
-        {mensaje && <p style={{ color: mensaje.includes('Error') ? 'red' : 'green', fontWeight: 'bold', fontSize: '14px' }}>{mensaje}</p>}
+        {mensajeOrden && <p style={{ color: mensajeOrden.includes('Error') ? 'red' : 'green', fontWeight: 'bold', fontSize: '14px' }}>{mensajeOrden}</p>}
       </div>
 
-      <h3 style={{ marginTop: '30px' }}>Mis Equipos</h3>
-      {ordenes.length === 0 ? <p style={{ color: '#666', fontStyle: 'italic' }}>Sin equipos cargados.</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px' }}>
-          <thead>
-            <tr style={{ background: '#343a40', color: 'white', textAlign: 'left' }}>
-              <th style={{ padding: '10px' }}>Cód</th><th style={{ padding: '10px' }}>Equipo</th><th style={{ padding: '10px' }}>Falla</th><th style={{ padding: '10px' }}>Estado</th><th style={{ padding: '10px' }}>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ordenes.map((o) => (
-              <tr key={o.idBaseDatos} style={{ background: colorEstado(o.estado), borderBottom: '1px solid #ddd' }}>
-                <td style={{ padding: '10px', fontWeight: 'bold' }}>{o.codigoSeguimiento}</td>
-                <td style={{ padding: '10px' }}>{o.equipo.marca} {o.equipo.modelo}</td>
-                <td style={{ padding: '10px', fontSize: '14px' }}>{o.fallaDeclarada}</td>
-                <td style={{ padding: '10px', textTransform: 'uppercase', fontSize: '12px', fontWeight: 'bold' }}>{o.estado.replace('_', ' ')}</td>
-                <td style={{ padding: '10px' }}>
-                  {o.estado === 'ingresado' && <button onClick={() => cambiarEstado(o.idBaseDatos, 'reparado')} style={{ background: '#28a745', color: 'white', padding: '6px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Marcar Reparado</button>}
-                  {o.estado === 'reparado' && <button onClick={() => cambiarEstado(o.idBaseDatos, 'entregado')} style={{ background: '#6c757d', color: 'white', padding: '6px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Marcar Entregado</button>}
-                  {o.estado === 'entregado' && <span style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>✓ Listo</span>}
-                </td>
+      <div style={{ marginTop: '20px', overflowX: 'auto' }}>
+        {ordenes.length === 0 ? <p style={{ color: '#666', fontStyle: 'italic' }}>Sin equipos cargados.</p> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
+            <thead>
+              <tr style={{ background: '#343a40', color: 'white', textAlign: 'left' }}>
+                <th style={{ padding: '10px' }}>Cód</th><th style={{ padding: '10px' }}>Equipo</th><th style={{ padding: '10px' }}>Falla</th><th style={{ padding: '10px' }}>Estado</th><th style={{ padding: '10px' }}>Acción</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {ordenes.map((o) => (
+                <tr key={o.idBaseDatos} style={{ background: colorEstado(o.estado), borderBottom: '1px solid #ddd' }}>
+                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{o.codigoSeguimiento}</td>
+                  <td style={{ padding: '10px' }}>{o.equipo.marca} {o.equipo.modelo}</td>
+                  <td style={{ padding: '10px', fontSize: '14px' }}>{o.fallaDeclarada}</td>
+                  <td style={{ padding: '10px', textTransform: 'uppercase', fontSize: '12px', fontWeight: 'bold' }}>{o.estado.replace('_', ' ')}</td>
+                  <td style={{ padding: '10px' }}>
+                    {o.estado === 'ingresado' && <button onClick={() => cambiarEstado(o.idBaseDatos, 'reparado')} style={{ background: '#28a745', color: 'white', padding: '6px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Marcar Reparado</button>}
+                    {o.estado === 'reparado' && <button onClick={() => cambiarEstado(o.idBaseDatos, 'entregado')} style={{ background: '#6c757d', color: 'white', padding: '6px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Marcar Entregado</button>}
+                    {o.estado === 'entregado' && <span style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>✓ Listo</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <hr style={{ margin: '40px 0', border: '1px solid #eee' }} />
+
+      {/* SECCIÓN 2: CATÁLOGO */}
+      <h3 style={{ marginTop: '30px', color: '#084298' }}>📦 Gestión de Catálogo</h3>
+      
+      <div style={{ background: '#e3f2fd', padding: '20px', borderRadius: '8px', border: '1px solid #b6d4fe' }}>
+        <h4 style={{ marginTop: '0', color: '#084298' }}>Publicar Nuevo Repuesto / Accesorio</h4>
+        <form onSubmit={guardarProducto} style={{ display: 'flex', gap: '15px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#052c65' }}>Nombre del producto</label>
+            <input type="text" value={nombreProd} onChange={(e) => setNombreProd(e.target.value)} placeholder="Ej. Pantalla Moto G20" required style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
+          </div>
+
+          <div style={{ flex: '1 1 100px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#052c65' }}>Precio ($)</label>
+            <input type="number" value={precioProd} onChange={(e) => setPrecioProd(e.target.value)} placeholder="Ej. 4500" required style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
+          </div>
+
+          <div style={{ flex: '1 1 100%', display: 'flex', gap: '15px', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#052c65' }}>Descripción breve</label>
+              <input type="text" value={descProd} onChange={(e) => setDescProd(e.target.value)} placeholder="Ej. Módulo original sin marco" required style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
+            </div>
+            <button type="submit" style={{ background: '#0d6efd', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', height: 'fit-content' }}>
+              Publicar Producto
+            </button>
+          </div>
+
+        </form>
+        {mensajeProd && <p style={{ color: mensajeProd.includes('Error') ? 'red' : 'green', fontWeight: 'bold', fontSize: '14px', marginTop: '15px' }}>{mensajeProd}</p>}
+      </div>
+
     </div>
   );
 };
