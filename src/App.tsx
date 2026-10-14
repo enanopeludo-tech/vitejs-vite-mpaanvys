@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, query, where, onSnapshot, doc, updateDoc, deleteDoc, arrayUnion, setDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, onSnapshot, getDocs, doc, updateDoc, deleteDoc, arrayUnion, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase'; 
 
 // --- Configuración por defecto ---
@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO
+// 4. PANEL ERP AVANZADO (Correcciones Aplicadas)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -319,7 +319,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [productos, setProductos] = useState<any[]>([]);
   const [pedidosWeb, setPedidosWeb] = useState<any[]>([]); 
   const [movimientosFinanzas, setMovimientosFinanzas] = useState<any[]>([]); 
-  const [pestaña, setPestaña] = useState('proveedores'); // Inicializamos en la nueva pestaña
+  const [pestaña, setPestaña] = useState('proveedores'); 
 
   // CRM Taller
   const [cliNombre, setCliNombre] = useState(''); const [cliTel, setCliTel] = useState('');
@@ -355,13 +355,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [filtroTiempo, setFiltroTiempo] = useState('todos'); const [filtroTipoLista, setFiltroTipoLista] = useState('todos'); const [filtroMetodoLista, setFiltroMetodoLista] = useState('todos');
   const [conf, setConf] = useState(CONFIG_DEFAULT);
 
-  // Cargar SDK de Excel dinámicamente
   useEffect(() => {
     if (!(window as any).XLSX) {
-      const script = document.createElement('script');
-      script.src = "https://unpkg.com/xlsx/dist/xlsx.full.min.js";
-      script.async = true;
-      document.body.appendChild(script);
+      const script = document.createElement('script'); script.src = "https://unpkg.com/xlsx/dist/xlsx.full.min.js"; script.async = true; document.body.appendChild(script);
     }
   }, []);
 
@@ -374,7 +370,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); };
   }, [user.uid]);
 
-  // Lógica del Escáner (Cámara)
   useEffect(() => {
     if (!escaneandoPara) return;
     const inicializarEscaner = () => {
@@ -392,12 +387,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
-  // Lógica Importador Excel
   const procesarArchivoExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!(window as any).XLSX) return alert('Librería Excel cargando, intenta en unos segundos...');
-    
     setExcelCargando(true);
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -405,15 +398,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
         const bstr = evt.target?.result;
         const wb = (window as any).XLSX.read(bstr, { type: 'binary' });
         setExcelHojas(wb.SheetNames);
-        if (wb.SheetNames.length > 0) {
-          seleccionarHojaExcel(wb, wb.SheetNames[0]);
-        }
+        if (wb.SheetNames.length > 0) seleccionarHojaExcel(wb, wb.SheetNames[0]);
         (window as any).__currentWorkbook = wb;
-      } catch (error) {
-        alert('Error al leer el archivo Excel.');
-      } finally {
-        setExcelCargando(false);
-      }
+      } catch (error) { alert('Error al leer el archivo Excel.'); } finally { setExcelCargando(false); }
     };
     reader.readAsBinaryString(file);
   };
@@ -427,113 +414,64 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const cambiarHojaDropdown = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sheetName = e.target.value;
-    if ((window as any).__currentWorkbook) {
-      seleccionarHojaExcel((window as any).__currentWorkbook, sheetName);
-    }
+    if ((window as any).__currentWorkbook) seleccionarHojaExcel((window as any).__currentWorkbook, sheetName);
   };
 
   const importarDatosAlInventario = async () => {
     if (excelData.length === 0) return alert('No hay datos para importar.');
     if (!window.confirm(`¿Importar ${excelData.length} filas desde la hoja "${hojaActiva}"? Se aplicará un margen del ${config.margenGanancia}% a los costos detectados.`)) return;
-
-    let importados = 0;
-    let marcaActual = 'General';
-
+    let importados = 0; let marcaActual = 'General';
     setExcelCargando(true);
     try {
       for (let i = 0; i < excelData.length; i++) {
         const row = excelData[i];
         if (!row || row.length === 0) continue;
-
         const nombreObtenido = row[colNombre]?.toString().trim();
         const costoObtenido = parseFloat(row[colCosto]?.toString().replace(',', '.') || 'NaN');
         const marcaDetectada = colMarca >= 0 ? row[colMarca]?.toString().trim() : null;
 
-        if (marcaDetectada && isNaN(costoObtenido)) {
-          // Es una fila separadora de marca
-          marcaActual = marcaDetectada;
-          continue;
-        }
-
+        if (marcaDetectada && isNaN(costoObtenido)) { marcaActual = marcaDetectada; continue; }
         if (nombreObtenido && !isNaN(costoObtenido) && costoObtenido > 0) {
           const precioFinal = costoObtenido + (costoObtenido * (Number(config.margenGanancia) / 100));
           const nombreFinal = colMarca === -1 ? nombreObtenido : `${marcaActual} - ${nombreObtenido}`;
-
-          await addDoc(collection(db, 'productos'), {
-            nombre: nombreFinal,
-            categoria: hojaActiva, // La pestaña del excel suele ser la categoría
-            costoProveedor: costoObtenido,
-            precio: Math.round(precioFinal),
-            stock: 0, // Entra sin stock para habilitar luego
-            descripcion: 'Importado de lista de proveedor',
-            fecha: serverTimestamp(),
-            ventas: 0
-          });
+          await addDoc(collection(db, 'productos'), { nombre: nombreFinal, categoria: hojaActiva, costoProveedor: costoObtenido, precio: Math.round(precioFinal), stock: 0, descripcion: 'Importado', fecha: serverTimestamp(), ventas: 0 });
           importados++;
         }
       }
       alert(`¡Éxito! Se importaron ${importados} productos al inventario.`);
-    } catch (error) {
-      console.error(error);
-      alert('Error durante la importación masiva.');
-    } finally {
-      setExcelCargando(false);
-      setExcelData([]);
-      (document.getElementById('fileExcel') as HTMLInputElement).value = '';
+    } catch (error) { alert('Error durante la importación masiva.'); } finally {
+      setExcelCargando(false); setExcelData([]); (document.getElementById('fileExcel') as HTMLInputElement).value = '';
     }
   };
 
-
-  // Lógica Upselling / Recomendaciones
   const generarRecomendaciones = (fallaStr: string) => {
     const f = fallaStr.toLowerCase();
-    if (f.includes('bateria') || f.includes('carga') || f.includes('pin') || f.includes('puerto')) {
-      return "\n\n💡 *Recomendación del Técnico:* Para maximizar la vida útil de tu equipo, te sugerimos acompañar esta reparación con un *Cable USB nuevo* o una *Limpieza profunda del puerto de carga*. ¡Consultanos y te lo sumamos!";
-    }
-    if (f.includes('pantalla') || f.includes('modulo') || f.includes('vidrio') || f.includes('tactil') || f.includes('display')) {
-      return "\n\n💡 *Recomendación del Técnico:* ¡Protegé tu inversión! Te sugerimos agregar una *Funda Anti-impacto* o un film de *Hidrogel* al retirar tu equipo para evitar futuras roturas. Tenemos stock disponible.";
-    }
-    return "\n\n💡 *Recomendación del Técnico:* Recordá consultar por nuestros accesorios en promoción (fundas, cables y auriculares) al retirar tu equipo.";
+    if (f.includes('bateria') || f.includes('carga') || f.includes('pin')) return "\n\n💡 *Recomendación del Técnico:* Para maximizar la vida útil, sugerimos acompañar esta reparación con un *Cable USB nuevo* o *Limpieza de puerto*. ¡Consultanos!";
+    if (f.includes('pantalla') || f.includes('modulo') || f.includes('vidrio')) return "\n\n💡 *Recomendación del Técnico:* ¡Protegé tu inversión! Sugerimos agregar una *Funda Anti-impacto* o *Hidrogel* al retirar tu equipo. Tenemos stock.";
+    return "\n\n💡 *Recomendación del Técnico:* Recordá consultar por nuestros accesorios en promoción al retirar tu equipo.";
   };
 
-  // Funciones Taller
   const guardarOrden = async (e: React.FormEvent) => {
     e.preventDefault();
     const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
     await addDoc(collection(db, 'ordenes_taller'), {
-      idTiendaOrigen: user.uid, 
-      cliente: { nombre: cliNombre, telefono: cliTel }, 
-      equipo: { marca, modelo, imei, contrasena, condicionVisual }, 
-      fallaDeclarada: falla, 
-      tecnicoAsignado: tecnico,
-      estado: 'ingresado', 
-      codigoSeguimiento: cod, 
-      fechaIngreso: serverTimestamp(), 
-      historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: 'Equipo recibido en mostrador.' }]
+      idTiendaOrigen: user.uid, cliente: { nombre: cliNombre, telefono: cliTel }, equipo: { marca, modelo, imei, contrasena, condicionVisual }, fallaDeclarada: falla, tecnicoAsignado: tecnico,
+      estado: 'ingresado', codigoSeguimiento: cod, fechaIngreso: serverTimestamp(), historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: 'Equipo recibido en mostrador.' }]
     });
-    setCliNombre(''); setCliTel(''); setMarca(''); setModelo(''); setFalla(''); setTecnico(''); setImei(''); setContrasena(''); setCondicionVisual('');
-    alert(`Generado. Código: ${cod}`);
+    setCliNombre(''); setCliTel(''); setMarca(''); setModelo(''); setFalla(''); setTecnico(''); setImei(''); setContrasena(''); setCondicionVisual(''); alert(`Generado. Código: ${cod}`);
   };
 
-  const actualizarEstado = async (id: string, nuevoEstado: string, ordenActual: any) => {
+  const actualizarEstado = async (id: string, nuevoEstado: string) => {
     const comentario = prompt(`Comentario/Diagnóstico para el estado '${nuevoEstado}':`) || 'Actualización de estado.';
     let data: any = { estado: nuevoEstado, historial: arrayUnion({ estado: nuevoEstado, fecha: new Date().toLocaleString(), comentario }) };
-    if (nuevoEstado === 'reparado') {
-      const costo = prompt('Ingresa el Costo Final de la reparación:');
-      if(costo) data.costoReparacion = costo;
-    }
+    if (nuevoEstado === 'reparado') { const costo = prompt('Ingresa el Costo Final de la reparación:'); if(costo) data.costoReparacion = costo; }
     await updateDoc(doc(db, 'ordenes_taller', id), data);
   };
 
   const notificarClienteWhatsApp = (orden: any) => {
     const urlBase = window.location.origin;
-    let msg = `Hola ${orden.cliente.nombre}, somos *${config.empresaNombre}*.\n`;
-    msg += `Te escribimos para avisarte sobre tu *${orden.equipo.marca} ${orden.equipo.modelo}*.\n\n`;
-    msg += `🔧 *Estado actualizado:* ${orden.estado.toUpperCase()}\n`;
-    if (orden.historial && orden.historial.length > 0) {
-      const ultimoMov = orden.historial[orden.historial.length - 1];
-      msg += `📝 *Detalle:* ${ultimoMov.comentario}\n`;
-    }
+    let msg = `Hola ${orden.cliente.nombre}, somos *${config.empresaNombre}*.\nTe escribimos para avisarte sobre tu *${orden.equipo.marca} ${orden.equipo.modelo}*.\n\n🔧 *Estado actualizado:* ${orden.estado.toUpperCase()}\n`;
+    if (orden.historial && orden.historial.length > 0) msg += `📝 *Detalle:* ${orden.historial[orden.historial.length - 1].comentario}\n`;
     if (orden.costoReparacion) msg += `💰 *Costo Total:* $${orden.costoReparacion}\n`;
     msg += `\n🔍 Seguí el estado en tiempo real ingresando el código *${orden.codigoSeguimiento}* en nuestra web: ${urlBase}/seguimiento`;
     msg += generarRecomendaciones(orden.fallaDeclarada);
@@ -549,39 +487,33 @@ const DashboardTaller = ({ user }: { user: User }) => {
         ${logoHtml}<h2 style="margin:0;">${config.empresaNombre}</h2>
         <p style="margin:5px 0; font-size: 12px;">${config.ticketEncabezado.replace(/\n/g, '<br/>')}</p>
         <p style="margin:10px 0; border-top: 1px solid #000; padding-top: 5px;">${new Date().toLocaleDateString()}</p>
-        <div style="text-align: left;">
-          <p style="margin:2px 0;"><b>Cliente:</b> ${orden.cliente?.nombre}</p>
-          <p style="margin:2px 0;"><b>Tel:</b> ${orden.cliente?.telefono}</p>
-          <hr/>
-          <p style="margin:2px 0;"><b>Equipo:</b> ${orden.equipo?.marca} ${orden.equipo?.modelo}</p>
-          ${orden.equipo?.imei ? `<p style="margin:2px 0; font-size:11px;"><b>IMEI:</b> ${orden.equipo.imei}</p>` : ''}
-          ${orden.equipo?.contrasena ? `<p style="margin:2px 0; font-size:11px;"><b>Clave/Patrón:</b> ${orden.equipo.contrasena}</p>` : ''}
-          <p style="margin:2px 0; font-size:11px;"><b>Condición:</b> ${orden.equipo?.condicionVisual || 'No especificada'}</p>
-          <hr/>
-          <p style="margin:2px 0;"><b>Falla:</b> ${orden.fallaDeclarada}</p>
-        </div>
-        <hr/><h1 style="letter-spacing: 3px; font-size: 28px; margin: 10px 0;">${orden.codigoSeguimiento}</h1>
-        <p style="font-size:10px; text-align: justify; border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px;">${config.ticketLeyenda}</p>
+        <div style="text-align: left;"><p style="margin:2px 0;"><b>Cliente:</b> ${orden.cliente?.nombre}</p><p style="margin:2px 0;"><b>Tel:</b> ${orden.cliente?.telefono}</p><hr/><p style="margin:2px 0;"><b>Equipo:</b> ${orden.equipo?.marca} ${orden.equipo?.modelo}</p>
+        ${orden.equipo?.imei ? `<p style="margin:2px 0; font-size:11px;"><b>IMEI:</b> ${orden.equipo.imei}</p>` : ''}${orden.equipo?.contrasena ? `<p style="margin:2px 0; font-size:11px;"><b>Clave/Patrón:</b> ${orden.equipo.contrasena}</p>` : ''}<p style="margin:2px 0; font-size:11px;"><b>Condición:</b> ${orden.equipo?.condicionVisual || 'No especificada'}</p><hr/><p style="margin:2px 0;"><b>Falla:</b> ${orden.fallaDeclarada}</p></div>
+        <hr/><h1 style="letter-spacing: 3px; font-size: 28px; margin: 10px 0;">${orden.codigoSeguimiento}</h1><p style="font-size:10px; text-align: justify; border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px;">${config.ticketLeyenda}</p>
       </div>
     `);
     v.document.close(); setTimeout(() => v.print(), 500);
   };
 
-  // Funciones Inventario
+  const limpiarFormularioProducto = () => {
+    setIdEditando(null); setProdNom(''); setProdCat(''); setProdPrecio(''); setProdCosto(''); setProdStock(''); setProdDesc(''); setProdImg(''); setProdCodigoBarras(''); setProdDestacado(false); setProdUrlProveedor('');
+  };
+
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     const dataProducto = { nombre: prodNom, categoria: prodCat, precio: Number(prodPrecio), costoProveedor: Number(prodCosto) || 0, stock: Number(prodStock), descripcion: prodDesc, imagenUrl: prodImg, urlProveedor: prodUrlProveedor, codigoBarras: prodCodigoBarras, destacado: prodDestacado };
     if (idEditando) await updateDoc(doc(db, 'productos', idEditando), dataProducto);
     else await addDoc(collection(db, 'productos'), { ...dataProducto, ventas: 0, fecha: serverTimestamp() });
-    setIdEditando(null); setProdNom(''); setProdCat(''); setProdPrecio(''); setProdCosto(''); setProdStock(''); setProdDesc(''); setProdImg(''); setProdCodigoBarras(''); setProdDestacado(false); setProdUrlProveedor('');
+    limpiarFormularioProducto();
   };
+
   const calcularPrecioVenta = () => { if (prodCosto) setProdPrecio((Number(prodCosto) + (Number(prodCosto) * (Number(config.margenGanancia) / 100))).toFixed(0)); };
   const actualizarStock = async (id: string, nuevoStock: number) => { if (nuevoStock >= 0) await updateDoc(doc(db, 'productos', id), { stock: nuevoStock }); };
   const registrarVentaDirecta = async (p: any) => { 
     if (p.stock <= 0) return alert('Sin stock disponible');
     await updateDoc(doc(db, 'productos', p.id), { stock: p.stock - 1, ventas: (p.ventas || 0) + 1 }); 
     await addDoc(collection(db, 'finanzas'), { tipo: 'ingreso', concepto: `Venta Mostrador: ${p.nombre}`, monto: Number(p.precio), metodoPago: 'efectivo', fecha: serverTimestamp(), usuario: user.email });
-    alert('Venta realizada y cobro registrado en caja (Efectivo).');
+    alert('Venta y cobro registrado en caja (Efectivo).');
   };
   const cargarProductoParaEdicion = (p: any) => {
     setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || ''); setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || ''); setProdStock(p.stock?.toString() || ''); setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || ''); setProdCodigoBarras(p.codigoBarras || ''); setProdDestacado(p.destacado || false); setProdUrlProveedor(p.urlProveedor || ''); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -589,17 +521,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const pedirFaltantes = () => {
     const faltantes = productos.filter(p => p.stock <= 3);
     if (faltantes.length === 0) return alert('No hay artículos con stock crítico.');
-    let msg = `Hola! Necesito reponer para ${config.empresaNombre}:\n\n`;
-    faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre} ${p.urlProveedor ? `(Ref: ${p.urlProveedor})` : ''}\n`; });
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    let msg = `Hola! Necesito reponer para ${config.empresaNombre}:\n\n`; faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre} ${p.urlProveedor ? `(Ref: ${p.urlProveedor})` : ''}\n`; }); window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // Funciones Finanzas y Config
   const registrarMovimientoFinanzas = async (e: React.FormEvent) => {
     e.preventDefault(); await addDoc(collection(db, 'finanzas'), { tipo: finTipo, concepto: finConcepto, monto: Number(finMonto), metodoPago: finMetodo, fecha: serverTimestamp(), usuario: user.email }); setFinConcepto(''); setFinMonto(''); alert('Movimiento registrado en caja.');
   };
   const guardarConfiguracion = async (e: React.FormEvent) => { e.preventDefault(); await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); alert('Configuración guardada.'); };
-  
+
   const movimientosFiltrados = movimientosFinanzas.filter(m => {
     if (filtroTipoLista !== 'todos' && m.tipo !== filtroTipoLista) return false;
     if (filtroMetodoLista !== 'todos' && m.metodoPago !== filtroMetodoLista) return false;
@@ -622,8 +551,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      
-      {/* MODAL ESCÁNER CÁMARA */}
       {escaneandoPara && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', boxSizing: 'border-box' }}>
           <div style={{ background: 'white', padding: '20px', borderRadius: '8px', width: '100%', maxWidth: '400px', textAlign: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }}>
@@ -647,209 +574,99 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       </div>
 
-      {/* SECCIÓN: PROVEEDORES (Importación Excel) */}
       {pestaña === 'proveedores' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #6f42c1', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ margin: 0, color: '#6f42c1' }}>📥 Importador Masivo de Listas de Precios (Excel)</h3>
-            <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>Subí el archivo <b>.xlsx</b> que te envía tu proveedor. El sistema detectará las pestañas (Módulos, Baterías) y separará automáticamente los artículos usando tu <b>Margen de Ganancia del {config.margenGanancia}%</b> configurado.</p>
-            
+            <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>Subí el archivo <b>.xlsx</b>. El sistema detectará las pestañas y separará los artículos usando tu <b>Margen de Ganancia del {config.margenGanancia}%</b>.</p>
             <input type="file" id="fileExcel" accept=".xlsx, .xls" onChange={procesarArchivoExcel} style={{ padding: '10px', border: '2px dashed #6f42c1', borderRadius: '8px', cursor: 'pointer' }} />
-            
-            {excelCargando && <p style={{ color: '#0d6efd', fontWeight: 'bold' }}>Procesando archivo... por favor espera.</p>}
-
+            {excelCargando && <p style={{ color: '#0d6efd', fontWeight: 'bold' }}>Procesando archivo...</p>}
             {excelHojas.length > 0 && !excelCargando && (
               <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap' }}>
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>1. Seleccionar Pestaña (Categoría):</label><br/>
-                    <select value={hojaActiva} onChange={cambiarHojaDropdown} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '200px', marginTop: '5px' }}>
-                      {excelHojas.map(h => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>2. Columna Nombre/Modelo:</label><br/>
-                    <select value={colNombre} onChange={e=>setColNombre(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', marginTop: '5px' }}>
-                      {[0,1,2,3,4,5,6].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>3. Columna Precio Costo:</label><br/>
-                    <select value={colCosto} onChange={e=>setColCosto(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', marginTop: '5px' }}>
-                      {[0,1,2,3,4,5,6].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Columna Marca (Opcional):</label><br/>
-                    <select value={colMarca} onChange={e=>setColMarca(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', marginTop: '5px' }}>
-                      <option value={-1}>No Aplica / Viene en el Nombre</option>
-                      {[0,1,2,3,4,5,6].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
-                    </select>
-                  </div>
+                  <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Pestaña:</label><br/><select value={hojaActiva} onChange={cambiarHojaDropdown} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>{excelHojas.map(h => <option key={h} value={h}>{h}</option>)}</select></div>
+                  <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Columna Nombre:</label><br/><select value={colNombre} onChange={e=>setColNombre(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>{[0,1,2,3,4,5,6].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}</select></div>
+                  <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Columna Costo:</label><br/><select value={colCosto} onChange={e=>setColCosto(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>{[0,1,2,3,4,5,6].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}</select></div>
+                  <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Columna Marca (Opcional):</label><br/><select value={colMarca} onChange={e=>setColMarca(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}><option value={-1}>No Aplica</option>{[0,1,2,3,4,5,6].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}</select></div>
                 </div>
-
                 <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #ddd', background: 'white' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#eee' }}>
-                      <tr><th style={{ padding: '8px' }}>Vista Previa (Primeros 15)</th><th style={{ padding: '8px' }}>Costo Detectado</th><th style={{ padding: '8px', color: '#198754' }}>Venta Estimada (+{config.margenGanancia}%)</th></tr>
-                    </thead>
+                    <thead style={{ position: 'sticky', top: 0, background: '#eee' }}><tr><th style={{ padding: '8px' }}>Vista Previa (15)</th><th style={{ padding: '8px' }}>Costo</th><th style={{ padding: '8px', color: '#198754' }}>Venta (+{config.margenGanancia}%)</th></tr></thead>
                     <tbody>
                       {excelData.slice(0, 15).map((row, i) => {
-                        const n = row[colNombre]?.toString();
-                        const c = parseFloat(row[colCosto]?.toString().replace(',', '.') || 'NaN');
-                        if (!n || isNaN(c)) return null;
-                        const p = c + (c * (Number(config.margenGanancia)/100));
-                        return (
-                          <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                            <td style={{ padding: '8px' }}>{colMarca >= 0 && row[colMarca] ? `${row[colMarca]} - ` : ''}{n}</td>
-                            <td style={{ padding: '8px' }}>${c}</td>
-                            <td style={{ padding: '8px', fontWeight: 'bold', color: '#198754' }}>${Math.round(p)}</td>
-                          </tr>
-                        );
+                        const n = row[colNombre]?.toString(); const c = parseFloat(row[colCosto]?.toString().replace(',', '.') || 'NaN');
+                        if (!n || isNaN(c)) return null; const p = c + (c * (Number(config.margenGanancia)/100));
+                        return <tr key={i} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: '8px' }}>{colMarca >= 0 && row[colMarca] ? `${row[colMarca]} - ` : ''}{n}</td><td style={{ padding: '8px' }}>${c}</td><td style={{ padding: '8px', fontWeight: 'bold', color: '#198754' }}>${Math.round(p)}</td></tr>;
                       })}
                     </tbody>
                   </table>
                 </div>
-
-                <button onClick={importarDatosAlInventario} style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#6f42c1', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                  🚀 Iniciar Importación a la base de datos
-                </button>
+                <button onClick={importarDatosAlInventario} style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#6f42c1', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>🚀 Iniciar Importación a BD</button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* SECCIÓN: TALLER CRM AVANZADO */}
       {pestaña === 'taller' && (
         <div style={{ marginTop: '20px' }}>
-          
           <form onSubmit={guardarOrden} style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid #ddd', marginBottom: '30px' }}>
             <h3 style={{ margin: '0', color: '#333', borderBottom: '2px solid #ccc', paddingBottom: '10px' }}>📝 Nueva Orden de Ingreso</h3>
-            
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
-              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>1. DATOS DEL CLIENTE</label>
-                <input type="text" placeholder="Nombre completo" value={cliNombre} onChange={e=>setCliNombre(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/>
-                <input type="text" placeholder="WhatsApp (Ej: 2262...)" value={cliTel} onChange={e=>setCliTel(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/>
-              </div>
-
-              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>2. IDENTIFICACIÓN DEL EQUIPO</label>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-                  <input type="text" placeholder="Marca (Ej: Samsung)" value={marca} onChange={e=>setMarca(e.target.value)} required style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
-                  <input type="text" placeholder="Modelo (Ej: A52)" value={modelo} onChange={e=>setModelo(e.target.value)} required style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
-                </div>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                  <input type="text" placeholder="IMEI / N° Serie (Opcional)" value={imei} onChange={e=>setImei(e.target.value)} style={{ flex: 2, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
-                  <input type="text" placeholder="Clave / Patrón" value={contrasena} onChange={e=>setContrasena(e.target.value)} style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
-                </div>
-              </div>
+              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>1. DATOS DEL CLIENTE</label><input type="text" placeholder="Nombre completo" value={cliNombre} onChange={e=>setCliNombre(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/><input type="text" placeholder="WhatsApp (Ej: 2262...)" value={cliTel} onChange={e=>setCliTel(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/></div>
+              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>2. IDENTIFICACIÓN DEL EQUIPO</label><div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}><input type="text" placeholder="Marca (Ej: Samsung)" value={marca} onChange={e=>setMarca(e.target.value)} required style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/><input type="text" placeholder="Modelo (Ej: A52)" value={modelo} onChange={e=>setModelo(e.target.value)} required style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/></div><div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}><input type="text" placeholder="IMEI / N° Serie (Opcional)" value={imei} onChange={e=>setImei(e.target.value)} style={{ flex: 2, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/><input type="text" placeholder="Clave / Patrón" value={contrasena} onChange={e=>setContrasena(e.target.value)} style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/></div></div>
             </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
-              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>3. ESTADO Y DIAGNÓSTICO</label>
-                <textarea placeholder="Falla declarada por el cliente..." value={falla} onChange={e=>setFalla(e.target.value)} required rows={3} style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/>
-                <input type="text" placeholder="Condición visual (Rayas, golpes, pantalla rota...)" value={condicionVisual} onChange={e=>setCondicionVisual(e.target.value)} style={{ width: '100%', padding: '10px', marginTop: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/>
-              </div>
-
-              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>4. ASIGNACIÓN</label>
-                <select value={tecnico} onChange={e=>setTecnico(e.target.value)} style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}>
-                  <option value="">Sin asignar (Revisión general)</option>
-                  <option value="Laboratorio 1">Laboratorio 1 (Microelectrónica)</option>
-                  <option value="Laboratorio 2">Laboratorio 2 (Módulos/Baterías)</option>
-                  <option value="Tercerizado">Tercerizado</option>
-                </select>
-                <button type="submit" style={{ width: '100%', padding: '15px', marginTop: '15px', background: '#0d6efd', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>➕ Ingresar Equipo y Generar Orden</button>
-              </div>
+              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>3. ESTADO Y DIAGNÓSTICO</label><textarea placeholder="Falla declarada por el cliente..." value={falla} onChange={e=>setFalla(e.target.value)} required rows={3} style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/><input type="text" placeholder="Condición visual (Rayas, golpes, pantalla rota...)" value={condicionVisual} onChange={e=>setCondicionVisual(e.target.value)} style={{ width: '100%', padding: '10px', marginTop: '10px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/></div>
+              <div><label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>4. ASIGNACIÓN</label><select value={tecnico} onChange={e=>setTecnico(e.target.value)} style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}><option value="">Sin asignar</option><option value="Laboratorio 1">Laboratorio 1</option><option value="Laboratorio 2">Laboratorio 2</option><option value="Tercerizado">Tercerizado</option></select><button type="submit" style={{ width: '100%', padding: '15px', marginTop: '15px', background: '#0d6efd', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>➕ Ingresar Equipo</button></div>
             </div>
           </form>
 
-          <h3 style={{ margin: '0 0 15px 0' }}>Equipos en Taller</h3>
           <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '13px', background: 'white', border: '1px solid #ddd' }}>
-            <thead>
-              <tr style={{ background: '#333', color: 'white' }}>
-                <th style={{ padding: '12px' }}>Cód. Orden</th>
-                <th style={{ padding: '12px' }}>Cliente</th>
-                <th style={{ padding: '12px' }}>Equipo & Info</th>
-                <th style={{ padding: '12px' }}>Estado / Modificar</th>
-                <th style={{ padding: '12px', textAlign: 'center' }}>Comunicación</th>
-              </tr>
-            </thead>
+            <thead><tr style={{ background: '#333', color: 'white' }}><th style={{ padding: '12px' }}>Cód. Orden</th><th style={{ padding: '12px' }}>Cliente</th><th style={{ padding: '12px' }}>Equipo & Info</th><th style={{ padding: '12px' }}>Estado / Modificar</th><th style={{ padding: '12px', textAlign: 'center' }}>Comunicación</th></tr></thead>
             <tbody>
               {ordenes.map(o => (
                 <tr key={o.id} style={{ borderBottom: '1px solid #eee', opacity: o.estado === 'entregado' ? 0.6 : 1 }}>
                   <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '16px', color: '#0d6efd' }}>{o.codigoSeguimiento}</td>
-                  
+                  <td style={{ padding: '12px' }}><b style={{ fontSize: '14px' }}>{o.cliente?.nombre}</b><br/><a href={`https://wa.me/549${o.cliente?.telefono.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', textDecoration: 'none', fontWeight: 'bold' }}>{o.cliente?.telefono}</a></td>
+                  <td style={{ padding: '12px' }}><b>{o.equipo.marca} {o.equipo.modelo}</b>{o.equipo.contrasena && <span style={{ marginLeft: '10px', background: '#fff3cd', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', border: '1px solid #ffeeba' }}>Clave: {o.equipo.contrasena}</span>}<br/><span style={{ color: '#dc3545', fontWeight: 'bold' }}>Falla:</span> {o.fallaDeclarada}<br/>{o.tecnicoAsignado && <span style={{ color: '#666', fontStyle: 'italic', fontSize: '11px' }}>Área: {o.tecnicoAsignado}</span>}</td>
                   <td style={{ padding: '12px' }}>
-                    <b style={{ fontSize: '14px' }}>{o.cliente?.nombre}</b><br/>
-                    <a href={`https://wa.me/549${o.cliente?.telefono.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', textDecoration: 'none', fontWeight: 'bold' }}>{o.cliente?.telefono}</a>
-                  </td>
-                  
-                  <td style={{ padding: '12px' }}>
-                    <b>{o.equipo.marca} {o.equipo.modelo}</b>
-                    {o.equipo.contrasena && <span style={{ marginLeft: '10px', background: '#fff3cd', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', border: '1px solid #ffeeba' }}>Clave: {o.equipo.contrasena}</span>}
-                    <br/>
-                    <span style={{ color: '#dc3545', fontWeight: 'bold' }}>Falla:</span> {o.fallaDeclarada}<br/>
-                    {o.tecnicoAsignado && <span style={{ color: '#666', fontStyle: 'italic', fontSize: '11px' }}>Área: {o.tecnicoAsignado}</span>}
-                  </td>
-                  
-                  <td style={{ padding: '12px' }}>
-                    <select 
-                      value={o.estado} 
-                      onChange={e => actualizarEstado(o.id, e.target.value, o)}
-                      style={{ 
-                        width: '100%', padding: '6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #ccc',
-                        background: o.estado==='reparado'?'#d4edda': o.estado==='sin solucion'?'#f8d7da': o.estado==='esperando repuesto'?'#fff3cd': o.estado==='en revision'?'#cce5ff': o.estado==='reingreso garantia'?'#e2d9f3':'#fff'
-                      }}
-                    >
-                      <option value="ingresado">📥 Ingresado</option>
-                      <option value="en revision">🔬 En Revisión</option>
-                      <option value="esperando repuesto">⏳ Esperando Repuesto</option>
-                      <option value="reparado">✅ Reparado</option>
-                      <option value="sin solucion">❌ Sin Solución</option>
-                      <option value="reingreso garantia">🔄 Reingreso Garantía</option>
-                      <option value="entregado">📦 Entregado al cliente</option>
+                    <select value={o.estado} onChange={e => actualizarEstado(o.id, e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #ccc', background: o.estado==='reparado'?'#d4edda': o.estado==='sin solucion'?'#f8d7da': o.estado==='esperando repuesto'?'#fff3cd': o.estado==='en revision'?'#cce5ff': o.estado==='reingreso garantia'?'#e2d9f3':'#fff' }}>
+                      <option value="ingresado">📥 Ingresado</option><option value="en revision">🔬 En Revisión</option><option value="esperando repuesto">⏳ Esperando Repuesto</option><option value="reparado">✅ Reparado</option><option value="sin solucion">❌ Sin Solución</option><option value="reingreso garantia">🔄 Reingreso Garantía</option><option value="entregado">📦 Entregado</option>
                     </select>
                     {o.costoReparacion && <div style={{ marginTop: '5px', fontWeight: 'bold', color: '#155724', textAlign: 'center' }}>Costo: ${o.costoReparacion}</div>}
                   </td>
-                  
                   <td style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'center' }}>
-                    <button onClick={() => notificarClienteWhatsApp(o)} style={{ width: '100%', background: '#25D366', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                      💬 WhatsApp
-                    </button>
-                    <div style={{ display: 'flex', gap: '5px', width: '100%' }}>
-                      <button onClick={() => imprimirTicket(o)} style={{ flex: 1, background: '#17a2b8', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} title="Imprimir Ticket">🖨️</button>
-                      <button onClick={async () => { if(window.confirm('¿Borrar registro permanentemente?')) await deleteDoc(doc(db, 'ordenes_taller', o.id)) }} style={{ flex: 1, background: '#dc3545', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} title="Eliminar Orden">🗑️</button>
-                    </div>
+                    <button onClick={() => notificarClienteWhatsApp(o)} style={{ width: '100%', background: '#25D366', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>💬 WhatsApp</button>
+                    <div style={{ display: 'flex', gap: '5px', width: '100%' }}><button onClick={() => imprimirTicket(o)} style={{ flex: 1, background: '#17a2b8', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer' }}>🖨️</button><button onClick={async () => { if(window.confirm('¿Borrar?')) await deleteDoc(doc(db, 'ordenes_taller', o.id)) }} style={{ flex: 1, background: '#dc3545', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer' }}>🗑️</button></div>
                   </td>
                 </tr>
               ))}
-              {ordenes.length === 0 && <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: '#666' }}>No hay equipos en el taller.</td></tr>}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* SECCIÓN: CATÁLOGO / INVENTARIO */}
       {pestaña === 'catalogo' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', flexWrap: 'wrap' }}>
             <form onSubmit={guardarProducto} style={{ flex: '1 1 60%', background: idEditando ? '#fff3cd' : '#e3f2fd', padding: '20px', borderRadius: '8px', display: 'flex', gap: '10px', flexWrap: 'wrap', border: idEditando ? '1px solid #ffeeba' : '1px solid #b6d4fe' }}>
               <div style={{ flex: '1 1 100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <h4 style={{ margin: '0', color: idEditando ? '#856404' : '#084298' }}>{idEditando ? '✏️ Editando Producto' : 'Publicar / Importar Producto Manual'}</h4>
+                <h4 style={{ margin: '0', color: idEditando ? '#856404' : '#084298' }}>{idEditando ? '✏️ Editando Producto' : 'Publicar Producto Manual'}</h4>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '5px', background: prodDestacado ? '#ffc107' : '#fff', padding: '5px 10px', borderRadius: '5px', border: '1px solid #ccc', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}><input type="checkbox" checked={prodDestacado} onChange={e => setProdDestacado(e.target.checked)} /> ⭐ Destacar</label>
               </div>
               <div style={{ flex: '1 1 100%', background: '#fff', padding: '10px', borderRadius: '5px', border: '1px dashed #0d6efd', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <input type="text" placeholder="URL del Proveedor" value={prodUrlProveedor} onChange={e=>setProdUrlProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
-                <input type="number" placeholder="Costo Proveedor $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ddd' }}/>
-                <button type="button" onClick={calcularPrecioVenta} style={{ background: '#198754', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', fontWeight: 'bold' }}>Aplicar Markup (+{config.margenGanancia}%)</button>
+                <input type="text" placeholder="URL Proveedor" value={prodUrlProveedor} onChange={e=>setProdUrlProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
+                <input type="number" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ddd' }}/>
+                <button type="button" onClick={calcularPrecioVenta} style={{ background: '#198754', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', fontWeight: 'bold' }}>Markup (+{config.margenGanancia}%)</button>
               </div>
               <div style={{ flex: '1 1 100%', display: 'flex', gap: '10px' }}>
-                <input type="text" placeholder="Código de Barras (Escanea o tipea)" value={prodCodigoBarras} onChange={e=>setProdCodigoBarras(e.target.value)} style={{ flex: 1, padding: '10px', border: '2px solid #0d6efd', borderRadius: '4px' }}/>
-                <button type="button" onClick={() => setEscaneandoPara('formulario')} style={{ background: '#333', color: 'white', border: 'none', padding: '0 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>📷 Usar Cámara</button>
+                <input type="text" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e=>setProdCodigoBarras(e.target.value)} style={{ flex: 1, padding: '10px', border: '2px solid #0d6efd', borderRadius: '4px' }}/>
+                <button type="button" onClick={() => setEscaneandoPara('formulario')} style={{ background: '#333', color: 'white', border: 'none', padding: '0 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>📷 Cámara</button>
               </div>
               <input type="text" placeholder="Nombre Repuesto" value={prodNom} onChange={e=>setProdNom(e.target.value)} required style={{ flex: 2, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
               <input type="text" placeholder="Categoría" value={prodCat} onChange={e=>setProdCat(e.target.value)} required style={{ flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
-              <input type="number" placeholder="Precio Venta Final $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required style={{ width: '150px', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', fontWeight: 'bold', color: '#0d6efd' }}/>
+              <input type="number" placeholder="Venta Final $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required style={{ width: '150px', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', fontWeight: 'bold', color: '#0d6efd' }}/>
               <input type="number" placeholder="Stock" value={prodStock} onChange={e=>setProdStock(e.target.value)} required style={{ width: '80px', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
               <input type="text" placeholder="Descripción" value={prodDesc} onChange={e=>setProdDesc(e.target.value)} required style={{ flex: '1 1 100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
               <input type="text" placeholder="URL Imagen" value={prodImg} onChange={e=>setProdImg(e.target.value)} style={{ flex: '1 1 100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/>
@@ -871,34 +688,23 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
           
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#333', padding: '15px', borderRadius: '8px', color: 'white' }}>
-            <span>🔍 Escanear / Buscar:</span>
-            <input type="text" placeholder="Código de barras o texto..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ padding: '10px', flex: 1, borderRadius: '4px', border: 'none' }} />
-            <button onClick={() => setEscaneandoPara('buscador')} style={{ padding: '10px', background: '#0d6efd', color: 'white', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>📷 Activar Cámara</button>
+            <span>🔍 Buscar:</span><input type="text" placeholder="Código de barras o texto..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ padding: '10px', flex: 1, borderRadius: '4px', border: 'none' }} />
+            <button onClick={() => setEscaneandoPara('buscador')} style={{ padding: '10px', background: '#0d6efd', color: 'white', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>📷 Cámara</button>
             <button onClick={() => setBusquedaInventario('')} style={{ padding: '10px', borderRadius: '4px', border: 'none', cursor: 'pointer' }}>Limpiar</button>
           </div>
           
           <table style={{ width: '100%', marginTop: '20px', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
-            <thead><tr style={{ background: '#0d6efd', color: 'white' }}><th style={{ padding: '10px' }}>Cód. Barras</th><th style={{ padding: '10px' }}>Repuesto / Link Prov.</th><th style={{ padding: '10px' }}>Precio</th><th style={{ padding: '10px' }}>Ventas</th><th style={{ padding: '10px' }}>Stock</th><th style={{ padding: '10px' }}>Acciones</th></tr></thead>
+            <thead><tr style={{ background: '#0d6efd', color: 'white' }}><th style={{ padding: '10px' }}>Cód. Barras</th><th style={{ padding: '10px' }}>Repuesto</th><th style={{ padding: '10px' }}>Precio</th><th style={{ padding: '10px' }}>Stock</th><th style={{ padding: '10px' }}>Acciones</th></tr></thead>
             <tbody>
               {inventarioFiltrado.map(p => (
                 <tr key={p.id} style={{ borderBottom: '1px solid #ddd', background: p.stock < 3 ? '#fff3cd' : 'white' }}>
                   <td style={{ padding: '10px', fontFamily: 'monospace' }}>{p.codigoBarras || '-'}</td>
-                  <td style={{ padding: '10px' }}>
-                    <b>{p.nombre}</b> {p.destacado && <span style={{ fontSize: '12px' }}>⭐</span>}
-                    {p.urlProveedor && <div style={{ fontSize: '11px', marginTop: '4px' }}><a href={p.urlProveedor} target="_blank" rel="noreferrer" style={{ color: '#0d6efd' }}>🔗 Ver Prov.</a> {p.costoProveedor && `(Costo: $${p.costoProveedor})`}</div>}
-                  </td>
+                  <td style={{ padding: '10px' }}><b>{p.nombre}</b></td>
                   <td style={{ padding: '10px', fontWeight: 'bold' }}>${p.precio}</td>
-                  <td style={{ padding: '10px', color: '#666' }}>{p.ventas || 0}</td>
-                  <td style={{ padding: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <button onClick={() => actualizarStock(p.id, p.stock - 1)} style={{ padding: '2px 8px', background: '#dc3545', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '4px' }}>-</button>
-                      <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{p.stock}</span>
-                      <button onClick={() => actualizarStock(p.id, p.stock + 1)} style={{ padding: '2px 8px', background: '#28a745', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '4px' }}>+</button>
-                    </div>
-                  </td>
+                  <td style={{ padding: '10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><button onClick={() => actualizarStock(p.id, p.stock - 1)} style={{ padding: '2px 8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}>-</button><span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{p.stock}</span><button onClick={() => actualizarStock(p.id, p.stock + 1)} style={{ padding: '2px 8px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}>+</button></div></td>
                   <td style={{ padding: '10px', display: 'flex', gap: '5px' }}>
-                    <button onClick={() => registrarVentaDirecta(p)} style={{ background: '#198754', color: 'white', border: 'none', padding: '6px 10px', cursor: 'pointer', borderRadius: '4px', fontWeight: 'bold' }}>$</button>
-                    <button onClick={() => cargarProductoParaEdicion(p)} style={{ background: '#ffc107', color: 'black', border: 'none', padding: '6px 10px', cursor: 'pointer', borderRadius: '4px' }}>Editar</button>
+                    <button onClick={() => registrarVentaDirecta(p)} style={{ background: '#198754', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', fontWeight: 'bold' }}>$</button>
+                    <button onClick={() => cargarProductoParaEdicion(p)} style={{ background: '#ffc107', color: 'black', border: 'none', padding: '6px 10px', borderRadius: '4px' }}>Editar</button>
                     <button onClick={async () => { if(window.confirm('¿Borrar?')) await deleteDoc(doc(db, 'productos', p.id)) }} style={{ background: 'transparent', color: 'red', border: 'none', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
                   </td>
                 </tr>
@@ -908,7 +714,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SECCIÓN: FINANZAS Y CAJA */}
+      {/* SECCIÓN: FINANZAS */}
       {pestaña === 'finanzas' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -918,9 +724,32 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <select value={filtroMetodoLista} onChange={e=>setFiltroMetodoLista(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}><option value="todos">Todos los Métodos</option><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">Mercado Pago</option><option value="tarjeta">Tarjeta</option></select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-            <div style={{ background: '#d4edda', padding: '20px', borderRadius: '8px', border: '1px solid #c3e6cb', textAlign: 'center' }}><h3 style={{ margin: '0 0 10px 0', color: '#155724' }}>Total Ingresos</h3><h2 style={{ margin: 0, color: '#28a745', fontSize: '32px' }}>${totalIngresos.toLocaleString()}</h2></div>
-            <div style={{ background: '#f8d7da', padding: '20px', borderRadius: '8px', border: '1px solid #f5c6cb', textAlign: 'center' }}><h3 style={{ margin: '0 0 10px 0', color: '#721c24' }}>Total Egresos</h3><h2 style={{ margin: 0, color: '#dc3545', fontSize: '32px' }}>${totalEgresos.toLocaleString()}</h2></div>
-            <div style={{ background: saldoNeto >= 0 ? '#cce5ff' : '#fff3cd', padding: '20px', borderRadius: '8px', border: `1px solid ${saldoNeto >= 0 ? '#b8daff' : '#ffeeba'}`, textAlign: 'center' }}><h3 style={{ margin: '0 0 10px 0', color: saldoNeto >= 0 ? '#004085' : '#856404' }}>Saldo Neto General</h3><h2 style={{ margin: 0, color: saldoNeto >= 0 ? '#007bff' : '#fd7e14', fontSize: '32px' }}>${saldoNeto.toLocaleString()}</h2></div>
+            <div style={{ background: '#d4edda', padding: '20px', borderRadius: '8px', border: '1px solid #c3e6cb', textAlign: 'center' }}><h3 style={{ margin: '0 0 10px 0', color: '#155724' }}>Ingresos</h3><h2 style={{ margin: 0, color: '#28a745', fontSize: '32px' }}>${totalIngresos.toLocaleString()}</h2></div>
+            <div style={{ background: '#f8d7da', padding: '20px', borderRadius: '8px', border: '1px solid #f5c6cb', textAlign: 'center' }}><h3 style={{ margin: '0 0 10px 0', color: '#721c24' }}>Egresos</h3><h2 style={{ margin: 0, color: '#dc3545', fontSize: '32px' }}>${totalEgresos.toLocaleString()}</h2></div>
+            <div style={{ background: saldoNeto >= 0 ? '#cce5ff' : '#fff3cd', padding: '20px', borderRadius: '8px', border: `1px solid ${saldoNeto >= 0 ? '#b8daff' : '#ffeeba'}`, textAlign: 'center' }}><h3 style={{ margin: '0 0 10px 0', color: saldoNeto >= 0 ? '#004085' : '#856404' }}>Saldo Neto</h3><h2 style={{ margin: 0, color: saldoNeto >= 0 ? '#007bff' : '#fd7e14', fontSize: '32px' }}>${saldoNeto.toLocaleString()}</h2></div>
+          </div>
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+            <form onSubmit={registrarMovimientoFinanzas} style={{ flex: '1 1 300px', background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #ddd', alignSelf: 'flex-start' }}>
+              <h3 style={{ margin: '0 0 15px 0' }}>Registrar Movimiento</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Tipo</label><select value={finTipo} onChange={e=>setFinTipo(e.target.value)} style={{ width: '100%', padding: '10px', background: finTipo === 'ingreso' ? '#d4edda' : '#f8d7da', border: '1px solid #ccc', borderRadius: '4px' }}><option value="ingreso">Ingreso (Cobro)</option><option value="egreso">Egreso (Gasto)</option></select></div>
+                <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Concepto</label><input type="text" required value={finConcepto} onChange={e=>setFinConcepto(e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/></div>
+                <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Monto ($)</label><input type="number" required value={finMonto} onChange={e=>setFinMonto(e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}/></div>
+                <div><label style={{ fontSize: '12px', fontWeight: 'bold' }}>Método de Pago</label><select value={finMetodo} onChange={e=>setFinMetodo(e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">Mercado Pago</option><option value="tarjeta">Tarjeta</option></select></div>
+                <button type="submit" style={{ width: '100%', padding: '12px', background: finTipo === 'ingreso' ? '#28a745' : '#dc3545', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Registrar en Caja</button>
+              </div>
+            </form>
+            <div style={{ flex: '1 1 600px', background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #ddd', overflowX: 'auto' }}>
+              <h3 style={{ margin: '0 0 15px 0' }}>Historial Filtrado</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead><tr style={{ background: '#f8f9fa', borderBottom: '2px solid #ddd' }}><th style={{ padding: '10px', textAlign: 'left' }}>Fecha</th><th style={{ padding: '10px', textAlign: 'left' }}>Concepto</th><th style={{ padding: '10px', textAlign: 'left' }}>Método</th><th style={{ padding: '10px', textAlign: 'right' }}>Monto</th><th style={{ padding: '10px', textAlign: 'center' }}>Acción</th></tr></thead>
+                <tbody>
+                  {movimientosFiltrados.map(m => (
+                    <tr key={m.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>{m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td><td style={{ padding: '10px' }}>{m.concepto}</td><td style={{ padding: '10px', textTransform: 'capitalize' }}>{m.metodoPago}</td><td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: m.tipo === 'ingreso' ? '#28a745' : '#dc3545' }}>{m.tipo === 'ingreso' ? '+' : '-'}${m.monto}</td><td style={{ padding: '10px', textAlign: 'center' }}><button onClick={async () => { if(window.confirm('¿Eliminar?')) await deleteDoc(doc(db, 'finanzas', m.id)) }} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer' }}>🗑️</button></td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
