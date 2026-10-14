@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, query, where, onSnapshot, getDocs, doc, updateDoc, deleteDoc, arrayUnion, setDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, onSnapshot, getDocs, doc, updateDoc, deleteDoc, arrayUnion, setDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase'; 
 
 // --- Configuración por defecto ---
@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO (Correcciones Aplicadas)
+// 4. PANEL ERP AVANZADO (Filtro Precio y WriteBatch Activo)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -355,12 +355,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [filtroTiempo, setFiltroTiempo] = useState('todos'); const [filtroTipoLista, setFiltroTipoLista] = useState('todos'); const [filtroMetodoLista, setFiltroMetodoLista] = useState('todos');
   const [conf, setConf] = useState(CONFIG_DEFAULT);
 
+  // Inicializar librerías externas
   useEffect(() => {
     if (!(window as any).XLSX) {
       const script = document.createElement('script'); script.src = "https://unpkg.com/xlsx/dist/xlsx.full.min.js"; script.async = true; document.body.appendChild(script);
     }
   }, []);
 
+  // Carga de colecciones Firestore
   useEffect(() => {
     const unsubConf = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => { if (docSnap.exists()) { const data = docSnap.data(); setConfig({ ...CONFIG_DEFAULT, ...data }); setConf({ ...CONFIG_DEFAULT, ...data }); } });
     const unsubOrd = onSnapshot(query(collection(db, 'ordenes_taller'), where('idTiendaOrigen', '==', user.uid)), (snap) => setOrdenes(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a:any, b:any) => b.fechaIngreso?.seconds - a.fechaIngreso?.seconds)));
@@ -370,6 +372,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); };
   }, [user.uid]);
 
+  // Lógica del Escáner (Cámara)
   useEffect(() => {
     if (!escaneandoPara) return;
     const inicializarEscaner = () => {
@@ -387,6 +390,35 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
+  // ==========================================
+  // PARSEADOR ROBUSTO DE PRECIOS PARA EXCEL
+  // ==========================================
+  const parsePrecio = (valor: any) => {
+    if (valor === undefined || valor === null || valor === '') return NaN;
+    if (typeof valor === 'number') return valor;
+    
+    // Convertir a string y limpiar símbolos (dejar solo números, comas, puntos y menos)
+    let str = valor.toString().replace(/[^0-9.,-]/g, '');
+    
+    // Si tiene coma y punto, analizamos la posición para saber si es Formato Argentina o USA
+    if (str.includes(',') && str.includes('.')) {
+       // Ej: 1.500,50 (La coma está después del punto)
+       if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+          str = str.replace(/\./g, '').replace(',', '.');
+       } else {
+          // Ej: 1,500.50 (Formato USA)
+          str = str.replace(/,/g, '');
+       }
+    } 
+    // Si solo tiene coma, asumimos que es el separador decimal (Ej: 1500,50)
+    else if (str.includes(',')) {
+       str = str.replace(',', '.');
+    }
+    
+    return parseFloat(str);
+  };
+
+  // Procesamiento del Archivo
   const procesarArchivoExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -417,30 +449,78 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if ((window as any).__currentWorkbook) seleccionarHojaExcel((window as any).__currentWorkbook, sheetName);
   };
 
+  // ==========================================
+  // IMPORTACIÓN MASIVA AL INVENTARIO (BATCH)
+  // ==========================================
   const importarDatosAlInventario = async () => {
     if (excelData.length === 0) return alert('No hay datos para importar.');
-    if (!window.confirm(`¿Importar ${excelData.length} filas desde la hoja "${hojaActiva}"? Se aplicará un margen del ${config.margenGanancia}% a los costos detectados.`)) return;
-    let importados = 0; let marcaActual = 'General';
+    if (!window.confirm(`¿Importar filas desde la hoja "${hojaActiva}"? Se procesarán masivamente.`)) return;
+    
+    let importados = 0; 
+    let omitidos = 0;
+    let marcaActual = 'General';
     setExcelCargando(true);
+    
     try {
+      let batch = writeBatch(db);
+      let operacionActual = 0;
+
       for (let i = 0; i < excelData.length; i++) {
         const row = excelData[i];
         if (!row || row.length === 0) continue;
+        
         const nombreObtenido = row[colNombre]?.toString().trim();
-        const costoObtenido = parseFloat(row[colCosto]?.toString().replace(',', '.') || 'NaN');
+        const costoObtenido = parsePrecio(row[colCosto]);
         const marcaDetectada = colMarca >= 0 ? row[colMarca]?.toString().trim() : null;
 
-        if (marcaDetectada && isNaN(costoObtenido)) { marcaActual = marcaDetectada; continue; }
+        if (marcaDetectada && isNaN(costoObtenido)) { 
+           marcaActual = marcaDetectada; 
+           continue; 
+        }
+
         if (nombreObtenido && !isNaN(costoObtenido) && costoObtenido > 0) {
           const precioFinal = costoObtenido + (costoObtenido * (Number(config.margenGanancia) / 100));
           const nombreFinal = colMarca === -1 ? nombreObtenido : `${marcaActual} - ${nombreObtenido}`;
-          await addDoc(collection(db, 'productos'), { nombre: nombreFinal, categoria: hojaActiva, costoProveedor: costoObtenido, precio: Math.round(precioFinal), stock: 0, descripcion: 'Importado', fecha: serverTimestamp(), ventas: 0 });
+          
+          const nuevoDocRef = doc(collection(db, 'productos'));
+          batch.set(nuevoDocRef, { 
+             nombre: nombreFinal, 
+             categoria: hojaActiva, 
+             costoProveedor: costoObtenido, 
+             precio: Math.round(precioFinal), 
+             stock: 0, 
+             descripcion: 'Importado de lista de proveedor', 
+             fecha: serverTimestamp(), 
+             ventas: 0 
+          });
+          
           importados++;
+          operacionActual++;
+
+          // Firestore permite hasta 500 operaciones por batch. Cortamos a 400 por seguridad.
+          if (operacionActual >= 400) {
+             await batch.commit();
+             batch = writeBatch(db);
+             operacionActual = 0;
+          }
+        } else {
+          omitidos++;
         }
       }
-      alert(`¡Éxito! Se importaron ${importados} productos al inventario.`);
-    } catch (error) { alert('Error durante la importación masiva.'); } finally {
-      setExcelCargando(false); setExcelData([]); (document.getElementById('fileExcel') as HTMLInputElement).value = '';
+      
+      // Guardar remanente
+      if (operacionActual > 0) {
+         await batch.commit(); 
+      }
+
+      alert(`¡Éxito! Se importaron ${importados} productos al instante.\n(Líneas de texto o sin precio omitidas: ${omitidos})`);
+    } catch (error: any) { 
+      alert(`Error en Base de Datos: ${error.message}`); 
+    } finally {
+      setExcelCargando(false); 
+      setExcelData([]); 
+      const fileInput = document.getElementById('fileExcel') as HTMLInputElement;
+      if(fileInput) fileInput.value = '';
     }
   };
 
@@ -509,12 +589,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const calcularPrecioVenta = () => { if (prodCosto) setProdPrecio((Number(prodCosto) + (Number(prodCosto) * (Number(config.margenGanancia) / 100))).toFixed(0)); };
   const actualizarStock = async (id: string, nuevoStock: number) => { if (nuevoStock >= 0) await updateDoc(doc(db, 'productos', id), { stock: nuevoStock }); };
+  
   const registrarVentaDirecta = async (p: any) => { 
     if (p.stock <= 0) return alert('Sin stock disponible');
     await updateDoc(doc(db, 'productos', p.id), { stock: p.stock - 1, ventas: (p.ventas || 0) + 1 }); 
     await addDoc(collection(db, 'finanzas'), { tipo: 'ingreso', concepto: `Venta Mostrador: ${p.nombre}`, monto: Number(p.precio), metodoPago: 'efectivo', fecha: serverTimestamp(), usuario: user.email });
-    alert('Venta y cobro registrado en caja (Efectivo).');
+    alert('Venta realizada y cobro registrado en caja (Efectivo).');
   };
+
   const cargarProductoParaEdicion = (p: any) => {
     setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || ''); setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || ''); setProdStock(p.stock?.toString() || ''); setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || ''); setProdCodigoBarras(p.codigoBarras || ''); setProdDestacado(p.destacado || false); setProdUrlProveedor(p.urlProveedor || ''); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -528,7 +610,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     e.preventDefault(); await addDoc(collection(db, 'finanzas'), { tipo: finTipo, concepto: finConcepto, monto: Number(finMonto), metodoPago: finMetodo, fecha: serverTimestamp(), usuario: user.email }); setFinConcepto(''); setFinMonto(''); alert('Movimiento registrado en caja.');
   };
   const guardarConfiguracion = async (e: React.FormEvent) => { e.preventDefault(); await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); alert('Configuración guardada.'); };
-
+  
   const movimientosFiltrados = movimientosFinanzas.filter(m => {
     if (filtroTipoLista !== 'todos' && m.tipo !== filtroTipoLista) return false;
     if (filtroMetodoLista !== 'todos' && m.metodoPago !== filtroMetodoLista) return false;
@@ -551,6 +633,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+      
+      {/* MODAL ESCÁNER CÁMARA */}
       {escaneandoPara && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', boxSizing: 'border-box' }}>
           <div style={{ background: 'white', padding: '20px', borderRadius: '8px', width: '100%', maxWidth: '400px', textAlign: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }}>
@@ -594,7 +678,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <thead style={{ position: 'sticky', top: 0, background: '#eee' }}><tr><th style={{ padding: '8px' }}>Vista Previa (15)</th><th style={{ padding: '8px' }}>Costo</th><th style={{ padding: '8px', color: '#198754' }}>Venta (+{config.margenGanancia}%)</th></tr></thead>
                     <tbody>
                       {excelData.slice(0, 15).map((row, i) => {
-                        const n = row[colNombre]?.toString(); const c = parseFloat(row[colCosto]?.toString().replace(',', '.') || 'NaN');
+                        const n = row[colNombre]?.toString(); const c = parsePrecio(row[colCosto]);
                         if (!n || isNaN(c)) return null; const p = c + (c * (Number(config.margenGanancia)/100));
                         return <tr key={i} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: '8px' }}>{colMarca >= 0 && row[colMarca] ? `${row[colMarca]} - ` : ''}{n}</td><td style={{ padding: '8px' }}>${c}</td><td style={{ padding: '8px', fontWeight: 'bold', color: '#198754' }}>${Math.round(p)}</td></tr>;
                       })}
@@ -714,7 +798,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SECCIÓN: FINANZAS */}
       {pestaña === 'finanzas' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -754,7 +837,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SECCIÓN: PEDIDOS WEB AUTOMATIZADOS */}
       {pestaña === 'pedidos' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -770,7 +852,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SECCIÓN: CONFIGURACIÓN */}
       {pestaña === 'configuracion' && (
         <div style={{ marginTop: '20px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           <form onSubmit={guardarConfiguracion} style={{ flex: '1 1 100%', background: 'white', padding: '30px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '25px' }}>
