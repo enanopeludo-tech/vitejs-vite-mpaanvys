@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO (Importador Inteligente)
+// 4. PANEL ERP AVANZADO (PROVEEDORES Y ACTUALIZACIONES)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -328,13 +328,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [imei, setImei] = useState(''); const [contrasena, setContrasena] = useState('');
   const [condicionVisual, setCondicionVisual] = useState('');
   
-  // Catálogo e Inventario
+  // Catálogo e Inventario (Manual)
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState(''); const [prodCat, setProdCat] = useState('');
   const [prodCosto, setProdCosto] = useState(''); 
   const [prodPrecio, setProdPrecio] = useState(''); const [prodStock, setProdStock] = useState('');
   const [prodDesc, setProdDesc] = useState(''); const [prodImg, setProdImg] = useState('');
   const [prodCodigoBarras, setProdCodigoBarras] = useState('');
+  const [prodProveedor, setProdProveedor] = useState(''); // Novedad
   const [prodDestacado, setProdDestacado] = useState(false);
   const [prodUrlProveedor, setProdUrlProveedor] = useState(''); 
   const [busquedaInventario, setBusquedaInventario] = useState('');
@@ -348,6 +349,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [colNombre, setColNombre] = useState<number>(0);
   const [colCosto, setColCosto] = useState<number>(1);
   const [colMarca, setColMarca] = useState<number>(-1);
+  const [nombreProveedorExcel, setNombreProveedorExcel] = useState(''); // Novedad
 
   // Finanzas
   const [finTipo, setFinTipo] = useState('ingreso'); const [finConcepto, setFinConcepto] = useState('');
@@ -390,27 +392,19 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
-  // ==========================================
-  // PARSEADOR ROBUSTO DE PRECIOS PARA EXCEL
-  // ==========================================
   const parsePrecio = (valor: any) => {
     if (valor === undefined || valor === null || valor === '') return NaN;
     if (typeof valor === 'number') return valor;
-    
     let str = valor.toString().replace(/[^0-9.,-]/g, '');
     if (str.includes(',') && str.includes('.')) {
-       if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
-          str = str.replace(/\./g, '').replace(',', '.');
-       } else {
-          str = str.replace(/,/g, '');
-       }
+       if (str.lastIndexOf(',') > str.lastIndexOf('.')) str = str.replace(/\./g, '').replace(',', '.');
+       else str = str.replace(/,/g, '');
     } else if (str.includes(',')) {
        str = str.replace(',', '.');
     }
     return parseFloat(str);
   };
 
-  // Procesamiento del Archivo
   const procesarArchivoExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -441,17 +435,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if ((window as any).__currentWorkbook) seleccionarHojaExcel((window as any).__currentWorkbook, sheetName);
   };
 
-  // ==========================================
-  // IMPORTACIÓN MASIVA INTELIGENTE (No Duplica)
-  // ==========================================
   const importarDatosAlInventario = async () => {
     if (excelData.length === 0) return alert('No hay datos para importar.');
-    if (!window.confirm(`¿Importar/Actualizar filas desde la hoja "${hojaActiva}"? Los artículos existentes solo actualizarán su costo y precio.`)) return;
+    if (!nombreProveedorExcel) return alert('Por favor, ingresa el nombre del proveedor para registrar de dónde viene esta lista.');
+    if (!window.confirm(`¿Importar/Actualizar filas desde la hoja "${hojaActiva}"?\nLos artículos existentes solo actualizarán su costo y precio bajo el proveedor "${nombreProveedorExcel}".`)) return;
     
     let agregados = 0; 
     let actualizados = 0;
     let omitidos = 0;
     let marcaActual = 'General';
+    const fechaActualizacion = new Date().toLocaleDateString();
+
     setExcelCargando(true);
     
     try {
@@ -475,19 +469,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
           const precioFinal = costoObtenido + (costoObtenido * (Number(config.margenGanancia) / 100));
           const nombreFinal = colMarca === -1 ? nombreObtenido : `${marcaActual} - ${nombreObtenido}`;
           
-          // Buscar si el producto ya existe en nuestro estado local (ignorando mayúsculas/minúsculas)
           const productoExistente = productos.find(p => p.nombre.toLowerCase() === nombreFinal.toLowerCase());
 
           if (productoExistente) {
-            // Ya existe: Solo actualizamos los precios
             const docRef = doc(db, 'productos', productoExistente.id);
             batch.update(docRef, {
               costoProveedor: costoObtenido,
-              precio: Math.round(precioFinal)
+              precio: Math.round(precioFinal),
+              proveedor: nombreProveedorExcel,
+              ultimaActualizacion: fechaActualizacion
             });
             actualizados++;
           } else {
-            // No existe: Creamos uno nuevo
             const nuevoDocRef = doc(collection(db, 'productos'));
             batch.set(nuevoDocRef, { 
                nombre: nombreFinal, 
@@ -495,16 +488,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
                costoProveedor: costoObtenido, 
                precio: Math.round(precioFinal), 
                stock: 0, 
-               descripcion: 'Importado de lista de proveedor', 
+               descripcion: 'Importado de lista', 
                fecha: serverTimestamp(), 
-               ventas: 0 
+               ventas: 0,
+               proveedor: nombreProveedorExcel,
+               ultimaActualizacion: fechaActualizacion
             });
             agregados++;
           }
           
           operacionActual++;
 
-          // Firestore permite hasta 500 operaciones por batch. Cortamos a 400 por seguridad.
           if (operacionActual >= 400) {
              await batch.commit();
              batch = writeBatch(db);
@@ -515,11 +509,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         }
       }
       
-      // Guardar remanente
-      if (operacionActual > 0) {
-         await batch.commit(); 
-      }
-
+      if (operacionActual > 0) await batch.commit(); 
       alert(`¡Proceso Completado!\n\nNuevos Agregados: ${agregados}\nPrecios Actualizados: ${actualizados}\nOmitidos (Vacíos o sin precio): ${omitidos}`);
     } catch (error: any) { 
       alert(`Error en Base de Datos: ${error.message}`); 
@@ -583,12 +573,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   const limpiarFormularioProducto = () => {
-    setIdEditando(null); setProdNom(''); setProdCat(''); setProdPrecio(''); setProdCosto(''); setProdStock(''); setProdDesc(''); setProdImg(''); setProdCodigoBarras(''); setProdDestacado(false); setProdUrlProveedor('');
+    setIdEditando(null); setProdNom(''); setProdCat(''); setProdPrecio(''); setProdCosto(''); setProdStock(''); setProdDesc(''); setProdImg(''); setProdCodigoBarras(''); setProdProveedor(''); setProdDestacado(false); setProdUrlProveedor('');
   };
 
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
-    const dataProducto = { nombre: prodNom, categoria: prodCat, precio: Number(prodPrecio), costoProveedor: Number(prodCosto) || 0, stock: Number(prodStock), descripcion: prodDesc, imagenUrl: prodImg, urlProveedor: prodUrlProveedor, codigoBarras: prodCodigoBarras, destacado: prodDestacado };
+    const fechaActualizacion = new Date().toLocaleDateString();
+    const dataProducto = { nombre: prodNom, categoria: prodCat, precio: Number(prodPrecio), costoProveedor: Number(prodCosto) || 0, stock: Number(prodStock), descripcion: prodDesc, imagenUrl: prodImg, urlProveedor: prodUrlProveedor, proveedor: prodProveedor, ultimaActualizacion: fechaActualizacion, codigoBarras: prodCodigoBarras, destacado: prodDestacado };
     if (idEditando) await updateDoc(doc(db, 'productos', idEditando), dataProducto);
     else await addDoc(collection(db, 'productos'), { ...dataProducto, ventas: 0, fecha: serverTimestamp() });
     limpiarFormularioProducto();
@@ -596,16 +587,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const calcularPrecioVenta = () => { if (prodCosto) setProdPrecio((Number(prodCosto) + (Number(prodCosto) * (Number(config.margenGanancia) / 100))).toFixed(0)); };
   const actualizarStock = async (id: string, nuevoStock: number) => { if (nuevoStock >= 0) await updateDoc(doc(db, 'productos', id), { stock: nuevoStock }); };
-  
   const registrarVentaDirecta = async (p: any) => { 
     if (p.stock <= 0) return alert('Sin stock disponible');
     await updateDoc(doc(db, 'productos', p.id), { stock: p.stock - 1, ventas: (p.ventas || 0) + 1 }); 
     await addDoc(collection(db, 'finanzas'), { tipo: 'ingreso', concepto: `Venta Mostrador: ${p.nombre}`, monto: Number(p.precio), metodoPago: 'efectivo', fecha: serverTimestamp(), usuario: user.email });
     alert('Venta realizada y cobro registrado en caja (Efectivo).');
   };
-
   const cargarProductoParaEdicion = (p: any) => {
-    setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || ''); setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || ''); setProdStock(p.stock?.toString() || ''); setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || ''); setProdCodigoBarras(p.codigoBarras || ''); setProdDestacado(p.destacado || false); setProdUrlProveedor(p.urlProveedor || ''); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || ''); setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || ''); setProdStock(p.stock?.toString() || ''); setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || ''); setProdCodigoBarras(p.codigoBarras || ''); setProdProveedor(p.proveedor || ''); setProdDestacado(p.destacado || false); setProdUrlProveedor(p.urlProveedor || ''); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const pedirFaltantes = () => {
     const faltantes = productos.filter(p => p.stock <= 3);
@@ -708,8 +697,15 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #6f42c1', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ margin: 0, color: '#6f42c1' }}>📥 Importador Masivo de Listas de Precios (Excel)</h3>
             <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>Subí el archivo <b>.xlsx</b>. El sistema verificará tu base de datos: <b>creará</b> los artículos nuevos y <b>actualizará el precio</b> de los que ya existen, sin duplicarlos.</p>
+            
+            <div style={{ background: '#f0e6ff', padding: '15px', borderRadius: '8px', border: '1px dashed #6f42c1' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#6f42c1' }}>Nombre del Proveedor (Para identificar la actualización):</label>
+              <input type="text" placeholder="Ej: Celulares Mayorista BA" value={nombreProveedorExcel} onChange={e=>setNombreProveedorExcel(e.target.value)} style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/>
+            </div>
+
             <input type="file" id="fileExcel" accept=".xlsx, .xls" onChange={procesarArchivoExcel} style={{ padding: '10px', border: '2px dashed #6f42c1', borderRadius: '8px', cursor: 'pointer' }} />
             {excelCargando && <p style={{ color: '#0d6efd', fontWeight: 'bold' }}>Procesando archivo...</p>}
+            
             {excelHojas.length > 0 && !excelCargando && (
               <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap' }}>
@@ -785,7 +781,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <label style={{ display: 'flex', alignItems: 'center', gap: '5px', background: prodDestacado ? '#ffc107' : '#fff', padding: '5px 10px', borderRadius: '5px', border: '1px solid #ccc', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}><input type="checkbox" checked={prodDestacado} onChange={e => setProdDestacado(e.target.checked)} /> ⭐ Destacar</label>
               </div>
               <div style={{ flex: '1 1 100%', background: '#fff', padding: '10px', borderRadius: '5px', border: '1px dashed #0d6efd', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <input type="text" placeholder="URL Proveedor" value={prodUrlProveedor} onChange={e=>setProdUrlProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
+                <input type="text" placeholder="Proveedor / Distribuidor" value={prodProveedor} onChange={e=>setProdProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
+                <input type="text" placeholder="URL Proveedor (Opcional)" value={prodUrlProveedor} onChange={e=>setProdUrlProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
                 <input type="number" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ddd' }}/>
                 <button type="button" onClick={calcularPrecioVenta} style={{ background: '#198754', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', fontWeight: 'bold' }}>Markup (+{config.margenGanancia}%)</button>
               </div>
@@ -823,12 +820,19 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
           
           <table style={{ width: '100%', marginTop: '20px', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
-            <thead><tr style={{ background: '#0d6efd', color: 'white' }}><th style={{ padding: '10px' }}>Cód. Barras</th><th style={{ padding: '10px' }}>Repuesto</th><th style={{ padding: '10px' }}>Precio</th><th style={{ padding: '10px' }}>Stock</th><th style={{ padding: '10px' }}>Acciones</th></tr></thead>
+            <thead><tr style={{ background: '#0d6efd', color: 'white' }}><th style={{ padding: '10px' }}>Cód. Barras</th><th style={{ padding: '10px' }}>Repuesto & Proveedor</th><th style={{ padding: '10px' }}>Precio</th><th style={{ padding: '10px' }}>Stock</th><th style={{ padding: '10px' }}>Acciones</th></tr></thead>
             <tbody>
               {inventarioFiltrado.map(p => (
                 <tr key={p.id} style={{ borderBottom: '1px solid #ddd', background: p.stock < 3 ? '#fff3cd' : 'white' }}>
                   <td style={{ padding: '10px', fontFamily: 'monospace' }}>{p.codigoBarras || '-'}</td>
-                  <td style={{ padding: '10px' }}><b>{p.nombre}</b></td>
+                  <td style={{ padding: '10px' }}>
+                    <b>{p.nombre}</b> {p.destacado && <span style={{ fontSize: '12px' }}>⭐</span>}
+                    <div style={{ fontSize: '11px', marginTop: '4px', color: '#666' }}>
+                      {p.proveedor && <span>🏢 Prov: <b>{p.proveedor}</b> | </span>}
+                      {p.ultimaActualizacion && <span>📅 Act: {p.ultimaActualizacion}</span>}
+                    </div>
+                    {p.urlProveedor && <div style={{ fontSize: '11px', marginTop: '4px' }}><a href={p.urlProveedor} target="_blank" rel="noreferrer" style={{ color: '#0d6efd' }}>🔗 Ver Prov.</a> {p.costoProveedor && `(Costo: $${p.costoProveedor})`}</div>}
+                  </td>
                   <td style={{ padding: '10px', fontWeight: 'bold' }}>${p.precio}</td>
                   <td style={{ padding: '10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><button onClick={() => actualizarStock(p.id, p.stock - 1)} style={{ padding: '2px 8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}>-</button><span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{p.stock}</span><button onClick={() => actualizarStock(p.id, p.stock + 1)} style={{ padding: '2px 8px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}>+</button></div></td>
                   <td style={{ padding: '10px', display: 'flex', gap: '5px' }}>
