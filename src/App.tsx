@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO (PROVEEDORES Y ACTUALIZACIONES)
+// 4. PANEL ERP AVANZADO (SELECCIÓN MASIVA INVENTARIO)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -319,7 +319,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [productos, setProductos] = useState<any[]>([]);
   const [pedidosWeb, setPedidosWeb] = useState<any[]>([]); 
   const [movimientosFinanzas, setMovimientosFinanzas] = useState<any[]>([]); 
-  const [pestaña, setPestaña] = useState('proveedores'); 
+  const [pestaña, setPestaña] = useState('catalogo'); 
 
   // CRM Taller
   const [cliNombre, setCliNombre] = useState(''); const [cliTel, setCliTel] = useState('');
@@ -328,18 +328,21 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [imei, setImei] = useState(''); const [contrasena, setContrasena] = useState('');
   const [condicionVisual, setCondicionVisual] = useState('');
   
-  // Catálogo e Inventario (Manual)
+  // Catálogo e Inventario
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState(''); const [prodCat, setProdCat] = useState('');
   const [prodCosto, setProdCosto] = useState(''); 
   const [prodPrecio, setProdPrecio] = useState(''); const [prodStock, setProdStock] = useState('');
   const [prodDesc, setProdDesc] = useState(''); const [prodImg, setProdImg] = useState('');
   const [prodCodigoBarras, setProdCodigoBarras] = useState('');
-  const [prodProveedor, setProdProveedor] = useState(''); // Novedad
+  const [prodProveedor, setProdProveedor] = useState('');
   const [prodDestacado, setProdDestacado] = useState(false);
   const [prodUrlProveedor, setProdUrlProveedor] = useState(''); 
   const [busquedaInventario, setBusquedaInventario] = useState('');
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
+  
+  // Novedad: Selección Masiva de Inventario
+  const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
   // Módulo Proveedores / Excel
   const [excelCargando, setExcelCargando] = useState(false);
@@ -349,7 +352,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [colNombre, setColNombre] = useState<number>(0);
   const [colCosto, setColCosto] = useState<number>(1);
   const [colMarca, setColMarca] = useState<number>(-1);
-  const [nombreProveedorExcel, setNombreProveedorExcel] = useState(''); // Novedad
+  const [nombreProveedorExcel, setNombreProveedorExcel] = useState(''); 
 
   // Finanzas
   const [finTipo, setFinTipo] = useState('ingreso'); const [finConcepto, setFinConcepto] = useState('');
@@ -440,14 +443,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if (!nombreProveedorExcel) return alert('Por favor, ingresa el nombre del proveedor para registrar de dónde viene esta lista.');
     if (!window.confirm(`¿Importar/Actualizar filas desde la hoja "${hojaActiva}"?\nLos artículos existentes solo actualizarán su costo y precio bajo el proveedor "${nombreProveedorExcel}".`)) return;
     
-    let agregados = 0; 
-    let actualizados = 0;
-    let omitidos = 0;
-    let marcaActual = 'General';
+    let agregados = 0; let actualizados = 0; let omitidos = 0; let marcaActual = 'General';
     const fechaActualizacion = new Date().toLocaleDateString();
 
     setExcelCargando(true);
-    
     try {
       let batch = writeBatch(db);
       let operacionActual = 0;
@@ -460,10 +459,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         const costoObtenido = parsePrecio(row[colCosto]);
         const marcaDetectada = colMarca >= 0 ? row[colMarca]?.toString().trim() : null;
 
-        if (marcaDetectada && isNaN(costoObtenido)) { 
-           marcaActual = marcaDetectada; 
-           continue; 
-        }
+        if (marcaDetectada && isNaN(costoObtenido)) { marcaActual = marcaDetectada; continue; }
 
         if (nombreObtenido && !isNaN(costoObtenido) && costoObtenido > 0) {
           const precioFinal = costoObtenido + (costoObtenido * (Number(config.margenGanancia) / 100));
@@ -473,37 +469,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
           if (productoExistente) {
             const docRef = doc(db, 'productos', productoExistente.id);
-            batch.update(docRef, {
-              costoProveedor: costoObtenido,
-              precio: Math.round(precioFinal),
-              proveedor: nombreProveedorExcel,
-              ultimaActualizacion: fechaActualizacion
-            });
+            batch.update(docRef, { costoProveedor: costoObtenido, precio: Math.round(precioFinal), proveedor: nombreProveedorExcel, ultimaActualizacion: fechaActualizacion });
             actualizados++;
           } else {
             const nuevoDocRef = doc(collection(db, 'productos'));
-            batch.set(nuevoDocRef, { 
-               nombre: nombreFinal, 
-               categoria: hojaActiva, 
-               costoProveedor: costoObtenido, 
-               precio: Math.round(precioFinal), 
-               stock: 0, 
-               descripcion: 'Importado de lista', 
-               fecha: serverTimestamp(), 
-               ventas: 0,
-               proveedor: nombreProveedorExcel,
-               ultimaActualizacion: fechaActualizacion
-            });
+            batch.set(nuevoDocRef, { nombre: nombreFinal, categoria: hojaActiva, costoProveedor: costoObtenido, precio: Math.round(precioFinal), stock: 0, descripcion: 'Importado de lista', fecha: serverTimestamp(), ventas: 0, proveedor: nombreProveedorExcel, ultimaActualizacion: fechaActualizacion });
             agregados++;
           }
           
           operacionActual++;
-
-          if (operacionActual >= 400) {
-             await batch.commit();
-             batch = writeBatch(db);
-             operacionActual = 0;
-          }
+          if (operacionActual >= 400) { await batch.commit(); batch = writeBatch(db); operacionActual = 0; }
         } else {
           omitidos++;
         }
@@ -511,11 +486,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
       
       if (operacionActual > 0) await batch.commit(); 
       alert(`¡Proceso Completado!\n\nNuevos Agregados: ${agregados}\nPrecios Actualizados: ${actualizados}\nOmitidos (Vacíos o sin precio): ${omitidos}`);
-    } catch (error: any) { 
-      alert(`Error en Base de Datos: ${error.message}`); 
-    } finally {
-      setExcelCargando(false); 
-      setExcelData([]); 
+    } catch (error: any) { alert(`Error en Base de Datos: ${error.message}`); } finally {
+      setExcelCargando(false); setExcelData([]); 
       const fileInput = document.getElementById('fileExcel') as HTMLInputElement;
       if(fileInput) fileInput.value = '';
     }
@@ -602,6 +574,59 @@ const DashboardTaller = ({ user }: { user: User }) => {
     let msg = `Hola! Necesito reponer para ${config.empresaNombre}:\n\n`; faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre} ${p.urlProveedor ? `(Ref: ${p.urlProveedor})` : ''}\n`; }); window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  // ==========================================
+  // SELECCIÓN MASIVA DE INVENTARIO
+  // ==========================================
+  const inventarioFiltrado = productos.filter(p => p.nombre.toLowerCase().includes(busquedaInventario.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaInventario)));
+
+  const toggleSeleccion = (id: string) => {
+    setSeleccionados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleTodos = () => {
+    if (seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0) {
+      setSeleccionados([]); // Deseleccionar todos
+    } else {
+      setSeleccionados(inventarioFiltrado.map(p => p.id)); // Seleccionar todos los filtrados
+    }
+  };
+
+  const eliminarSeleccionados = async () => {
+    if (!window.confirm(`¿Estás seguro de eliminar PERMANENTEMENTE los ${seleccionados.length} productos seleccionados?`)) return;
+    try {
+      const batch = writeBatch(db);
+      seleccionados.forEach(id => {
+        batch.delete(doc(db, 'productos', id));
+      });
+      await batch.commit();
+      setSeleccionados([]);
+      alert('Productos eliminados correctamente.');
+    } catch (error) {
+      alert('Error al eliminar productos masivamente.');
+    }
+  };
+
+  const aplicarMargenMasivo = async () => {
+    if (!window.confirm(`¿Recalcular el precio de venta de los ${seleccionados.length} productos seleccionados aplicando el margen global del ${config.margenGanancia}% sobre su Costo Proveedor?`)) return;
+    try {
+      const batch = writeBatch(db);
+      let actualizados = 0;
+      seleccionados.forEach(id => {
+        const prod = productos.find(p => p.id === id);
+        if (prod && prod.costoProveedor > 0) {
+          const nuevoPrecio = Math.round(prod.costoProveedor + (prod.costoProveedor * (Number(config.margenGanancia) / 100)));
+          batch.update(doc(db, 'productos', id), { precio: nuevoPrecio });
+          actualizados++;
+        }
+      });
+      await batch.commit();
+      setSeleccionados([]);
+      alert(`Éxito. Se recalcularon ${actualizados} precios.`);
+    } catch (error) {
+      alert('Error al actualizar precios masivamente.');
+    }
+  };
+
   const registrarMovimientoFinanzas = async (e: React.FormEvent) => {
     e.preventDefault(); await addDoc(collection(db, 'finanzas'), { tipo: finTipo, concepto: finConcepto, monto: Number(finMonto), metodoPago: finMetodo, fecha: serverTimestamp(), usuario: user.email }); setFinConcepto(''); setFinMonto(''); alert('Movimiento registrado en caja.');
   };
@@ -663,7 +688,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   const pedidosPendientesNum = pedidosWeb.filter(p => p.estadoEnvio !== 'entregado').length;
-  const inventarioFiltrado = productos.filter(p => p.nombre.toLowerCase().includes(busquedaInventario.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaInventario)));
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
@@ -781,8 +805,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <label style={{ display: 'flex', alignItems: 'center', gap: '5px', background: prodDestacado ? '#ffc107' : '#fff', padding: '5px 10px', borderRadius: '5px', border: '1px solid #ccc', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}><input type="checkbox" checked={prodDestacado} onChange={e => setProdDestacado(e.target.checked)} /> ⭐ Destacar</label>
               </div>
               <div style={{ flex: '1 1 100%', background: '#fff', padding: '10px', borderRadius: '5px', border: '1px dashed #0d6efd', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <input type="text" placeholder="Proveedor / Distribuidor" value={prodProveedor} onChange={e=>setProdProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
-                <input type="text" placeholder="URL Proveedor (Opcional)" value={prodUrlProveedor} onChange={e=>setProdUrlProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
+                <input type="text" placeholder="URL Proveedor" value={prodUrlProveedor} onChange={e=>setProdUrlProveedor(e.target.value)} style={{ flex: '1 1 100%', padding: '8px', border: '1px solid #ddd' }}/>
                 <input type="number" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ddd' }}/>
                 <button type="button" onClick={calcularPrecioVenta} style={{ background: '#198754', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', fontWeight: 'bold' }}>Markup (+{config.margenGanancia}%)</button>
               </div>
@@ -818,12 +841,40 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <button onClick={() => setEscaneandoPara('buscador')} style={{ padding: '10px', background: '#0d6efd', color: 'white', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>📷 Cámara</button>
             <button onClick={() => setBusquedaInventario('')} style={{ padding: '10px', borderRadius: '4px', border: 'none', cursor: 'pointer' }}>Limpiar</button>
           </div>
+
+          {/* BARRA DE ACCIONES MASIVAS */}
+          {seleccionados.length > 0 && (
+            <div style={{ background: '#e3f2fd', border: '2px solid #0d6efd', padding: '15px', borderRadius: '8px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <strong style={{ color: '#084298', fontSize: '16px' }}>{seleccionados.length} Productos Seleccionados</strong>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={aplicarMargenMasivo} style={{ background: '#198754', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Actualizar Precio (+{config.margenGanancia}%)</button>
+                <button onClick={eliminarSeleccionados} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Eliminar Seleccionados</button>
+                <button onClick={() => setSeleccionados([])} style={{ background: '#6c757d', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+              </div>
+            </div>
+          )}
           
           <table style={{ width: '100%', marginTop: '20px', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
-            <thead><tr style={{ background: '#0d6efd', color: 'white' }}><th style={{ padding: '10px' }}>Cód. Barras</th><th style={{ padding: '10px' }}>Repuesto & Proveedor</th><th style={{ padding: '10px' }}>Precio</th><th style={{ padding: '10px' }}>Stock</th><th style={{ padding: '10px' }}>Acciones</th></tr></thead>
+            <thead>
+              <tr style={{ background: '#0d6efd', color: 'white' }}>
+                <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>
+                  <input type="checkbox" checked={seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0} onChange={toggleTodos} />
+                </th>
+                <th style={{ padding: '10px' }}>Cód. Barras</th>
+                <th style={{ padding: '10px' }}>Repuesto</th>
+                <th style={{ padding: '10px' }}>Precio</th>
+                <th style={{ padding: '10px' }}>Stock</th>
+                <th style={{ padding: '10px' }}>Acciones</th>
+              </tr>
+            </thead>
             <tbody>
               {inventarioFiltrado.map(p => (
-                <tr key={p.id} style={{ borderBottom: '1px solid #ddd', background: p.stock < 3 ? '#fff3cd' : 'white' }}>
+                <tr key={p.id} style={{ borderBottom: '1px solid #ddd', background: seleccionados.includes(p.id) ? '#e3f2fd' : (p.stock < 3 ? '#fff3cd' : 'white') }}>
+                  <td style={{ padding: '10px', textAlign: 'center' }}>
+                    <input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} />
+                  </td>
                   <td style={{ padding: '10px', fontFamily: 'monospace' }}>{p.codigoBarras || '-'}</td>
                   <td style={{ padding: '10px' }}>
                     <b>{p.nombre}</b> {p.destacado && <span style={{ fontSize: '12px' }}>⭐</span>}
@@ -831,7 +882,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       {p.proveedor && <span>🏢 Prov: <b>{p.proveedor}</b> | </span>}
                       {p.ultimaActualizacion && <span>📅 Act: {p.ultimaActualizacion}</span>}
                     </div>
-                    {p.urlProveedor && <div style={{ fontSize: '11px', marginTop: '4px' }}><a href={p.urlProveedor} target="_blank" rel="noreferrer" style={{ color: '#0d6efd' }}>🔗 Ver Prov.</a> {p.costoProveedor && `(Costo: $${p.costoProveedor})`}</div>}
                   </td>
                   <td style={{ padding: '10px', fontWeight: 'bold' }}>${p.precio}</td>
                   <td style={{ padding: '10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><button onClick={() => actualizarStock(p.id, p.stock - 1)} style={{ padding: '2px 8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}>-</button><span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{p.stock}</span><button onClick={() => actualizarStock(p.id, p.stock + 1)} style={{ padding: '2px 8px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}>+</button></div></td>
