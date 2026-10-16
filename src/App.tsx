@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO (SELECCIÓN MASIVA INVENTARIO)
+// 4. PANEL ERP AVANZADO 
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -319,7 +319,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [productos, setProductos] = useState<any[]>([]);
   const [pedidosWeb, setPedidosWeb] = useState<any[]>([]); 
   const [movimientosFinanzas, setMovimientosFinanzas] = useState<any[]>([]); 
-  const [pestaña, setPestaña] = useState('catalogo'); 
+  const [pestaña, setPestaña] = useState('pedidos'); 
 
   // CRM Taller
   const [cliNombre, setCliNombre] = useState(''); const [cliTel, setCliTel] = useState('');
@@ -340,8 +340,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [prodUrlProveedor, setProdUrlProveedor] = useState(''); 
   const [busquedaInventario, setBusquedaInventario] = useState('');
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
-  
-  // Novedad: Selección Masiva de Inventario
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
   // Módulo Proveedores / Excel
@@ -360,14 +358,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [filtroTiempo, setFiltroTiempo] = useState('todos'); const [filtroTipoLista, setFiltroTipoLista] = useState('todos'); const [filtroMetodoLista, setFiltroMetodoLista] = useState('todos');
   const [conf, setConf] = useState(CONFIG_DEFAULT);
 
-  // Inicializar librerías externas
   useEffect(() => {
     if (!(window as any).XLSX) {
       const script = document.createElement('script'); script.src = "https://unpkg.com/xlsx/dist/xlsx.full.min.js"; script.async = true; document.body.appendChild(script);
     }
   }, []);
 
-  // Carga de colecciones Firestore
   useEffect(() => {
     const unsubConf = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => { if (docSnap.exists()) { const data = docSnap.data(); setConfig({ ...CONFIG_DEFAULT, ...data }); setConf({ ...CONFIG_DEFAULT, ...data }); } });
     const unsubOrd = onSnapshot(query(collection(db, 'ordenes_taller'), where('idTiendaOrigen', '==', user.uid)), (snap) => setOrdenes(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a:any, b:any) => b.fechaIngreso?.seconds - a.fechaIngreso?.seconds)));
@@ -377,7 +373,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); };
   }, [user.uid]);
 
-  // Lógica del Escáner (Cámara)
   useEffect(() => {
     if (!escaneandoPara) return;
     const inicializarEscaner = () => {
@@ -559,12 +554,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const calcularPrecioVenta = () => { if (prodCosto) setProdPrecio((Number(prodCosto) + (Number(prodCosto) * (Number(config.margenGanancia) / 100))).toFixed(0)); };
   const actualizarStock = async (id: string, nuevoStock: number) => { if (nuevoStock >= 0) await updateDoc(doc(db, 'productos', id), { stock: nuevoStock }); };
+  
   const registrarVentaDirecta = async (p: any) => { 
     if (p.stock <= 0) return alert('Sin stock disponible');
     await updateDoc(doc(db, 'productos', p.id), { stock: p.stock - 1, ventas: (p.ventas || 0) + 1 }); 
     await addDoc(collection(db, 'finanzas'), { tipo: 'ingreso', concepto: `Venta Mostrador: ${p.nombre}`, monto: Number(p.precio), metodoPago: 'efectivo', fecha: serverTimestamp(), usuario: user.email });
     alert('Venta realizada y cobro registrado en caja (Efectivo).');
   };
+
   const cargarProductoParaEdicion = (p: any) => {
     setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || ''); setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || ''); setProdStock(p.stock?.toString() || ''); setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || ''); setProdCodigoBarras(p.codigoBarras || ''); setProdProveedor(p.proveedor || ''); setProdDestacado(p.destacado || false); setProdUrlProveedor(p.urlProveedor || ''); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -574,9 +571,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     let msg = `Hola! Necesito reponer para ${config.empresaNombre}:\n\n`; faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre} ${p.urlProveedor ? `(Ref: ${p.urlProveedor})` : ''}\n`; }); window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // ==========================================
-  // SELECCIÓN MASIVA DE INVENTARIO
-  // ==========================================
   const inventarioFiltrado = productos.filter(p => p.nombre.toLowerCase().includes(busquedaInventario.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaInventario)));
 
   const toggleSeleccion = (id: string) => {
@@ -585,9 +579,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const toggleTodos = () => {
     if (seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0) {
-      setSeleccionados([]); // Deseleccionar todos
+      setSeleccionados([]); 
     } else {
-      setSeleccionados(inventarioFiltrado.map(p => p.id)); // Seleccionar todos los filtrados
+      setSeleccionados(inventarioFiltrado.map(p => p.id)); 
     }
   };
 
@@ -625,6 +619,26 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (error) {
       alert('Error al actualizar precios masivamente.');
     }
+  };
+
+  // Función agregada: Comunicación automática de pago web a finanzas
+  const cambiarEstadoPagoPedido = async (pedido: any, nuevoEstado: string) => {
+    if (nuevoEstado === 'pagado' && pedido.estadoPago !== 'pagado') {
+      const confirmar = window.confirm(`¿Registrar el ingreso de $${pedido.total} en Finanzas por este pedido web?`);
+      if (confirmar) {
+        const metodo = prompt('Método de pago (efectivo, transferencia, mercadopago, tarjeta):', 'mercadopago') || 'mercadopago';
+        await addDoc(collection(db, 'finanzas'), { 
+          tipo: 'ingreso', 
+          concepto: `Cobro Web #${pedido.id.slice(-6).toUpperCase()} - ${pedido.cliente.nombre}`, 
+          monto: Number(pedido.total), 
+          metodoPago: metodo.toLowerCase(), 
+          fecha: serverTimestamp(), 
+          usuario: user.email 
+        });
+        alert('Ingreso registrado automáticamente en Finanzas.');
+      }
+    }
+    await updateDoc(doc(db, 'pedidos_ecommerce', pedido.id), { estadoPago: nuevoEstado });
   };
 
   const registrarMovimientoFinanzas = async (e: React.FormEvent) => {
@@ -946,7 +960,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <div key={pedido.id} style={{ background: 'white', border: `2px solid ${pedido.estadoEnvio === 'entregado' ? '#e2e3e5' : '#e83e8c'}`, borderRadius: '8px', padding: '15px', display: 'flex', flexWrap: 'wrap', gap: '20px', opacity: pedido.estadoEnvio === 'entregado' ? 0.7 : 1 }}>
                 <div style={{ flex: '1 1 250px' }}><h4 style={{ margin: '0 0 10px 0' }}>Orden #{pedido.id.slice(-6).toUpperCase()}</h4><p style={{ margin: '0', fontSize: '14px' }}><b>Cliente:</b> {pedido.cliente.nombre}</p><p style={{ margin: '0', fontSize: '14px' }}><b>Teléfono:</b> {pedido.cliente.telefono}</p><p style={{ margin: '0', fontSize: '14px' }}><b>Envío:</b> {pedido.cliente.metodoEnvio === 'retiro' ? 'Retiro en Local' : `Envío Domicilio ($${pedido.costoEnvio})`}</p>{pedido.cliente.metodoEnvio === 'domicilio' && <p style={{ margin: '0', fontSize: '14px' }}><b>Dirección:</b> {pedido.cliente.direccion}</p>}</div>
                 <div style={{ flex: '1 1 300px', background: '#f8f9fa', padding: '10px', borderRadius: '5px' }}><h5 style={{ margin: '0 0 10px 0' }}>Artículos:</h5><ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px' }}>{pedido.items.map((item:any) => <li key={item.idBaseDatos}>{item.cantidad}x {item.nombre}</li>)}</ul><h4 style={{ margin: '10px 0 0 0', color: '#28a745', borderTop: '1px solid #ddd', paddingTop: '10px' }}>Total a Cobrar: ${pedido.total}</h4></div>
-                <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '10px' }}><select value={pedido.estadoPago} onChange={e=>updateDoc(doc(db, 'pedidos_ecommerce', pedido.id), { estadoPago: e.target.value })} style={{ padding: '8px', background: pedido.estadoPago === 'pagado' ? '#d4edda' : '#fff3cd', border: '1px solid #ccc', borderRadius: '4px' }}><option value="pendiente">Pendiente de Pago</option><option value="pagado">Pagado</option></select><select value={pedido.estadoEnvio} onChange={e=>updateDoc(doc(db, 'pedidos_ecommerce', pedido.id), { estadoEnvio: e.target.value })} style={{ padding: '8px', background: pedido.estadoEnvio === 'entregado' ? '#d4edda' : pedido.estadoEnvio === 'enviado' ? '#cce5ff' : '#fff', border: '1px solid #ccc', borderRadius: '4px' }}><option value="preparacion">En Preparación</option><option value="enviado">Enviado / Listo</option><option value="entregado">Entregado</option></select><button onClick={async () => { if(window.confirm('¿Anular?')) await deleteDoc(doc(db, 'pedidos_ecommerce', pedido.id)) }} style={{ padding: '8px', background: 'transparent', color: 'red', border: 'none', textDecoration: 'underline', cursor: 'pointer' }}>Anular Pedido</button></div>
+                <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '10px' }}><select value={pedido.estadoPago} onChange={e=>cambiarEstadoPagoPedido(pedido, e.target.value)} style={{ padding: '8px', background: pedido.estadoPago === 'pagado' ? '#d4edda' : '#fff3cd', border: '1px solid #ccc', borderRadius: '4px' }}><option value="pendiente">Pendiente de Pago</option><option value="pagado">Pagado</option></select><select value={pedido.estadoEnvio} onChange={e=>updateDoc(doc(db, 'pedidos_ecommerce', pedido.id), { estadoEnvio: e.target.value })} style={{ padding: '8px', background: pedido.estadoEnvio === 'entregado' ? '#d4edda' : pedido.estadoEnvio === 'enviado' ? '#cce5ff' : '#fff', border: '1px solid #ccc', borderRadius: '4px' }}><option value="preparacion">En Preparación</option><option value="enviado">Enviado / Listo</option><option value="entregado">Entregado</option></select><button onClick={async () => { if(window.confirm('¿Anular?')) await deleteDoc(doc(db, 'pedidos_ecommerce', pedido.id)) }} style={{ padding: '8px', background: 'transparent', color: 'red', border: 'none', textDecoration: 'underline', cursor: 'pointer' }}>Anular Pedido</button></div>
               </div>
             ))}
             {pedidosWeb.length === 0 && <p style={{ fontStyle: 'italic', color: '#999' }}>No hay pedidos registrados.</p>}
