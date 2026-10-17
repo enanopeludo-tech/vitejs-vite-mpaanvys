@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO (Facturación y Despliegue)
+// 4. PANEL ERP AVANZADO (Corrección TypeScript)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -357,7 +357,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [finMonto, setFinMonto] = useState(''); const [finMetodo, setFinMetodo] = useState('efectivo');
   const [filtroTiempo, setFiltroTiempo] = useState('todos'); const [filtroTipoLista, setFiltroTipoLista] = useState('todos'); const [filtroMetodoLista, setFiltroMetodoLista] = useState('todos');
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
-  const [facturaEdit, setFacturaEdit] = useState<any>({});
   const [conf, setConf] = useState(CONFIG_DEFAULT);
 
   useEffect(() => {
@@ -560,8 +559,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const registrarVentaDirecta = async (p: any) => { 
     if (p.stock <= 0) return alert('Sin stock disponible');
     await updateDoc(doc(db, 'productos', p.id), { stock: p.stock - 1, ventas: (p.ventas || 0) + 1 }); 
-    
-    // Novedad: Guardar el ítem en la venta directa
     await addDoc(collection(db, 'finanzas'), { 
       tipo: 'ingreso', 
       concepto: `Venta Mostrador: ${p.nombre}`, 
@@ -616,7 +613,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (error) { alert('Error al actualizar precios masivamente.'); }
   };
 
-  // Novedad: Lógica Web ➔ Caja
   const cambiarEstadoPagoPedido = async (pedido: any, nuevoEstado: string) => {
     if (nuevoEstado === 'pagado' && pedido.estadoPago !== 'pagado') {
       const confirmar = window.confirm(`¿Registrar el ingreso de $${pedido.total} en Finanzas por este pedido web?`);
@@ -715,7 +711,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #333', paddingBottom: '10px', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <h2 style={{ margin: 0 }}>ERP Panel - {config.empresaNombre}</h2>
+        <h2 style={{ margin: '0 }}>ERP Panel - {config.empresaNombre}</h2>
         <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
           <button onClick={() => setPestaña('proveedores')} style={{ padding: '8px 15px', background: pestaña === 'proveedores' ? '#6f42c1' : '#e2d9f3', color: pestaña === 'proveedores' ? 'white' : '#6f42c1', border: '1px solid #6f42c1', cursor: 'pointer', borderRadius: '4px', fontWeight: 'bold' }}>🚚 Proveedores</button>
           <button onClick={() => setPestaña('taller')} style={{ padding: '8px 15px', background: pestaña === 'taller' ? '#333' : '#ddd', color: pestaña === 'taller' ? 'white' : 'black', border: 'none', cursor: 'pointer', borderRadius: '4px' }}>🛠️ Taller CRM</button>
@@ -851,9 +847,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <button onClick={() => setBusquedaInventario('')} style={{ padding: '10px', borderRadius: '4px', border: 'none', cursor: 'pointer' }}>Limpiar</button>
           </div>
 
+          {/* BARRA DE ACCIONES MASIVAS */}
           {seleccionados.length > 0 && (
             <div style={{ background: '#e3f2fd', border: '2px solid #0d6efd', padding: '15px', borderRadius: '8px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div><strong style={{ color: '#084298', fontSize: '16px' }}>{seleccionados.length} Productos Seleccionados</strong></div>
+              <div>
+                <strong style={{ color: '#084298', fontSize: '16px' }}>{seleccionados.length} Productos Seleccionados</strong>
+              </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={aplicarMargenMasivo} style={{ background: '#198754', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Actualizar Precio (+{config.margenGanancia}%)</button>
                 <button onClick={eliminarSeleccionados} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Eliminar Seleccionados</button>
@@ -865,7 +864,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <table style={{ width: '100%', marginTop: '20px', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
             <thead>
               <tr style={{ background: '#0d6efd', color: 'white' }}>
-                <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}><input type="checkbox" checked={seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0} onChange={toggleTodos} /></th>
+                <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>
+                  <input type="checkbox" checked={seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0} onChange={toggleTodos} />
+                </th>
                 <th style={{ padding: '10px' }}>Cód. Barras</th>
                 <th style={{ padding: '10px' }}>Repuesto</th>
                 <th style={{ padding: '10px' }}>Precio</th>
@@ -876,7 +877,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <tbody>
               {inventarioFiltrado.map(p => (
                 <tr key={p.id} style={{ borderBottom: '1px solid #ddd', background: seleccionados.includes(p.id) ? '#e3f2fd' : (p.stock < 3 ? '#fff3cd' : 'white') }}>
-                  <td style={{ padding: '10px', textAlign: 'center' }}><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
+                  <td style={{ padding: '10px', textAlign: 'center' }}>
+                    <input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} />
+                  </td>
                   <td style={{ padding: '10px', fontFamily: 'monospace' }}>{p.codigoBarras || '-'}</td>
                   <td style={{ padding: '10px' }}>
                     <b>{p.nombre}</b> {p.destacado && <span style={{ fontSize: '12px' }}>⭐</span>}
