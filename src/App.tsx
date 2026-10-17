@@ -11,7 +11,7 @@ const CONFIG_DEFAULT = {
   empresaNombre: "WALABBA TECNO",
   logoUrl: "",
   ticketEncabezado: "Av. 42 3998\nWhatsApp: 2262619735",
-  ticketLeyenda: "Use el código en nuestra web para seguir su reparación. Pasados los 90 días no nos responsabilizamos por el equipo. Dejar patrón/clave es obligatorio para testear.",
+  ticketLeyenda: "Use el código en nuestra web para seguir su reparación. Pasados los 90 días no nos responsabilizamos por el equipo.",
   margenGanancia: 30,
   compraMinima: 0,
   envioLocalCosto: 0,
@@ -311,7 +311,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP AVANZADO 
+// 4. PANEL ERP AVANZADO (Facturación y Despliegue)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -319,7 +319,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [productos, setProductos] = useState<any[]>([]);
   const [pedidosWeb, setPedidosWeb] = useState<any[]>([]); 
   const [movimientosFinanzas, setMovimientosFinanzas] = useState<any[]>([]); 
-  const [pestaña, setPestaña] = useState('pedidos'); 
+  const [pestaña, setPestaña] = useState('finanzas'); 
 
   // CRM Taller
   const [cliNombre, setCliNombre] = useState(''); const [cliTel, setCliTel] = useState('');
@@ -356,6 +356,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [finTipo, setFinTipo] = useState('ingreso'); const [finConcepto, setFinConcepto] = useState('');
   const [finMonto, setFinMonto] = useState(''); const [finMetodo, setFinMetodo] = useState('efectivo');
   const [filtroTiempo, setFiltroTiempo] = useState('todos'); const [filtroTipoLista, setFiltroTipoLista] = useState('todos'); const [filtroMetodoLista, setFiltroMetodoLista] = useState('todos');
+  const [expandidoId, setExpandidoId] = useState<string | null>(null);
+  const [facturaEdit, setFacturaEdit] = useState<any>({});
   const [conf, setConf] = useState(CONFIG_DEFAULT);
 
   useEffect(() => {
@@ -558,13 +560,24 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const registrarVentaDirecta = async (p: any) => { 
     if (p.stock <= 0) return alert('Sin stock disponible');
     await updateDoc(doc(db, 'productos', p.id), { stock: p.stock - 1, ventas: (p.ventas || 0) + 1 }); 
-    await addDoc(collection(db, 'finanzas'), { tipo: 'ingreso', concepto: `Venta Mostrador: ${p.nombre}`, monto: Number(p.precio), metodoPago: 'efectivo', fecha: serverTimestamp(), usuario: user.email });
+    
+    // Novedad: Guardar el ítem en la venta directa
+    await addDoc(collection(db, 'finanzas'), { 
+      tipo: 'ingreso', 
+      concepto: `Venta Mostrador: ${p.nombre}`, 
+      monto: Number(p.precio), 
+      metodoPago: 'efectivo', 
+      fecha: serverTimestamp(), 
+      usuario: user.email,
+      items: [{ nombre: p.nombre, cantidad: 1, precio: p.precio }]
+    });
     alert('Venta realizada y cobro registrado en caja (Efectivo).');
   };
 
   const cargarProductoParaEdicion = (p: any) => {
     setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || ''); setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || ''); setProdStock(p.stock?.toString() || ''); setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || ''); setProdCodigoBarras(p.codigoBarras || ''); setProdProveedor(p.proveedor || ''); setProdDestacado(p.destacado || false); setProdUrlProveedor(p.urlProveedor || ''); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+  
   const pedirFaltantes = () => {
     const faltantes = productos.filter(p => p.stock <= 3);
     if (faltantes.length === 0) return alert('No hay artículos con stock crítico.');
@@ -573,55 +586,37 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const inventarioFiltrado = productos.filter(p => p.nombre.toLowerCase().includes(busquedaInventario.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaInventario)));
 
-  const toggleSeleccion = (id: string) => {
-    setSeleccionados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
+  const toggleSeleccion = (id: string) => { setSeleccionados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
 
   const toggleTodos = () => {
-    if (seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0) {
-      setSeleccionados([]); 
-    } else {
-      setSeleccionados(inventarioFiltrado.map(p => p.id)); 
-    }
+    if (seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0) setSeleccionados([]); 
+    else setSeleccionados(inventarioFiltrado.map(p => p.id)); 
   };
 
   const eliminarSeleccionados = async () => {
     if (!window.confirm(`¿Estás seguro de eliminar PERMANENTEMENTE los ${seleccionados.length} productos seleccionados?`)) return;
     try {
-      const batch = writeBatch(db);
-      seleccionados.forEach(id => {
-        batch.delete(doc(db, 'productos', id));
-      });
-      await batch.commit();
-      setSeleccionados([]);
-      alert('Productos eliminados correctamente.');
-    } catch (error) {
-      alert('Error al eliminar productos masivamente.');
-    }
+      const batch = writeBatch(db); seleccionados.forEach(id => { batch.delete(doc(db, 'productos', id)); });
+      await batch.commit(); setSeleccionados([]); alert('Productos eliminados correctamente.');
+    } catch (error) { alert('Error al eliminar productos masivamente.'); }
   };
 
   const aplicarMargenMasivo = async () => {
     if (!window.confirm(`¿Recalcular el precio de venta de los ${seleccionados.length} productos seleccionados aplicando el margen global del ${config.margenGanancia}% sobre su Costo Proveedor?`)) return;
     try {
-      const batch = writeBatch(db);
-      let actualizados = 0;
+      const batch = writeBatch(db); let actualizados = 0;
       seleccionados.forEach(id => {
         const prod = productos.find(p => p.id === id);
         if (prod && prod.costoProveedor > 0) {
           const nuevoPrecio = Math.round(prod.costoProveedor + (prod.costoProveedor * (Number(config.margenGanancia) / 100)));
-          batch.update(doc(db, 'productos', id), { precio: nuevoPrecio });
-          actualizados++;
+          batch.update(doc(db, 'productos', id), { precio: nuevoPrecio }); actualizados++;
         }
       });
-      await batch.commit();
-      setSeleccionados([]);
-      alert(`Éxito. Se recalcularon ${actualizados} precios.`);
-    } catch (error) {
-      alert('Error al actualizar precios masivamente.');
-    }
+      await batch.commit(); setSeleccionados([]); alert(`Éxito. Se recalcularon ${actualizados} precios.`);
+    } catch (error) { alert('Error al actualizar precios masivamente.'); }
   };
 
-  // Función agregada: Comunicación automática de pago web a finanzas
+  // Novedad: Lógica Web ➔ Caja
   const cambiarEstadoPagoPedido = async (pedido: any, nuevoEstado: string) => {
     if (nuevoEstado === 'pagado' && pedido.estadoPago !== 'pagado') {
       const confirmar = window.confirm(`¿Registrar el ingreso de $${pedido.total} en Finanzas por este pedido web?`);
@@ -629,11 +624,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
         const metodo = prompt('Método de pago (efectivo, transferencia, mercadopago, tarjeta):', 'mercadopago') || 'mercadopago';
         await addDoc(collection(db, 'finanzas'), { 
           tipo: 'ingreso', 
-          concepto: `Cobro Web #${pedido.id.slice(-6).toUpperCase()} - ${pedido.cliente.nombre}`, 
+          concepto: `Cobro Web #${pedido.id.slice(-6).toUpperCase()} - ${pedido.cliente?.nombre || 'Cliente'}`, 
           monto: Number(pedido.total), 
           metodoPago: metodo.toLowerCase(), 
           fecha: serverTimestamp(), 
-          usuario: user.email 
+          usuario: user.email,
+          items: pedido.items || [],
+          cliente: pedido.cliente || {}
         });
         alert('Ingreso registrado automáticamente en Finanzas.');
       }
@@ -735,12 +732,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #6f42c1', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ margin: 0, color: '#6f42c1' }}>📥 Importador Masivo de Listas de Precios (Excel)</h3>
             <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>Subí el archivo <b>.xlsx</b>. El sistema verificará tu base de datos: <b>creará</b> los artículos nuevos y <b>actualizará el precio</b> de los que ya existen, sin duplicarlos.</p>
-            
             <div style={{ background: '#f0e6ff', padding: '15px', borderRadius: '8px', border: '1px dashed #6f42c1' }}>
               <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#6f42c1' }}>Nombre del Proveedor (Para identificar la actualización):</label>
               <input type="text" placeholder="Ej: Celulares Mayorista BA" value={nombreProveedorExcel} onChange={e=>setNombreProveedorExcel(e.target.value)} style={{ width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}/>
             </div>
-
             <input type="file" id="fileExcel" accept=".xlsx, .xls" onChange={procesarArchivoExcel} style={{ padding: '10px', border: '2px dashed #6f42c1', borderRadius: '8px', cursor: 'pointer' }} />
             {excelCargando && <p style={{ color: '#0d6efd', fontWeight: 'bold' }}>Procesando archivo...</p>}
             
@@ -856,12 +851,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <button onClick={() => setBusquedaInventario('')} style={{ padding: '10px', borderRadius: '4px', border: 'none', cursor: 'pointer' }}>Limpiar</button>
           </div>
 
-          {/* BARRA DE ACCIONES MASIVAS */}
           {seleccionados.length > 0 && (
             <div style={{ background: '#e3f2fd', border: '2px solid #0d6efd', padding: '15px', borderRadius: '8px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong style={{ color: '#084298', fontSize: '16px' }}>{seleccionados.length} Productos Seleccionados</strong>
-              </div>
+              <div><strong style={{ color: '#084298', fontSize: '16px' }}>{seleccionados.length} Productos Seleccionados</strong></div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={aplicarMargenMasivo} style={{ background: '#198754', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Actualizar Precio (+{config.margenGanancia}%)</button>
                 <button onClick={eliminarSeleccionados} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Eliminar Seleccionados</button>
@@ -873,9 +865,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <table style={{ width: '100%', marginTop: '20px', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
             <thead>
               <tr style={{ background: '#0d6efd', color: 'white' }}>
-                <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>
-                  <input type="checkbox" checked={seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0} onChange={toggleTodos} />
-                </th>
+                <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}><input type="checkbox" checked={seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0} onChange={toggleTodos} /></th>
                 <th style={{ padding: '10px' }}>Cód. Barras</th>
                 <th style={{ padding: '10px' }}>Repuesto</th>
                 <th style={{ padding: '10px' }}>Precio</th>
@@ -886,9 +876,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <tbody>
               {inventarioFiltrado.map(p => (
                 <tr key={p.id} style={{ borderBottom: '1px solid #ddd', background: seleccionados.includes(p.id) ? '#e3f2fd' : (p.stock < 3 ? '#fff3cd' : 'white') }}>
-                  <td style={{ padding: '10px', textAlign: 'center' }}>
-                    <input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} />
-                  </td>
+                  <td style={{ padding: '10px', textAlign: 'center' }}><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
                   <td style={{ padding: '10px', fontFamily: 'monospace' }}>{p.codigoBarras || '-'}</td>
                   <td style={{ padding: '10px' }}>
                     <b>{p.nombre}</b> {p.destacado && <span style={{ fontSize: '12px' }}>⭐</span>}
@@ -911,6 +899,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
+      {/* SECCIÓN: FINANZAS Y FACTURACIÓN DESPLEGABLE */}
       {pestaña === 'finanzas' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -944,7 +933,66 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <thead><tr style={{ background: '#f8f9fa', borderBottom: '2px solid #ddd' }}><th style={{ padding: '10px', textAlign: 'left' }}>Fecha</th><th style={{ padding: '10px', textAlign: 'left' }}>Concepto</th><th style={{ padding: '10px', textAlign: 'left' }}>Método</th><th style={{ padding: '10px', textAlign: 'right' }}>Monto</th><th style={{ padding: '10px', textAlign: 'center' }}>Acción</th></tr></thead>
                 <tbody>
                   {movimientosFiltrados.map(m => (
-                    <tr key={m.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>{m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td><td style={{ padding: '10px' }}>{m.concepto}</td><td style={{ padding: '10px', textTransform: 'capitalize' }}>{m.metodoPago}</td><td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: m.tipo === 'ingreso' ? '#28a745' : '#dc3545' }}>{m.tipo === 'ingreso' ? '+' : '-'}${m.monto}</td><td style={{ padding: '10px', textAlign: 'center' }}><button onClick={async () => { if(window.confirm('¿Eliminar?')) await deleteDoc(doc(db, 'finanzas', m.id)) }} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer' }}>🗑️</button></td></tr>
+                    <React.Fragment key={m.id}>
+                      <tr style={{ borderBottom: expandidoId === m.id ? 'none' : '1px solid #eee', background: expandidoId === m.id ? '#f0f8ff' : 'transparent' }}>
+                        <td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>{m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td>
+                        <td style={{ padding: '10px' }}>
+                          {m.tipo === 'ingreso' && (m.items?.length > 0 || m.concepto.includes('Web') || m.concepto.includes('Mostrador')) && (
+                            <button onClick={() => setExpandidoId(expandidoId === m.id ? null : m.id)} style={{ marginRight: '8px', cursor: 'pointer', border: 'none', background: '#0d6efd', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {expandidoId === m.id ? '▼' : '▶'}
+                            </button>
+                          )}
+                          {m.concepto}
+                        </td>
+                        <td style={{ padding: '10px', textTransform: 'capitalize' }}>{m.metodoPago}</td>
+                        <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: m.tipo === 'ingreso' ? '#28a745' : '#dc3545' }}>{m.tipo === 'ingreso' ? '+' : '-'}${m.monto}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}><button onClick={async () => { if(window.confirm('¿Eliminar?')) await deleteDoc(doc(db, 'finanzas', m.id)) }} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer' }}>🗑️</button></td>
+                      </tr>
+                      {/* VISTA DESPLEGADA DE VENTA Y FACTURACIÓN */}
+                      {expandidoId === m.id && (
+                        <tr style={{ background: '#f0f8ff', borderBottom: '1px solid #ccc' }}>
+                          <td colSpan={5} style={{ padding: '15px 30px' }}>
+                            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                              <div style={{ flex: 1, minWidth: '250px', background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #b6d4fe' }}>
+                                <h5 style={{ margin: '0 0 10px 0', color: '#084298' }}>📦 Detalle de Artículos</h5>
+                                {m.items && m.items.length > 0 ? (
+                                  <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px' }}>
+                                    {m.items.map((it:any, idx:number) => <li key={idx}><b>{it.cantidad || 1}x</b> {it.nombre} <span style={{color: '#666'}}>(${it.precio})</span></li>)}
+                                  </ul>
+                                ) : <p style={{ margin: 0, fontSize: '12px', color: '#888', fontStyle: 'italic' }}>Artículos no especificados.</p>}
+                              </div>
+                              <div style={{ flex: 1, minWidth: '250px', background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #b6d4fe' }}>
+                                <h5 style={{ margin: '0 0 10px 0', color: '#084298' }}>📄 Datos de Facturación</h5>
+                                {m.factura ? (
+                                  <div style={{ fontSize: '13px' }}>
+                                    <p style={{ margin: '2px 0' }}><b>Tipo:</b> Factura {m.factura.tipo}</p>
+                                    <p style={{ margin: '2px 0' }}><b>Número:</b> {m.factura.numero}</p>
+                                    <p style={{ margin: '2px 0' }}><b>CUIT/DNI:</b> {m.factura.cuit}</p>
+                                    <button onClick={() => updateDoc(doc(db, 'finanzas', m.id), { factura: null })} style={{ marginTop: '10px', fontSize: '11px', background: '#dc3545', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>Borrar Datos</button>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                      <select id={`fac-tipo-${m.id}`} style={{ padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}><option>A</option><option>B</option><option>C</option><option>Ticket</option></select>
+                                      <input id={`fac-num-${m.id}`} type="text" placeholder="Nº Comprobante" style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }} />
+                                    </div>
+                                    <input id={`fac-cuit-${m.id}`} type="text" placeholder="CUIT / DNI Cliente" style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }} />
+                                    <button onClick={async () => {
+                                      const tipo = (document.getElementById(`fac-tipo-${m.id}`) as HTMLSelectElement).value;
+                                      const numero = (document.getElementById(`fac-num-${m.id}`) as HTMLInputElement).value;
+                                      const cuit = (document.getElementById(`fac-cuit-${m.id}`) as HTMLInputElement).value;
+                                      if(!numero && !cuit) return alert('Completa un dato para guardar');
+                                      await updateDoc(doc(db, 'finanzas', m.id), { factura: { tipo, numero, cuit } });
+                                      alert('Facturación asociada a la venta.');
+                                    }} style={{ background: '#0d6efd', color: 'white', border: 'none', padding: '6px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Asociar Factura</button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -953,6 +1001,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
+      {/* SECCIÓN: PEDIDOS WEB AUTOMATIZADOS */}
       {pestaña === 'pedidos' && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -968,6 +1017,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
+      {/* SECCIÓN: CONFIGURACIÓN */}
       {pestaña === 'configuracion' && (
         <div style={{ marginTop: '20px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           <form onSubmit={guardarConfiguracion} style={{ flex: '1 1 100%', background: 'white', padding: '30px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '25px' }}>
