@@ -223,7 +223,6 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     return () => { unsubConfig(); unsubProd(); unsubTalleres(); };
   }, []);
 
-  // Detectar si el usuario logueado pertenece a un Taller Asociado B2B con descuento especial
   const tallerAsociado = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
   const porcentajeDescuentoGremio = tallerAsociado 
     ? (tallerAsociado.nivel === 'Oro' ? Number(config.descuentoGremioOro || 18) : Number(config.descuentoGremioBronce || 10))
@@ -274,7 +273,6 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
         estadoEnvio: 'preparacion', fecha: serverTimestamp(),
       });
 
-      // Si el taller asociado pidió en Cuenta Corriente, sumamos a su deuda automáticamente
       if (formCheckout.metodoPago === 'cta_cte' && tallerAsociado) {
         await updateDoc(doc(db, 'talleres_gremio', tallerAsociado.id), {
           saldoDeudor: Number(tallerAsociado.saldoDeudor || 0) + totalFinal
@@ -525,7 +523,7 @@ const LoginAdmin = () => {
 };
 
 // ========================================================
-// 4. PANEL ERP INDUSTRIAL REORGANIZADO (SIDEBAR + 9 MÓDULOS)
+// 4. PANEL ERP INDUSTRIAL REORGANIZADO (SIDEBAR + 11 MÓDULOS)
 // ========================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -546,7 +544,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   // --- CRM Taller & Recepción ---
   const [cliNombre, setCliNombre] = useState(''); const [cliTel, setCliTel] = useState(''); const [cliDni, setCliDni] = useState('');
-  const [tallerOrigenOrden, setTallerOrigenOrden] = useState('Mostrador Propio'); // Permite asignar orden a un Taller Gremio
+  const [tallerOrigenOrden, setTallerOrigenOrden] = useState('Mostrador Propio');
   const [marca, setMarca] = useState(''); const [modelo, setModelo] = useState('');
   const [falla, setFalla] = useState(''); const [tecnico, setTecnico] = useState('');
   const [imei, setImei] = useState(''); const [contrasena, setContrasena] = useState('');
@@ -843,7 +841,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     alert(`⚡ Orden generada con éxito. Código: #${cod}`);
   };
 
-  // Imputar un repuesto del Pañol a una Orden de Taller (Descuenta stock y suma el costo a la orden)
   const imputarRepuestoAOrden = async (orden: any) => {
     const busquedaRep = prompt('Escribe parte del nombre del repuesto usado (Ej: A52, Pin, Modulo):');
     if (!busquedaRep) return;
@@ -874,7 +871,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     }
     if (nuevoEstado === 'entregado' && orden.costoReparacion) {
       const saldoRestante = Math.max(0, Number(orden.costoReparacion) - Number(orden.seña || 0));
-      // Si la orden vino de otro Taller Asociado B2B, ofrecemos cargarla a su Cuenta Corriente
       const tallerColega = talleresGremio.find(t => t.nombre === orden.tallerOrigen);
       if (tallerColega && saldoRestante > 0) {
         if (window.confirm(`Esta orden pertenece al taller asociado "${tallerColega.nombre}". ¿Cargar el saldo de $${saldoRestante} a su Cuenta Corriente B2B?`)) {
@@ -1573,7 +1569,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ VINCULAR NUEVO TALLER</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div><label className="label-neon">Nombre del Taller</label><input type="text" className="neon-input" required value={tallerNom} onChange={e=>setTallerNom(e.target.value)} placeholder="Ej: Servicio Técnico Sur" /></div>
-                  <div><label className="label-neon">Técnico / Responsable</label><input type="text" className="neon-input" required value={tallerEncargado} onChange={e=>setTallerEncargado(e.target.value)} /></div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1 }}><label className="label-neon">Responsable</label><input type="text" className="neon-input" required value={tallerEncargado} onChange={e=>setTallerEncargado(e.target.value)} /></div>
+                    <div style={{ flex: 1 }}><label className="label-neon">Localidad / Ciudad</label><input type="text" className="neon-input" required value={tallerCiudad} onChange={e=>setTallerCiudad(e.target.value)} /></div>
+                  </div>
                   <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={tallerTel} onChange={e=>setTallerTel(e.target.value)} /></div>
                   <div><label className="label-neon">Email (Para Login en Tienda B2B)</label><input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="taller@correo.com" /></div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1595,13 +1594,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
               <div className="neon-card" style={{ flex: '2 1 580px', overflowX: 'auto' }}>
                 <table className="neon-table">
-                  <thead><tr><th>Taller / Email</th><th>Contacto</th><th>Categoría</th><th>Equipos En Taller</th><th>Saldo Deudor (Cta. Cte.)</th><th>Acciones</th></tr></thead>
+                  <thead><tr><th>Taller / Ciudad</th><th>Contacto</th><th>Categoría</th><th>Equipos En Taller</th><th>Saldo Deudor (Cta. Cte.)</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {talleresGremio.map(t => {
                       const equiposDelTaller = ordenes.filter(o => o.tallerOrigen === t.nombre && o.estado !== 'entregado').length;
                       return (
                         <tr key={t.id}>
-                          <td><b>{t.nombre}</b><br/><small style={{ color: '#8b9bb4' }}>{t.email}</small></td>
+                          <td><b>{t.nombre}</b> ({t.ciudad || 'Local'})<br/><small style={{ color: '#8b9bb4' }}>{t.email}</small></td>
                           <td>{t.encargado}<br/><span style={{ color: '#00ff9d', fontSize: '13px' }}>📱 {t.telefono}</span></td>
                           <td><span className="neon-badge" style={{ background: t.nivel === 'Oro' ? 'rgba(255,238,0,0.15)' : 'rgba(0,243,255,0.1)', color: t.nivel === 'Oro' ? '#ffee00' : '#00f3ff' }}>GREMIO {t.nivel}</span></td>
                           <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#00f3ff' }}>{equiposDelTaller} activos</td>
