@@ -356,7 +356,9 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
                     <option value="domicilio">Cadetería (${costoEnvioActual})</option>
                   </select>
                 </div>
-                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>Confirmar Orden</button>
+                <button type="submit" disabled={procesando} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>
+                  {procesando ? 'Procesando...' : 'Confirmar Orden ➔'}
+                </button>
                 <button type="button" onClick={() => setModoCheckout(false)} className="neon-btn" style={{ width: '100%', border: 'none' }}>Volver</button>
               </form>
             </div>
