@@ -346,20 +346,17 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
           ) : modoCheckout ? (
             <div className="neon-card" style={{ position: 'sticky', top: '20px' }}>
               <h3 className="glow-text-cyan" style={{ margin: '0 0 20px 0' }}>📝 FINALIZAR PEDIDO</h3>
-              <form onSubmit={confirmarPedido} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div><label className="label-neon">Cliente / Taller</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
+              <form onSubmit={confirmarPedido} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div><label className="label-neon">Razón Social / Taller</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
                 <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={formCheckout.telefono} onChange={e=>setFormCheckout({...formCheckout, telefono: e.target.value})} /></div>
                 <div>
                   <label className="label-neon">Entrega</label>
                   <select className="neon-select" value={formCheckout.metodoEnvio} onChange={e=>setFormCheckout({...formCheckout, metodoEnvio: e.target.value})}>
-                    <option value="retiro">Retiro en Local ({config.direccion}) - Gratis</option>
-                    <option value="domicilio">Envío a Domicilio (${costoEnvioActual})</option>
+                    <option value="retiro">Retiro Local - Gratis</option>
+                    <option value="domicilio">Cadetería (${costoEnvioActual})</option>
                   </select>
                 </div>
-                {formCheckout.metodoEnvio === 'domicilio' && (
-                  <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" required value={formCheckout.direccion} onChange={e=>setFormCheckout({...formCheckout, direccion: e.target.value})} /></div>
-                )}
-                <button type="submit" disabled={procesando} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>Confirmar Pedido ➔</button>
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>Confirmar Orden</button>
                 <button type="button" onClick={() => setModoCheckout(false)} className="neon-btn" style={{ width: '100%', border: 'none' }}>Volver</button>
               </form>
             </div>
@@ -507,7 +504,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [prodNom, setProdNom] = useState(''); const [prodCat, setProdCat] = useState('');
   const [prodCosto, setProdCosto] = useState(''); 
   const [prodPrecio, setProdPrecio] = useState(''); const [prodStock, setProdStock] = useState('');
-  const [prodUbicacion, setProdUbicacion] = useState(''); // EJ: Gaveta A3
+  const [prodUbicacion, setProdUbicacion] = useState(''); 
   const [prodDesc, setProdDesc] = useState(''); const [prodImg, setProdImg] = useState('');
   const [prodCodigoBarras, setProdCodigoBarras] = useState('');
   const [prodProveedor, setProdProveedor] = useState('');
@@ -518,7 +515,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [busquedaInventario, setBusquedaInventario] = useState('');
   const [filtroCategoriaInv, setFiltroCategoriaInv] = useState('Todas');
   const [filtroProveedorInv, setFiltroProveedorInv] = useState('Todos');
-  const [filtroStockInv, setFiltroStockInv] = useState('todos'); // todos, critico, agotado
+  const [filtroStockInv, setFiltroStockInv] = useState('todos'); 
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
@@ -579,7 +576,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); unsubRoles(); };
   }, []);
 
-  // Determinar Rol del usuario actual (Si no está en la lista, por defecto es Admin para no bloquear al dueño)
   const registroRolActual = usuariosRoles.find(u => u.email?.toLowerCase() === user.email?.toLowerCase());
   const rolActual: 'admin' | 'tecnico' | 'vendedor' = registroRolActual ? registroRolActual.rol : 'admin';
 
@@ -600,7 +596,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
-  // --- Funciones Proveedores / Excel ---
   const parsePrecio = (valor: any) => {
     if (valor === undefined || valor === null || valor === '') return NaN;
     if (typeof valor === 'number') return valor;
@@ -685,7 +680,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (e: any) { alert(`Error: ${e.message}`); } finally { setExcelCargando(false); setExcelData([]); }
   };
 
-  // --- Funciones Taller ---
   const toggleItemChecklist = (item: string) => {
     setChecklist(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
   };
@@ -769,9 +763,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     window.open(`https://wa.me/549${orden.cliente.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // =========================================================
-  // IMPRESIÓN DE ÓRDENES DE ALTA GAMA (A4 DUPLICADO + TÉRMICA)
-  // =========================================================
   const imprimirOrdenProfesional = (orden: any) => {
     const v = window.open('', '_blank');
     if(!v) return;
@@ -847,7 +838,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
           <!-- VISTA 1: HOJA A4 PROFESIONAL CON TALÓN -->
           <div id="vista-a4" class="page-a4">
-            <!-- MITAD SUPERIOR: ORDEN DE LABORATORIO -->
             <div class="header-a4">
               <div>
                 <h1 class="brand-title">${config.empresaNombre}</h1>
@@ -907,7 +897,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
             <div class="cut-line"><span>✂️ CORTAR AQUÍ - COMPROBANTE PARA EL CLIENTE ✂️</span></div>
 
-            <!-- MITAD INFERIOR: TALÓN PARA EL CLIENTE CON QR -->
             <div style="display: flex; justify-content: space-between; align-items: center; border: 2px solid #000; border-radius: 8px; padding: 15px;">
               <div style="flex: 1;">
                 <h3 style="margin: 0 0 4px 0;">${config.empresaNombre} - COMPROBANTE DE RETIRO</h3>
@@ -961,7 +950,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     v.document.close();
   };
 
-  // --- Funciones Inventario ---
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     const fechaActualizacion = new Date().toLocaleDateString();
@@ -1011,7 +999,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // --- Filtros Multidimensionales de Taller ---
   const ordenesFiltradas = ordenes.filter(o => {
     if (filtroEstadoTaller !== 'todos' && o.estado !== filtroEstadoTaller) return false;
     if (filtroSectorTaller !== 'todos' && o.tecnicoAsignado !== filtroSectorTaller) return false;
@@ -1036,7 +1023,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return true;
   });
 
-  // --- Filtros Multidimensionales de Inventario ---
   const categoriasUnicasInv = ['Todas', ...Array.from(new Set(productos.map(p => p.categoria || 'General')))];
   const proveedoresUnicosInv = ['Todos', ...Array.from(new Set(productos.map(p => p.proveedor).filter(Boolean)))];
 
@@ -1105,7 +1091,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     alert('⚡ Parámetros actualizados.'); 
   };
 
-  // --- Consolidación Automática de Clientes (CRM) ---
   const clientesConsolidados = React.useMemo(() => {
     const mapa = new Map<string, any>();
     ordenes.forEach(o => {
@@ -1132,13 +1117,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
   }, [ordenes, pedidosWeb, busquedaClienteCRM]);
 
   const enviarPromoCRM = (cliente: any) => {
-    const msg = mensajePromoCRM
-      .replace('{nombre}', cliente.nombre)
-      .replace('{empresa}', config.empresaNombre);
+    const msg = mensajePromoCRM.replace('{nombre}', cliente.nombre).replace('{empresa}', config.empresaNombre);
     window.open(`https://wa.me/549${cliente.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // --- Filtros Contables Avanzados ---
   const movimientosFiltrados = movimientosFinanzas.filter(m => {
     if (filtroTipoLista !== 'todos' && m.tipo !== filtroTipoLista) return false;
     if (filtroMetodoLista !== 'todos' && m.metodoPago !== filtroMetodoLista) return false;
@@ -1147,8 +1129,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if (filtroBusquedaConcepto && !m.concepto.toLowerCase().includes(filtroBusquedaConcepto.toLowerCase())) return false;
     
     if (m.fecha) {
-      const fechaMov = new Date(m.fecha.seconds * 1000); 
-      const hoy = new Date();
+      const fechaMov = new Date(m.fecha.seconds * 1000); const hoy = new Date();
       if (filtroTiempo === 'hoy' && fechaMov.toDateString() !== hoy.toDateString()) return false;
       if (filtroTiempo === 'semana' && fechaMov < new Date(hoy.setDate(hoy.getDate() - 7))) return false;
       if (filtroTiempo === 'mes' && (fechaMov.getMonth() !== hoy.getMonth() || fechaMov.getFullYear() !== hoy.getFullYear())) return false;
@@ -1166,12 +1147,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const agregarUsuarioRol = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoUserEmail) return;
-    await addDoc(collection(db, 'usuarios_roles'), {
-      email: nuevoUserEmail.trim().toLowerCase(),
-      nombre: nuevoUserNombre,
-      rol: nuevoUserRol,
-      fecha: serverTimestamp()
-    });
+    await addDoc(collection(db, 'usuarios_roles'), { email: nuevoUserEmail.trim().toLowerCase(), nombre: nuevoUserNombre, rol: nuevoUserRol, fecha: serverTimestamp() });
     setNuevoUserEmail(''); setNuevoUserNombre('');
   };
 
@@ -1190,7 +1166,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* CABECERA ERP CON INDICADOR DE ROL */}
       <div className="neon-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '25px' }}>
         <div>
           <h2 className="glow-text-cyan" style={{ margin: 0, fontSize: '20px' }}>⚡ {config.empresaNombre} // ERP INDUSTRIAL</h2>
@@ -1219,9 +1194,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       </div>
 
-      {/* ========================================== */}
-      {/* 1. MÓDULO TALLER + CHECKLIST + FILTROS     */}
-      {/* ========================================== */}
       {pestaña === 'taller' && (
         <div>
           <form onSubmit={guardarOrden} className="neon-card" style={{ marginBottom: '22px' }}>
@@ -1263,8 +1235,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
               </div>
             </div>
-
-            {/* Checklist de Recepción Rápido */}
             <div style={{ background: '#070a12', padding: '12px 15px', borderRadius: '8px', border: '1px solid rgba(0,243,255,0.2)', marginBottom: '15px' }}>
               <span className="label-neon">✅ CHECKLIST DE INGRESO (Sale impreso en la Orden A4):</span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '8px' }}>
@@ -1276,11 +1246,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 ))}
               </div>
             </div>
-
             <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '13px' }}>➕ INGRESAR EQUIPO Y GENERAR ORDEN</button>
           </form>
 
-          {/* Barra de Filtros del Taller */}
           <div className="neon-card" style={{ marginBottom: '18px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
             <span className="glow-text-cyan" style={{ fontFamily: 'Orbitron', fontSize: '11px' }}>🔍 FILTRAR TALLER:</span>
             <input type="text" className="neon-input" placeholder="Buscar por código, cliente, modelo o IMEI..." value={busquedaTaller} onChange={e=>setBusquedaTaller(e.target.value)} style={{ flex: '1 1 220px' }} />
@@ -1348,9 +1316,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 2. MÓDULO INVENTARIO + UBICACIÓN PAÑOL     */}
-      {/* ========================================== */}
       {pestaña === 'catalogo' && (
         <div>
           {rolActual !== 'tecnico' && (
@@ -1391,7 +1356,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
             </div>
           )}
 
-          {/* Filtros Avanzados de Inventario */}
           <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="text" className="neon-input" placeholder="🔍 Buscar por nombre, código, proveedor o gaveta..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ flex: '1 1 240px' }} />
             <button onClick={() => setEscaneandoPara('buscador')} className="neon-btn">📷 Cámara</button>
@@ -1434,7 +1398,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </thead>
               <tbody>
                 {inventarioFiltrado.map(p => (
-                  <tr key={p.id}>
+                  <tr key={p.id} style={{ background: seleccionados.includes(p.id) ? 'rgba(0,243,255,0.08)' : undefined }}>
                     <td style={{ textAlign: 'center' }}><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
                     <td><span className="neon-badge" style={{ background: 'rgba(181,55,242,0.15)', color: '#b537f2', border: '1px solid rgba(181,55,242,0.4)' }}>📍 {p.ubicacion || 'S/U'}</span></td>
                     <td>
@@ -1442,11 +1406,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <span style={{ fontSize: '11px', color: '#8b9bb4' }}>{p.categoria} {p.proveedor && `| 🏢 ${p.proveedor}`} {p.codigoBarras && `| #${p.codigoBarras}`}</span>
                     </td>
                     {rolActual === 'admin' && <td style={{ color: '#8b9bb4' }}>${p.costoProveedor?.toLocaleString() || 0}</td>}
-                    <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
+                    <td className="glow-text-cyan" style={{ fontWeight: 'bold', fontSize: '17px' }}>${p.precio?.toLocaleString()}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <button onClick={() => actualizarStock(p.id, p.stock - 1)} className="neon-btn neon-btn-red" style={{ padding: '2px 6px' }}>-</button>
-                        <b style={{ color: p.stock <= config.stockCriticoAlerta ? '#ff0055' : '#00ff9d' }}>{p.stock}</b>
+                        <b style={{ color: p.stock <= config.stockCriticoAlerta ? '#ff0055' : '#00ff9d', minWidth: '24px', textAlign: 'center' }}>{p.stock}</b>
                         <button onClick={() => actualizarStock(p.id, p.stock + 1)} className="neon-btn neon-btn-green" style={{ padding: '2px 6px' }}>+</button>
                       </div>
                     </td>
@@ -1464,34 +1428,21 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 3. NUEVO MÓDULO CRM CLIENTES & PROMOCIONES */}
-      {/* ========================================== */}
       {pestaña === 'clientes' && (
         <div>
           <div className="neon-card neon-card-green" style={{ marginBottom: '20px' }}>
             <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 CAMPAÑAS DE MARKETING & FIDELIZACIÓN POR WHATSAPP</h3>
             <p style={{ fontSize: '14px', color: '#8b9bb4', margin: '0 0 10px 0' }}>
-              Personaliza el mensaje promocional. Usa <b>{'{nombre}'}</b> y <b>{'{empresa}'}</b> para que se reemplacen automáticamente al enviarlo a cada cliente de tu base de datos.
+              Personaliza el mensaje promocional. Usa <b>{'{nombre}'}</b> y <b>{'{empresa}'}</b> para que se reemplacen automáticamente al enviarlo.
             </p>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <input type="text" className="neon-input" value={mensajePromoCRM} onChange={e=>setMensajePromoCRM(e.target.value)} style={{ flex: 1 }} />
               <input type="text" className="neon-input" placeholder="🔍 Buscar cliente por nombre o teléfono..." value={busquedaClienteCRM} onChange={e=>setBusquedaClienteCRM(e.target.value)} style={{ width: '280px' }} />
             </div>
           </div>
-
           <div className="neon-card" style={{ overflowX: 'auto' }}>
             <table className="neon-table">
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>WhatsApp</th>
-                  <th>Categoría</th>
-                  <th>Actividad Histórica</th>
-                  <th>Total Invertido (LTV)</th>
-                  <th style={{ textAlign: 'center' }}>Marketing Directo</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Categoría</th><th>Actividad Histórica</th><th>Total Invertido (LTV)</th><th style={{ textAlign: 'center' }}>Marketing Directo</th></tr></thead>
               <tbody>
                 {clientesConsolidados.map((c, idx) => {
                   const categoria = c.comprasWeb > 0 ? 'GREMIO B2B' : c.equipos >= 3 || c.totalGastado > 100000 ? 'CLIENTE VIP' : 'ESTÁNDAR';
@@ -1499,19 +1450,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <tr key={idx}>
                       <td><b style={{ color: '#fff' }}>{c.nombre}</b> {c.dni && <span style={{ fontSize: '12px', color: '#8b9bb4' }}>({c.dni})</span>}</td>
                       <td style={{ color: '#00ff9d' }}>📱 {c.telefono}</td>
-                      <td>
-                        <span className="neon-badge" style={{ background: categoria === 'GREMIO B2B' ? 'rgba(255,0,255,0.15)' : categoria === 'CLIENTE VIP' ? 'rgba(255,238,0,0.15)' : 'rgba(0,243,255,0.1)', color: categoria === 'GREMIO B2B' ? '#ff00ff' : categoria === 'CLIENTE VIP' ? '#ffee00' : '#00f3ff' }}>
-                          {categoria}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '13px', color: '#8b9bb4' }}>
-                        🛠️ {c.equipos} reparaciones | 🛒 {c.comprasWeb} pedidos web
-                        {c.ultimoEquipo && <div>Último equipo: <b style={{ color: '#e2e8f0' }}>{c.ultimoEquipo}</b></div>}
-                      </td>
+                      <td><span className="neon-badge" style={{ background: categoria === 'GREMIO B2B' ? 'rgba(255,0,255,0.15)' : categoria === 'CLIENTE VIP' ? 'rgba(255,238,0,0.15)' : 'rgba(0,243,255,0.1)', color: categoria === 'GREMIO B2B' ? '#ff00ff' : categoria === 'CLIENTE VIP' ? '#ffee00' : '#00f3ff' }}>{categoria}</span></td>
+                      <td style={{ fontSize: '13px', color: '#8b9bb4' }}>🛠️ {c.equipos} reparaciones | 🛒 {c.comprasWeb} pedidos web{c.ultimoEquipo && <div>Último equipo: <b style={{ color: '#e2e8f0' }}>{c.ultimoEquipo}</b></div>}</td>
                       <td className="glow-text-cyan" style={{ fontWeight: 'bold', fontSize: '16px' }}>${c.totalGastado.toLocaleString()}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button onClick={() => enviarPromoCRM(c)} className="neon-btn neon-btn-green">🚀 Enviar Promo WhatsApp</button>
-                      </td>
+                      <td style={{ textAlign: 'center' }}><button onClick={() => enviarPromoCRM(c)} className="neon-btn neon-btn-green">🚀 Enviar Promo WhatsApp</button></td>
                     </tr>
                   );
                 })}
@@ -1521,38 +1463,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 4. MÓDULO FINANZAS + FILTROS + RENTABILIDAD*/}
-      {/* ========================================== */}
       {pestaña === 'finanzas' && (
         <div>
           <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span className="glow-text-cyan" style={{ fontFamily: 'Orbitron', fontSize: '11px' }}>📊 AUDITORÍA:</span>
-            <select className="neon-select" value={filtroTiempo} onChange={e=>setFiltroTiempo(e.target.value)} style={{ width: 'auto' }}>
-              <option value="todos">Todo el Historial</option>
-              <option value="hoy">Hoy</option>
-              <option value="semana">Últimos 7 días</option>
-              <option value="mes">Este Mes</option>
-            </select>
+            <select className="neon-select" value={filtroTiempo} onChange={e=>setFiltroTiempo(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todo el Historial</option><option value="hoy">Hoy</option><option value="semana">Últimos 7 días</option><option value="mes">Este Mes</option></select>
             <input type="date" className="neon-input" value={fechaDesdeFin} onChange={e=>setFechaDesdeFin(e.target.value)} style={{ width: 'auto' }} />
             <input type="date" className="neon-input" value={fechaHastaFin} onChange={e=>setFechaHastaFin(e.target.value)} style={{ width: 'auto' }} />
-            <select className="neon-select" value={filtroTipoLista} onChange={e=>setFiltroTipoLista(e.target.value)} style={{ width: 'auto' }}>
-              <option value="todos">Ingresos y Egresos</option>
-              <option value="ingreso">Solo Ingresos</option>
-              <option value="egreso">Solo Egresos</option>
-            </select>
-            <select className="neon-select" value={filtroMetodoLista} onChange={e=>setFiltroMetodoLista(e.target.value)} style={{ width: 'auto' }}>
-              <option value="todos">Todos los Medios</option>
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="mercadopago">Mercado Pago</option>
-              <option value="tarjeta">Tarjeta</option>
-            </select>
-            <select className="neon-select" value={filtroFacturado} onChange={e=>setFiltroFacturado(e.target.value)} style={{ width: 'auto' }}>
-              <option value="todos">Todas (Con/Sin Factura)</option>
-              <option value="facturados">📄 Solo Facturadas</option>
-              <option value="nofacturados">⏳ Sin Facturar</option>
-            </select>
+            <select className="neon-select" value={filtroTipoLista} onChange={e=>setFiltroTipoLista(e.target.value)} style={{ width: 'auto' }}><option value="todos">Ingresos y Egresos</option><option value="ingreso">Solo Ingresos</option><option value="egreso">Solo Egresos</option></select>
+            <select className="neon-select" value={filtroMetodoLista} onChange={e=>setFiltroMetodoLista(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todos los Medios</option><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">Mercado Pago</option><option value="tarjeta">Tarjeta</option></select>
+            <select className="neon-select" value={filtroFacturado} onChange={e=>setFiltroFacturado(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todas (Con/Sin Factura)</option><option value="facturados">📄 Solo Facturadas</option><option value="nofacturados">⏳ Sin Facturar</option></select>
             <input type="text" className="neon-input" placeholder="Buscar concepto..." value={filtroBusquedaConcepto} onChange={e=>setFiltroBusquedaConcepto(e.target.value)} style={{ width: '170px' }} />
           </div>
 
@@ -1577,7 +1497,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
             <div className="neon-card" style={{ flex: '2 1 620px', overflowX: 'auto' }}>
               <table className="neon-table">
-                <thead><tr><th>Fecha</th><th>Concepto (Click ▶ para desglose y factura)</th><th>Medio</th><th style={{ textAlign: 'right' }}>Monto</th><th style={{ textAlign: 'center' }}>Borrar</th></tr></thead>
+                <thead><tr><th>Fecha</th><th>Concepto (Click ▶ para desglose)</th><th>Medio</th><th style={{ textAlign: 'right' }}>Monto</th><th style={{ textAlign: 'center' }}>Borrar</th></tr></thead>
                 <tbody>
                   {movimientosFiltrados.map(m => (
                     <React.Fragment key={m.id}>
@@ -1643,9 +1563,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 5. MÓDULO PROVEEDORES EXCEL                */}
-      {/* ========================================== */}
       {pestaña === 'proveedores' && (
         <div className="neon-card">
           <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 IMPORTADOR INTELIGENTE DE LISTAS DE PRECIOS</h3>
@@ -1660,6 +1577,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <div><label className="label-neon">Pestaña</label><select className="neon-select" value={hojaActiva} onChange={cambiarHojaDropdown}>{excelHojas.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
                 <div><label className="label-neon">Col. Nombre</label><select className="neon-select" value={colNombre} onChange={e=>setColNombre(Number(e.target.value))}>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
                 <div><label className="label-neon">Col. Costo</label><select className="neon-select" value={colCosto} onChange={e=>setColCosto(Number(e.target.value))}>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
+                <div><label className="label-neon">Col. Marca (Opcional)</label><select className="neon-select" value={colMarca} onChange={e=>setColMarca(Number(e.target.value))}><option value={-1}>No Aplica</option>{[0,1,2,3,4,5,6].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
               </div>
               <button onClick={importarDatosAlInventario} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>🚀 Sincronizar Lista con Base de Datos</button>
             </div>
@@ -1667,9 +1585,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 6. MÓDULO PEDIDOS WEB B2B                  */}
-      {/* ========================================== */}
       {pestaña === 'pedidos' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           {pedidosWeb.map(pedido => (
@@ -1702,23 +1617,19 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 7. NUEVO MÓDULO USUARIOS Y ROLES           */}
-      {/* ========================================== */}
       {pestaña === 'usuarios' && (
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           <form onSubmit={agregarUsuarioRol} className="neon-card" style={{ flex: '1 1 320px' }}>
             <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ ASIGNAR ROL DE ACCESO</h3>
-            <p style={{ fontSize: '13px', color: '#8b9bb4' }}>Asigna permisos según el correo registrado en Firebase Authentication.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div><label className="label-neon">Nombre del Colaborador</label><input type="text" className="neon-input" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} placeholder="Ej: Julián (Técnico)" /></div>
-              <div><label className="label-neon">Email de Acceso</label><input type="email" className="neon-input" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} placeholder="colaborador@walabba.com" /></div>
+              <div><label className="label-neon">Nombre Colaborador</label><input type="text" className="neon-input" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} /></div>
+              <div><label className="label-neon">Email</label><input type="email" className="neon-input" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} /></div>
               <div>
-                <label className="label-neon">Nivel de Permisos</label>
+                <label className="label-neon">Permisos</label>
                 <select className="neon-select" value={nuevoUserRol} onChange={e=>setNuevoUserRol(e.target.value as any)}>
-                  <option value="tecnico">🔧 Técnico (Solo Taller y Consulta de Stock)</option>
-                  <option value="vendedor">🛒 Vendedor Mostrador (Taller, Stock, Clientes y Web)</option>
-                  <option value="admin">👑 Administrador Total (Acceso a Finanzas y Config)</option>
+                  <option value="tecnico">🔧 Técnico (Solo Taller y Stock)</option>
+                  <option value="vendedor">🛒 Vendedor (Taller, Stock, CRM, Web)</option>
+                  <option value="admin">👑 Admin Total (Finanzas, Costos y Config)</option>
                 </select>
               </div>
               <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '12px' }}>Guardar Permiso</button>
@@ -1744,9 +1655,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 8. PARÁMETROS GENERALES                    */}
-      {/* ========================================== */}
       {pestaña === 'configuracion' && (
         <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚙️ PARÁMETROS GLOBALES DEL ERP</h3>
@@ -1763,6 +1671,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <div><label className="label-neon">Link Mercado Pago</label><input type="text" className="neon-input" value={conf.linkMercadoPago} onChange={e=>setConf({...conf, linkMercadoPago: e.target.value})} /></div>
             <div><label className="label-neon">Días de Garantía</label><input type="number" className="neon-input" value={conf.garantiaDiasDefault} onChange={e=>setConf({...conf, garantiaDiasDefault: Number(e.target.value)})} /></div>
             <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio (Separados por coma)</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
+            <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Plantilla Marketing WhatsApp (Usa {'{nombre}'} y {'{empresa}'})</label><textarea className="neon-textarea" rows={2} value={conf.promoPlantillaCRM} onChange={e=>setConf({...conf, promoPlantillaCRM: e.target.value})} /></div>
             <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Condiciones Legales de Garantía (Impresas en Orden A4 y Ticket)</label><textarea className="neon-textarea" rows={3} value={conf.ticketLeyenda} onChange={e=>setConf({...conf, ticketLeyenda: e.target.value})} /></div>
           </div>
           <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '16px', fontSize: '15px' }}>💾 GUARDAR TODA LA CONFIGURACIÓN</button>
