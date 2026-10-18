@@ -207,7 +207,6 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
   const [formCheckout, setFormCheckout] = useState({ nombre: '', telefono: '', metodoEnvio: 'retiro', direccion: '', metodoPago: 'transferencia', notas: '' });
   const [procesando, setProcesando] = useState(false);
 
-  // Detectar si se entró a la vitrina personal de un Local Asociado (?tienda=ID_DEL_LOCAL)
   const params = new URLSearchParams(window.location.search);
   const tiendaIdParam = params.get('tienda') || 'MASTER';
 
@@ -225,19 +224,16 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     return () => { unsubConfig(); unsubProd(); unsubTalleres(); };
   }, []);
 
-  // Datos de la tienda que se está visualizando
   const localDueñoVitrina = tiendaIdParam !== 'MASTER' ? talleresGremio.find(t => t.id === tiendaIdParam) : null;
   const nombreVitrina = localDueñoVitrina ? localDueñoVitrina.nombre : config.empresaNombre;
   const direccionVitrina = localDueñoVitrina ? `${localDueñoVitrina.direccion || ''} - ${localDueñoVitrina.ciudad || ''}` : config.direccion;
   const whatsappVitrina = localDueñoVitrina ? localDueñoVitrina.telefono : config.whatsapp;
 
-  // Filtrar solo artículos que pertenecen a la vitrina actual (MASTER = Walabba Tecno, o el ID del local asociado)
   const productosDeEstaVitrina = productos.filter(p => {
     const owner = p.ownerId || 'MASTER';
     return owner === tiendaIdParam;
   });
 
-  // Si estamos en la tienda MASTER y el usuario logueado es un Local Asociado, aplicar su descuento gremio
   const tallerLogueado = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
   const porcentajeDescuentoGremio = (tiendaIdParam === 'MASTER' && tallerLogueado)
     ? (tallerLogueado.nivel === 'Oro' ? Number(config.descuentoGremioOro || 18) : Number(config.descuentoGremioBronce || 10))
@@ -686,13 +682,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
     ? 'sucursal' 
     : (registroRolActual ? registroRolActual.rol : 'admin');
 
-  // Datos aislados para que cada local vea SOLO sus productos, sus ventas y sus órdenes (mientras MASTER ve todo lo propio + todas las órdenes de taller)
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
   const misPedidosWeb = pedidosWeb.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misOrdenesTaller = esSucursalExterna 
     ? ordenes.filter(o => o.tallerId === sucursalAsociada.id || o.tallerOrigen === sucursalAsociada.nombre)
-    : ordenes; // MASTER tiene control absoluto sobre todas las órdenes de todos los locales
+    : ordenes;
 
   useEffect(() => {
     if (!escaneandoPara) return;
@@ -711,7 +706,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
-  // --- Funciones POS Mostrador Multicaja (Aislado por Local) ---
+  // --- Funciones POS Mostrador Multicaja ---
   const agregarAlPOS = (p: any) => {
     if (p.stock <= 0) return alert('Sin stock disponible.');
     const item = carritoPOS.find(i => i.id === p.id);
@@ -762,7 +757,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     }
   };
 
-  // --- Funciones Proveedores Excel (Respeta el ownerId de quien importa) ---
+  // --- Funciones Proveedores Excel ---
   const parsePrecio = (valor: any) => {
     if (valor === undefined || valor === null || valor === '') return NaN;
     if (typeof valor === 'number') return valor;
@@ -866,8 +861,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
       equipo: { marca, modelo, imei, contrasena, condicionVisual, checklist }, 
       fallaDeclarada: falla, 
       tecnicoAsignado: esSucursalExterna ? 'Laboratorio Central Walabba' : tecnico,
-      costoReparacion: presupuestoInicial || '', // Precio al cliente final del local
-      costoGremio: esSucursalExterna ? '' : (costoGremioInicial || ''), // Lo que Walabba le cobra al local
+      costoReparacion: presupuestoInicial || '',
+      costoGremio: esSucursalExterna ? '' : (costoGremioInicial || ''),
       costoRepuestosUsados: 0,
       repuestosLista: [],
       seña: Number(señaRecibida) || 0,
@@ -914,7 +909,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     alert(`🔩 Repuesto "${repuesto.nombre}" descontado del stock y vinculado a la orden #${orden.codigoSeguimiento}.`);
   };
 
-  // Control Absoluto de Estados por parte de Walabba Tecno
   const actualizarEstado = async (id: string, nuevoEstado: string, orden: any) => {
     const comentario = prompt(`Diagnóstico / Comentario técnico para estado '${nuevoEstado}':`) || `Actualizado por ${nombreNegocioActivo}`;
     let data: any = { estado: nuevoEstado, historial: arrayUnion({ estado: nuevoEstado, fecha: new Date().toLocaleString(), comentario }) };
@@ -929,7 +923,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     }
 
     if (nuevoEstado === 'entregado') {
-      // Si lo entrega la Central a un Local Asociado, ofrecemos cargarlo a su Cuenta Corriente Gremio
       if (!esSucursalExterna && orden.tallerOrigen && orden.tallerOrigen !== 'Mostrador Propio') {
         const tallerColega = talleresGremio.find(t => t.nombre === orden.tallerOrigen || t.id === orden.tallerId);
         const montoCtaCte = Number(orden.costoGremio || orden.costoReparacion || 0);
@@ -941,7 +934,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
           }
         }
       } else {
-        // Cobro al cliente final (impacta en la caja de quien entrega: el local o la central)
         const saldoRestante = Math.max(0, Number(orden.costoReparacion || 0) - Number(orden.seña || 0));
         if (saldoRestante > 0 && window.confirm(`¿Registrar cobro del saldo restante ($${saldoRestante}) en tu Caja?`)) {
           const metodo = prompt('Método de pago (efectivo, transferencia, mercadopago, tarjeta):', 'efectivo') || 'efectivo';
@@ -972,7 +964,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     window.open(`https://wa.me/549${orden.cliente.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // Impresión de Orden Inteligente: Usa el membrete del Local Asociado si la orden es de un local
   const imprimirOrdenProfesional = (orden: any) => {
     const v = window.open('', '_blank');
     if(!v) return;
@@ -1112,7 +1103,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     v.document.close();
   };
 
-  // --- Funciones Inventario (Guarda con el ownerId del local o MASTER) ---
+  // --- Funciones Inventario ---
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     const fechaActualizacion = new Date().toLocaleDateString();
@@ -1149,19 +1140,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const pedirFaltantes = () => {
     const faltantes = misProductos.filter(p => p.stock <= config.stockCriticoAlerta);
     if (faltantes.length === 0) return alert('No hay artículos con stock crítico.');
-    let msg = `Hola! Necesito reponer para *${nombreNegocioActivo}*:\n\n`; faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre}\n`; }); 
+    let msg = `Hola! Necesito reponer para *${nombreNegocioActivo}*:\n\n`; 
+    faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre}\n`; }); 
     window.open(`https://wa.me/${esSucursalExterna ? config.whatsapp : ''}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // =========================================================================
-  // CREACIÓN DE USUARIO Y CONTRASEÑA PARA LOCALES SIN CERRAR TU SESIÓN ADMIN
-  // =========================================================================
   const guardarTallerGremio = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreandoCuentaLocal(true);
     try {
       const emailLimpio = tallerEmail.trim().toLowerCase();
-      // Si el admin ingresó una contraseña, creamos la cuenta en Firebase Auth usando una app secundaria para no desloguear al Admin
       if (tallerPassword && tallerPassword.length >= 6) {
         const secondaryAppName = "SecondaryCreatorApp";
         const existingApp = getApps().find(a => a.name === secondaryAppName);
@@ -1211,7 +1199,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     alert('⚡ Pago imputado en Cuenta Corriente y sumado a tu Caja Central.');
   };
 
-  // --- Funciones RMA ---
   const guardarRMA = async (e: React.FormEvent) => {
     e.preventDefault();
     await addDoc(collection(db, 'rmas_garantias'), {
@@ -1223,7 +1210,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     setRmaProducto(''); setRmaEntidad(''); setRmaMotivo(''); setRmaMonto('');
   };
 
-  // --- Filtros ---
   const ordenesFiltradas = misOrdenesTaller.filter(o => {
     if (filtroEstadoTaller !== 'todos' && o.estado !== filtroEstadoTaller) return false;
     if (!esSucursalExterna && filtroOrigenTaller !== 'todos' && o.tallerOrigen !== filtroOrigenTaller) return false;
@@ -1287,7 +1273,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     alert('⚡ Parámetros guardados.'); 
   };
 
-  // --- Consolidación CRM (Aislado por Local) ---
   const clientesConsolidados = React.useMemo(() => {
     const mapa = new Map<string, any>();
     misOrdenesTaller.forEach(o => {
@@ -1320,7 +1305,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return true;
   });
 
-  // --- KPIs Ejecutivos ---
   const totalIngresos = movimientosFiltrados.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
   const totalEgresos = movimientosFiltrados.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
   const saldoNeto = totalIngresos - totalEgresos;
@@ -1352,7 +1336,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SIDEBAR INTELIGENTE: SE ADAPTA SI ES WALABBA CENTRAL O SI ES UN LOCAL ASOCIADO */}
+      {/* SIDEBAR INTELIGENTE */}
       <aside className="erp-sidebar">
         <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(0,243,255,0.15)', marginBottom: '6px' }}>
           <div className="glow-text-cyan" style={{ fontFamily: 'Orbitron', fontWeight: 900, fontSize: '13.5px' }}>{nombreNegocioActivo}</div>
@@ -1405,6 +1389,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderLeft: '4px solid #00ff9d' }}>
               <div>
                 <h2 className="glow-text-cyan" style={{ margin: 0 }}>📊 PANEL PRIVADO // {nombreNegocioActivo}</h2>
+                <div style={{ fontSize: '12.5px', color: '#8b9bb4', marginTop: '4px' }}>
+                  📍 {direccionNegocioActivo} | 📱 WhatsApp Activo: {whatsappNegocioActivo}
+                </div>
                 <span style={{ fontSize: '13px', color: '#8b9bb4' }}>
                   Link de tu Vitrina Pública de Ventas: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" style={{ color: '#00ff9d', fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
                 </span>
@@ -1617,7 +1604,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </button>
             </form>
 
-            {/* Barra de Filtros con Selector de Sucursal para que tengas Control Absoluto */}
             <div className="neon-card" style={{ marginBottom: '18px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <input type="text" className="neon-input" placeholder="🔍 Buscar por código, cliente, local o modelo..." value={busquedaTaller} onChange={e=>setBusquedaTaller(e.target.value)} style={{ flex: '1 1 220px' }} />
               {!esSucursalExterna && (
@@ -1826,7 +1812,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </form>
             )}
 
-            <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <input type="text" className="neon-input" placeholder="🔍 Buscar en mi inventario..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ flex: 1 }} />
               <select className="neon-select" value={filtroCategoriaInv} onChange={e=>setFiltroCategoriaInv(e.target.value)} style={{ width: 'auto' }}>
                 {categoriasUnicasInv.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1836,6 +1822,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <option value="critico">⚠️ Crítico (≤{config.stockCriticoAlerta})</option>
                 <option value="agotado">❌ Sin Stock (0)</option>
               </select>
+              <button onClick={pedirFaltantes} className="neon-btn neon-btn-green">📱 Pedir Faltantes por WhatsApp</button>
             </div>
 
             {seleccionados.length > 0 && (
