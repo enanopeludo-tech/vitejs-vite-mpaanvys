@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { 
   collection, addDoc, serverTimestamp, query, onSnapshot, getDocs, where,
@@ -8,7 +9,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase'; 
 
-// --- Configuración por defecto ERP Industrial ---
+// --- Configuración por defecto ERP Central ---
 const CONFIG_DEFAULT = {
   empresaNombre: "WALABBA TECNO",
   eslogan: "Laboratorio Central de Microelectrónica & Hub B2B",
@@ -26,7 +27,6 @@ const CONFIG_DEFAULT = {
   ivaPorcentaje: 21,
   recargoTarjetaPorcentaje: 15,
   descuentoEfectivoPorcentaje: 10,
-  comisionTecnicoPorcentaje: 30,
   redondeoPrecios: "100",
   stockCriticoAlerta: 3,
   compraMinima: 0,
@@ -37,11 +37,9 @@ const CONFIG_DEFAULT = {
   linkMercadoPago: "",
   catalogoPublicoPrecios: false,
   garantiaDiasDefault: 30,
-  costoDiagnosticoBase: 5000,
   sectoresTaller: "Microelectrónica & Placas, Módulos y Baterías, Software & F4, Tercerizado Externo",
-  ticketEncabezado: "Av. 42 3998 - Necochea\nWhatsApp: 2262619735",
-  ticketLeyenda: "Use el código o escanee el QR para seguir su reparación en vivo. Pasados los 90 días el equipo se considerará abandonado según Art. 2525 CCyC. La garantía cubre únicamente la mano de obra y repuesto de la falla reparada, no cubre equipos mojados, golpeados o manipulados por terceros.",
-  promoPlantillaCRM: "Hola {nombre}! En *{empresa}* tenemos promos exclusivas esta semana en cargadores carga rápida, hidrogel antishock y servicio de laboratorio. ¡Presentando este mensaje tenés 15% OFF!"
+  ticketLeyenda: "Use el código o escanee el QR para seguir su reparación en vivo. Pasados los 90 días el equipo se considerará abandonado según Art. 2525 CCyC. La garantía cubre únicamente la falla reparada, no cubre equipos mojados, golpeados o manipulados por terceros.",
+  promoPlantillaCRM: "Hola {nombre}! En *{empresa}* tenemos promos exclusivas esta semana en cargadores carga rápida, hidrogel antishock y servicio técnico. ¡Consultanos!"
 };
 
 const CHECKLIST_ITEMS = [
@@ -174,9 +172,9 @@ const NEON_STYLES = `
   .label-neon { display: block; font-size: 10.5px; font-weight: 700; color: var(--neon-cyan); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 
   .erp-layout { display: flex; min-height: calc(100vh - 60px); }
-  .erp-sidebar { width: 235px; background: rgba(8, 12, 22, 0.98); border-right: 1px solid rgba(0, 243, 255, 0.2); padding: 18px 12px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .erp-sidebar { width: 245px; background: rgba(8, 12, 22, 0.98); border-right: 1px solid rgba(0, 243, 255, 0.2); padding: 18px 12px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
   .erp-main { flex: 1; padding: 22px; overflow-x: hidden; }
-  .side-btn { width: 100%; justify-content: flex-start; padding: 11px 14px; font-size: 11px; border-color: transparent; color: #94a3b8; background: transparent; }
+  .side-btn { width: 100%; justify-content: flex-start; padding: 11px 14px; font-size: 10.5px; border-color: transparent; color: #94a3b8; background: transparent; text-align: left; }
   .side-btn:hover { background: rgba(0, 243, 255, 0.08); color: #fff; box-shadow: none; }
   .side-btn.active { background: linear-gradient(90deg, rgba(0, 243, 255, 0.18), transparent); border-left: 3px solid var(--neon-cyan); color: var(--neon-cyan); }
 
@@ -194,7 +192,7 @@ const aplicarRedondeo = (valor: number, multiploStr: string) => {
 };
 
 // ========================================================
-// 1. E-COMMERCE B2B & MAYORISTA (SOPORTA NIVELES GREMIO)
+// 1. VITRINA COMERCIAL MULTI-TIENDA (CENTRAL O LOCAL ASOCIADO)
 // ========================================================
 const TiendaPublica = ({ user }: { user: User | null }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -208,6 +206,10 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
   const [pedidoRealizado, setPedidoRealizado] = useState<any | null>(null);
   const [formCheckout, setFormCheckout] = useState({ nombre: '', telefono: '', metodoEnvio: 'retiro', direccion: '', metodoPago: 'transferencia', notas: '' });
   const [procesando, setProcesando] = useState(false);
+
+  // Detectar si se entró a la vitrina personal de un Local Asociado (?tienda=ID_DEL_LOCAL)
+  const params = new URLSearchParams(window.location.search);
+  const tiendaIdParam = params.get('tienda') || 'MASTER';
 
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => {
@@ -223,9 +225,22 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     return () => { unsubConfig(); unsubProd(); unsubTalleres(); };
   }, []);
 
-  const tallerAsociado = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
-  const porcentajeDescuentoGremio = tallerAsociado 
-    ? (tallerAsociado.nivel === 'Oro' ? Number(config.descuentoGremioOro || 18) : Number(config.descuentoGremioBronce || 10))
+  // Datos de la tienda que se está visualizando
+  const localDueñoVitrina = tiendaIdParam !== 'MASTER' ? talleresGremio.find(t => t.id === tiendaIdParam) : null;
+  const nombreVitrina = localDueñoVitrina ? localDueñoVitrina.nombre : config.empresaNombre;
+  const direccionVitrina = localDueñoVitrina ? `${localDueñoVitrina.direccion || ''} - ${localDueñoVitrina.ciudad || ''}` : config.direccion;
+  const whatsappVitrina = localDueñoVitrina ? localDueñoVitrina.telefono : config.whatsapp;
+
+  // Filtrar solo artículos que pertenecen a la vitrina actual (MASTER = Walabba Tecno, o el ID del local asociado)
+  const productosDeEstaVitrina = productos.filter(p => {
+    const owner = p.ownerId || 'MASTER';
+    return owner === tiendaIdParam;
+  });
+
+  // Si estamos en la tienda MASTER y el usuario logueado es un Local Asociado, aplicar su descuento gremio
+  const tallerLogueado = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
+  const porcentajeDescuentoGremio = (tiendaIdParam === 'MASTER' && tallerLogueado)
+    ? (tallerLogueado.nivel === 'Oro' ? Number(config.descuentoGremioOro || 18) : Number(config.descuentoGremioBronce || 10))
     : 0;
 
   const calcularPrecioFinalCliente = (precioBase: number) => {
@@ -233,10 +248,10 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     return aplicarRedondeo(precioBase * (1 - porcentajeDescuentoGremio / 100), config.redondeoPrecios);
   };
 
-  const categorias = ['Todas', ...Array.from(new Set(productos.map(p => p.categoria || 'Otros')))];
-  const puedeVerPrecios = user || config.catalogoPublicoPrecios;
+  const categorias = ['Todas', ...Array.from(new Set(productosDeEstaVitrina.map(p => p.categoria || 'Otros')))];
+  const puedeVerPrecios = localDueñoVitrina ? true : (user || config.catalogoPublicoPrecios);
 
-  const productosFiltrados = productos
+  const productosFiltrados = productosDeEstaVitrina
     .filter(p => 
       (categoriaActiva === 'Todas' || p.categoria === categoriaActiva) &&
       (p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
@@ -263,19 +278,19 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
 
   const confirmarPedido = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (totalCarrito < config.compraMinima) return alert(`Mínimo de compra: ${config.monedaSimbolo}${config.compraMinima}`);
     setProcesando(true);
     try {
       const docRef = await addDoc(collection(db, 'pedidos_ecommerce'), {
-        cliente: { ...formCheckout, emailUsuario: user?.email || '', tallerId: tallerAsociado?.id || null }, 
+        ownerId: tiendaIdParam,
+        cliente: { ...formCheckout, emailUsuario: user?.email || '', tallerId: tallerLogueado?.id || null }, 
         items: carrito, subtotal: totalCarrito, costoEnvio: costoEnvioActual, total: totalFinal,
         estadoPago: formCheckout.metodoPago === 'cta_cte' ? 'cta_cte' : 'pendiente', 
         estadoEnvio: 'preparacion', fecha: serverTimestamp(),
       });
 
-      if (formCheckout.metodoPago === 'cta_cte' && tallerAsociado) {
-        await updateDoc(doc(db, 'talleres_gremio', tallerAsociado.id), {
-          saldoDeudor: Number(tallerAsociado.saldoDeudor || 0) + totalFinal
+      if (tiendaIdParam === 'MASTER' && formCheckout.metodoPago === 'cta_cte' && tallerLogueado) {
+        await updateDoc(doc(db, 'talleres_gremio', tallerLogueado.id), {
+          saldoDeudor: Number(tallerLogueado.saldoDeudor || 0) + totalFinal
         });
       }
 
@@ -293,38 +308,43 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     } catch (error) { alert('Error al procesar pedido.'); } finally { setProcesando(false); }
   };
 
-  if (cargando) return <div style={{ textAlign: 'center', padding: '80px', color: '#00f3ff', fontFamily: 'Orbitron' }}>⚡ CARGANDO HUB MAYORISTA B2B...</div>;
+  if (cargando) return <div style={{ textAlign: 'center', padding: '80px', color: '#00f3ff', fontFamily: 'Orbitron' }}>⚡ CARGANDO TIENDA ONLINE...</div>;
 
   return (
     <div style={{ padding: '25px', maxWidth: '1380px', margin: '0 auto', display: 'flex', gap: '25px', flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 65%' }}>
         <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderLeft: '4px solid #00f3ff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            {config.logoUrl ? <img src={config.logoUrl} alt="Logo" style={{ height: '55px', borderRadius: '8px' }} /> : <div style={{ fontSize: '32px' }}>⚡</div>}
+            <div style={{ fontSize: '32px' }}>⚡</div>
             <div>
-              <h2 className="glow-text-cyan" style={{ margin: 0 }}>{config.empresaNombre}</h2>
-              <p style={{ margin: '3px 0 0 0', color: '#8b9bb4', fontSize: '14px' }}>{config.eslogan} | 📍 {config.direccion}</p>
+              <h2 className="glow-text-cyan" style={{ margin: 0 }}>{nombreVitrina}</h2>
+              <p style={{ margin: '3px 0 0 0', color: '#8b9bb4', fontSize: '14px' }}>
+                {localDueñoVitrina ? `Tienda Oficial del Local | 📍 ${direccionVitrina}` : `${config.eslogan} | 📍 ${direccionVitrina}`}
+              </p>
             </div>
           </div>
           <div style={{ textAlign: 'right', fontSize: '13px', color: '#8b9bb4' }}>
-            <div>🕒 {config.horariosAtencion}</div>
-            {tallerAsociado && (
-              <div className="neon-badge" style={{ background: 'rgba(0,255,157,0.15)', color: '#00ff9d', marginTop: '5px' }}>
-                🏢 CONVENIO GREMIO {tallerAsociado.nivel.toUpperCase()} (-{porcentajeDescuentoGremio}%) | Cta. Cte: ${tallerAsociado.saldoDeudor || 0}
-              </div>
+            {localDueñoVitrina ? (
+              <Link to="/" className="neon-btn" style={{ textDecoration: 'none' }}>Ir a Central {config.empresaNombre}</Link>
+            ) : (
+              tallerLogueado && (
+                <div className="neon-badge" style={{ background: 'rgba(0,255,157,0.15)', color: '#00ff9d', marginTop: '5px' }}>
+                  🏢 CONVENIO GREMIO {tallerLogueado.nivel.toUpperCase()} (-{porcentajeDescuentoGremio}%) | Cta. Cte: ${tallerLogueado.saldoDeudor || 0}
+                </div>
+              )
             )}
           </div>
         </div>
 
         {!puedeVerPrecios && (
           <div className="neon-card neon-card-pink" style={{ padding: '14px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#ff99ff', fontWeight: 600 }}>🔒 Catálogo exclusivo para Talleres y Clientes Registrados. Inicia sesión para ver precios.</span>
-            <Link to="/admin-login" className="neon-btn neon-btn-pink" style={{ textDecoration: 'none' }}>Ingresar</Link>
+            <span style={{ color: '#ff99ff', fontWeight: 600 }}>🔒 Catálogo Mayorista. Inicia sesión con la cuenta de tu Local para ver precios gremio o administrar tu sucursal.</span>
+            <Link to="/admin-login" className="neon-btn neon-btn-pink" style={{ textDecoration: 'none' }}>Acceso Locales</Link>
           </div>
         )}
         
         <div style={{ display: 'flex', gap: '12px', marginBottom: '25px', flexWrap: 'wrap' }}>
-          <input type="text" className="neon-input" placeholder="🔍 Buscar módulo, integrado, batería o herramienta..." value={busqueda} onChange={e => setBusqueda(e.target.value)} style={{ flex: '2 1 280px' }} />
+          <input type="text" className="neon-input" placeholder={`🔍 Buscar en el catálogo de ${nombreVitrina}...`} value={busqueda} onChange={e => setBusqueda(e.target.value)} style={{ flex: '2 1 280px' }} />
           <select className="neon-select" value={categoriaActiva} onChange={e => setCategoriaActiva(e.target.value)} style={{ flex: '1 1 180px' }}>
             {categorias.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -348,7 +368,7 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
                 </div>
                 <div>
                   <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 'bold' }}>
-                    {prod.stock === 0 ? <span className="glow-text-red">● AGOTADO</span> : prod.stock <= config.stockCriticoAlerta ? <span style={{ color: '#ffee00' }}>⚠️ ÚLTIMOS {prod.stock}</span> : <span className="glow-text-green">● DISPONIBLE ({prod.stock})</span>}
+                    {prod.stock === 0 ? <span className="glow-text-red">● AGOTADO</span> : <span className="glow-text-green">● DISPONIBLE ({prod.stock})</span>}
                   </div>
                   {puedeVerPrecios ? (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
@@ -367,6 +387,11 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
               </div>
             );
           })}
+          {productosFiltrados.length === 0 && (
+            <div className="neon-card" style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#8b9bb4' }}>
+              Aún no hay artículos publicados en esta vitrina.
+            </div>
+          )}
         </div>
       </div>
 
@@ -378,32 +403,23 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
               <p style={{ margin: '0 0 15px 0', color: '#8b9bb4' }}>Orden: <b style={{ color: '#fff' }}>#{pedidoRealizado.id.slice(-6).toUpperCase()}</b></p>
               <div style={{ background: '#070a12', padding: '15px', borderRadius: '8px', border: '1px solid rgba(0,255,157,0.3)', marginBottom: '20px' }}>
                 <div className="glow-text-green" style={{ fontSize: '26px', fontFamily: 'Orbitron' }}>${pedidoRealizado.total.toLocaleString()}</div>
-                <p style={{ margin: '8px 0 0 0', fontSize: '14px' }}><b>Alias:</b> {config.aliasTransferencia}</p>
-                <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#8b9bb4' }}>{config.bancoTitular}</p>
               </div>
-              <button onClick={() => window.open(`https://wa.me/${config.whatsapp}?text=Hola,%20confirmo%20pedido%20B2B%20%23${pedidoRealizado.id.slice(-6).toUpperCase()}%20por%20$${pedidoRealizado.total}`, '_blank')} className="neon-btn neon-btn-green" style={{ width: '100%' }}>
+              <button onClick={() => window.open(`https://wa.me/${whatsappVitrina.replace(/\D/g,'')}?text=Hola%20${encodeURIComponent(nombreVitrina)},%20confirmo%20pedido%20%23${pedidoRealizado.id.slice(-6).toUpperCase()}%20por%20$${pedidoRealizado.total}`, '_blank')} className="neon-btn neon-btn-green" style={{ width: '100%' }}>
                 💬 Coordinar por WhatsApp
               </button>
             </div>
           ) : modoCheckout ? (
             <div className="neon-card" style={{ position: 'sticky', top: '20px' }}>
-              <h3 className="glow-text-cyan" style={{ margin: '0 0 20px 0' }}>📝 FINALIZAR PEDIDO B2B</h3>
+              <h3 className="glow-text-cyan" style={{ margin: '0 0 20px 0' }}>📝 FINALIZAR PEDIDO</h3>
               <form onSubmit={confirmarPedido} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div><label className="label-neon">Taller / Cliente</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
+                <div><label className="label-neon">Nombre / Local</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
                 <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={formCheckout.telefono} onChange={e=>setFormCheckout({...formCheckout, telefono: e.target.value})} /></div>
                 <div>
                   <label className="label-neon">Modalidad de Pago</label>
                   <select className="neon-select" value={formCheckout.metodoPago} onChange={e=>setFormCheckout({...formCheckout, metodoPago: e.target.value})}>
                     <option value="transferencia">Transferencia / Mercado Pago</option>
                     <option value="efectivo">Efectivo en Mostrador</option>
-                    {tallerAsociado && <option value="cta_cte">🏢 Cargar a mi Cuenta Corriente Gremio</option>}
-                  </select>
-                </div>
-                <div>
-                  <label className="label-neon">Entrega</label>
-                  <select className="neon-select" value={formCheckout.metodoEnvio} onChange={e=>setFormCheckout({...formCheckout, metodoEnvio: e.target.value})}>
-                    <option value="retiro">Retiro en Local - Gratis</option>
-                    <option value="domicilio">Moto Cadetería (${costoEnvioActual})</option>
+                    {tiendaIdParam === 'MASTER' && tallerLogueado && <option value="cta_cte">🏢 Cargar a mi Cuenta Corriente Gremio</option>}
                   </select>
                 </div>
                 <button type="submit" disabled={procesando} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>
@@ -466,8 +482,8 @@ const Seguimiento = () => {
   return (
     <div style={{ padding: '50px 20px', maxWidth: '680px', margin: '0 auto' }}>
       <div className="neon-card" style={{ textAlign: 'center', marginBottom: '30px' }}>
-        <h2 className="glow-text-cyan">🔍 RASTREO DE LABORATORIO EN VIVO</h2>
-        <p style={{ color: '#8b9bb4', marginBottom: '20px' }}>Ingresa el código de 6 dígitos o escanea el QR de tu orden</p>
+        <h2 className="glow-text-cyan">🔍 RASTREO DE SERVICIO TÉCNICO EN VIVO</h2>
+        <p style={{ color: '#8b9bb4', marginBottom: '20px' }}>Ingresa el código de 6 dígitos o escanea el QR de tu comprobante</p>
         <form onSubmit={buscar} style={{ display: 'flex', gap: '10px', justifyContent: 'center', maxWidth: '420px', margin: '0 auto' }}>
           <input type="text" className="neon-input" placeholder="CÓDIGO (EJ: X9B2V)" value={codigo} onChange={e => setCodigo(e.target.value)} style={{ textAlign: 'center', fontFamily: 'Orbitron', letterSpacing: '3px', fontSize: '18px' }} maxLength={6}/>
           <button type="submit" className="neon-btn neon-btn-fillCyan">Consultar</button>
@@ -477,14 +493,17 @@ const Seguimiento = () => {
       {resultado && (
         <div className="neon-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0,243,255,0.2)', paddingBottom: '12px' }}>
-            <h3 style={{ margin: 0 }}>{resultado.equipo.marca} {resultado.equipo.modelo}</h3>
+            <div>
+              <span style={{ fontSize: '11px', color: '#8b9bb4' }}>SUCURSAL RECEPTORA: {resultado.tallerOrigen || 'CENTRAL'}</span>
+              <h3 style={{ margin: 0 }}>{resultado.equipo.marca} {resultado.equipo.modelo}</h3>
+            </div>
             <span className="neon-badge" style={{ background: 'rgba(0,243,255,0.15)', color: '#00f3ff', border: '1px solid #00f3ff' }}>#{resultado.codigoSeguimiento}</span>
           </div>
           <p style={{ marginTop: '12px' }}><b>Falla declarada:</b> {resultado.fallaDeclarada}</p>
           <div style={{ background: '#070a12', padding: '18px', borderRadius: '8px', textAlign: 'center', margin: '18px 0', border: '1px solid #00f3ff' }}>
-            <span style={{ fontSize: '11px', color: '#8b9bb4', fontFamily: 'Orbitron' }}>ESTADO EN LABORATORIO</span>
+            <span style={{ fontSize: '11px', color: '#8b9bb4', fontFamily: 'Orbitron' }}>ESTADO ACTUAL DEL EQUIPO</span>
             <h2 className="glow-text-cyan" style={{ margin: '6px 0 0 0', textTransform: 'uppercase' }}>{resultado.estado}</h2>
-            {resultado.costoReparacion && <h3 className="glow-text-green" style={{ margin: '10px 0 0 0' }}>Presupuesto / Total: ${resultado.costoReparacion}</h3>}
+            {resultado.costoReparacion && <h3 className="glow-text-green" style={{ margin: '10px 0 0 0' }}>Importe al Cliente: ${resultado.costoReparacion}</h3>}
           </div>
           <h4 className="glow-text-cyan" style={{ fontSize: '13px' }}>📋 BITÁCORA TÉCNICA:</h4>
           <div style={{ borderLeft: '2px solid #00f3ff', paddingLeft: '15px', marginLeft: '6px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -503,28 +522,31 @@ const Seguimiento = () => {
 };
 
 // ========================================================
-// 3. LOGIN
+// 3. LOGIN UNIFICADO (CENTRAL + LOCALES ASOCIADOS)
 // ========================================================
 const LoginAdmin = () => {
   const [e, setE] = useState(''); const [p, setP] = useState('');
   const navigate = useNavigate();
   return (
-    <div style={{ padding: '80px 20px', maxWidth: '380px', margin: '0 auto' }}>
+    <div style={{ padding: '80px 20px', maxWidth: '400px', margin: '0 auto' }}>
       <div className="neon-card" style={{ textAlign: 'center' }}>
-        <h2 className="glow-text-cyan">🔐 ACCESO ERP / GREMIO</h2>
-        <form onSubmit={async (ev) => { ev.preventDefault(); try { await signInWithEmailAndPassword(auth, e, p); navigate('/admin-panel'); } catch (err) { alert('Credenciales incorrectas'); } }} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-          <input type="email" className="neon-input" placeholder="Email" value={e} onChange={ex => setE(ex.target.value)} required/>
+        <h2 className="glow-text-cyan">🔐 ACCESO ERP & LOCALES</h2>
+        <p style={{ fontSize: '13px', color: '#8b9bb4', marginBottom: '20px' }}>
+          Ingresa con tu cuenta de <b>Laboratorio Central</b> o con el usuario y contraseña asignado a tu <b>Local Asociado</b>.
+        </p>
+        <form onSubmit={async (ev) => { ev.preventDefault(); try { await signInWithEmailAndPassword(auth, e, p); navigate('/admin-panel'); } catch (err) { alert('Usuario o contraseña incorrectos'); } }} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <input type="email" className="neon-input" placeholder="Email de Usuario / Local" value={e} onChange={ex => setE(ex.target.value)} required/>
           <input type="password" className="neon-input" placeholder="Contraseña" value={p} onChange={ex => setP(ex.target.value)} required/>
-          <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '12px' }}>Ingresar al Sistema ➔</button>
+          <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '12px' }}>Ingresar a mi Panel ➔</button>
         </form>
       </div>
     </div>
   );
 };
 
-// ========================================================
-// 4. PANEL ERP INDUSTRIAL REORGANIZADO (SIDEBAR + 11 MÓDULOS)
-// ========================================================
+// =========================================================================
+// 4. PANEL ERP MULTI-TENANT (CENTRAL WALABBA vs SITIO PRIVADO DEL LOCAL)
+// =========================================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
   const [ordenes, setOrdenes] = useState<any[]>([]);
@@ -550,15 +572,15 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [imei, setImei] = useState(''); const [contrasena, setContrasena] = useState('');
   const [condicionVisual, setCondicionVisual] = useState('');
   const [presupuestoInicial, setPresupuestoInicial] = useState('');
+  const [costoGremioInicial, setCostoGremioInicial] = useState('');
   const [señaRecibida, setSeñaRecibida] = useState('');
   const [checklist, setChecklist] = useState<string[]>(["Enciende", "Batería OK"]);
 
-  // Filtros de Taller
   const [filtroEstadoTaller, setFiltroEstadoTaller] = useState('todos');
-  const [filtroSectorTaller, setFiltroSectorTaller] = useState('todos');
+  const [filtroOrigenTaller, setFiltroOrigenTaller] = useState('todos');
   const [busquedaTaller, setBusquedaTaller] = useState('');
 
-  // --- Catálogo, Ubicación en Pañol y Filtros ---
+  // --- Catálogo e Inventario ---
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState(''); const [prodCat, setProdCat] = useState('');
   const [prodCosto, setProdCosto] = useState(''); 
@@ -575,14 +597,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
-  // --- Red de Talleres Asociados B2B (Gremio) ---
+  // --- Red de Talleres Asociados B2B (Gremio + Creación de Credenciales) ---
   const [tallerNom, setTallerNom] = useState('');
   const [tallerEncargado, setTallerEncargado] = useState('');
   const [tallerTel, setTallerTel] = useState('');
+  const [tallerDireccion, setTallerDireccion] = useState('');
   const [tallerEmail, setTallerEmail] = useState('');
+  const [tallerPassword, setTallerPassword] = useState('');
   const [tallerCiudad, setTallerCiudad] = useState('Necochea');
   const [tallerNivel, setTallerNivel] = useState<'Bronce' | 'Oro'>('Bronce');
   const [tallerLimiteCredito, setTallerLimiteCredito] = useState('150000');
+  const [creandoCuentaLocal, setCreandoCuentaLocal] = useState(false);
 
   // --- Módulo RMA / Garantías ---
   const [rmaTipo, setRmaTipo] = useState<'proveedor' | 'cliente'>('proveedor');
@@ -614,7 +639,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [busquedaClienteCRM, setBusquedaClienteCRM] = useState('');
   const [mensajePromoCRM, setMensajePromoCRM] = useState(CONFIG_DEFAULT.promoPlantillaCRM);
 
-  // --- Usuarios / Roles ---
+  // --- Usuarios / Roles Internos ---
   const [nuevoUserEmail, setNuevoUserEmail] = useState('');
   const [nuevoUserNombre, setNuevoUserNombre] = useState('');
   const [nuevoUserRol, setNuevoUserRol] = useState<'admin' | 'tecnico' | 'vendedor'>('tecnico');
@@ -646,8 +671,28 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); unsubRoles(); unsubTalleres(); unsubRmas(); };
   }, []);
 
+  // =========================================================================
+  // DETECCIÓN MULTI-TENANT: ¿ES CENTRAL WALABBA O ES UN LOCAL ASOCIADO?
+  // =========================================================================
+  const sucursalAsociada = talleresGremio.find(t => t.email?.toLowerCase() === user.email?.toLowerCase());
+  const esSucursalExterna = Boolean(sucursalAsociada);
+  const tenantId = esSucursalExterna ? sucursalAsociada.id : 'MASTER';
+  const nombreNegocioActivo = esSucursalExterna ? sucursalAsociada.nombre : config.empresaNombre;
+  const direccionNegocioActivo = esSucursalExterna ? `${sucursalAsociada.direccion || ''} (${sucursalAsociada.ciudad || ''})` : config.direccion;
+  const whatsappNegocioActivo = esSucursalExterna ? sucursalAsociada.telefono : config.whatsapp;
+
   const registroRolActual = usuariosRoles.find(u => u.email?.toLowerCase() === user.email?.toLowerCase());
-  const rolActual: 'admin' | 'tecnico' | 'vendedor' = registroRolActual ? registroRolActual.rol : 'admin';
+  const rolActual: 'admin' | 'tecnico' | 'vendedor' | 'sucursal' = esSucursalExterna 
+    ? 'sucursal' 
+    : (registroRolActual ? registroRolActual.rol : 'admin');
+
+  // Datos aislados para que cada local vea SOLO sus productos, sus ventas y sus órdenes (mientras MASTER ve todo lo propio + todas las órdenes de taller)
+  const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
+  const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
+  const misPedidosWeb = pedidosWeb.filter(p => (p.ownerId || 'MASTER') === tenantId);
+  const misOrdenesTaller = esSucursalExterna 
+    ? ordenes.filter(o => o.tallerId === sucursalAsociada.id || o.tallerOrigen === sucursalAsociada.nombre)
+    : ordenes; // MASTER tiene control absoluto sobre todas las órdenes de todos los locales
 
   useEffect(() => {
     if (!escaneandoPara) return;
@@ -666,7 +711,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
-  // --- Funciones POS Mostrador Multicaja ---
+  // --- Funciones POS Mostrador Multicaja (Aislado por Local) ---
   const agregarAlPOS = (p: any) => {
     if (p.stock <= 0) return alert('Sin stock disponible.');
     const item = carritoPOS.find(i => i.id === p.id);
@@ -690,7 +735,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if (carritoPOS.length === 0) return;
     try {
       for (const item of carritoPOS) {
-        const prodReal = productos.find(p => p.id === item.id);
+        const prodReal = misProductos.find(p => p.id === item.id);
         if (prodReal) {
           await updateDoc(doc(db, 'productos', item.id), {
             stock: Math.max(0, prodReal.stock - item.cantidad),
@@ -699,6 +744,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         }
       }
       await addDoc(collection(db, 'finanzas'), {
+        ownerId: tenantId,
         tipo: 'ingreso',
         concepto: `Venta POS Mostrador (${clientePOS}) - ${carritoPOS.length} ítems`,
         monto: totalFinalPOS,
@@ -710,13 +756,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
       });
       setCarritoPOS([]);
       setClientePOS('Consumidor Final');
-      alert(`⚡ Cobro de $${totalFinalPOS.toLocaleString()} registrado en Caja y stock descontado.`);
+      alert(`⚡ Cobro de $${totalFinalPOS.toLocaleString()} registrado en tu Caja y descontado de tu stock.`);
     } catch (e) {
       alert('Error al procesar venta POS.');
     }
   };
 
-  // --- Funciones Proveedores Excel ---
+  // --- Funciones Proveedores Excel (Respeta el ownerId de quien importa) ---
   const parsePrecio = (valor: any) => {
     if (valor === undefined || valor === null || valor === '') return NaN;
     if (typeof valor === 'number') return valor;
@@ -761,7 +807,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const importarDatosAlInventario = async () => {
     if (excelData.length === 0) return alert('No hay datos.');
     if (!nombreProveedorExcel) return alert('Ingresa el nombre del proveedor.');
-    if (!window.confirm(`¿Importar desde "${hojaActiva}" para el proveedor "${nombreProveedorExcel}"?`)) return;
+    if (!window.confirm(`¿Importar desde "${hojaActiva}" a tu inventario privado?`)) return;
     
     let agregados = 0; let actualizados = 0; let omitidos = 0; let marcaActual = 'General';
     const fechaActualizacion = new Date().toLocaleDateString();
@@ -784,12 +830,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
           const precioFinalRedondeado = aplicarRedondeo(precioConMargen, config.redondeoPrecios);
           const nombreFinal = colMarca === -1 ? nombreObtenido : `${marcaActual} - ${nombreObtenido}`;
           
-          const productoExistente = productos.find(p => p.nombre.toLowerCase() === nombreFinal.toLowerCase());
+          const productoExistente = misProductos.find(p => p.nombre.toLowerCase() === nombreFinal.toLowerCase());
           if (productoExistente) {
             batch.update(doc(db, 'productos', productoExistente.id), { costoProveedor: costoEnPesos, precio: precioFinalRedondeado, proveedor: nombreProveedorExcel, ultimaActualizacion: fechaActualizacion });
             actualizados++;
           } else {
-            batch.set(doc(collection(db, 'productos')), { nombre: nombreFinal, categoria: hojaActiva, costoProveedor: costoEnPesos, precio: precioFinalRedondeado, stock: 0, descripcion: 'Importado de lista', fecha: serverTimestamp(), ventas: 0, proveedor: nombreProveedorExcel, ultimaActualizacion: fechaActualizacion });
+            batch.set(doc(collection(db, 'productos')), { ownerId: tenantId, nombre: nombreFinal, categoria: hojaActiva, costoProveedor: costoEnPesos, precio: precioFinalRedondeado, stock: 0, descripcion: 'Importado de lista', fecha: serverTimestamp(), ventas: 0, proveedor: nombreProveedorExcel, ultimaActualizacion: fechaActualizacion });
             agregados++;
           }
           operacionActual++;
@@ -801,7 +847,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (e: any) { alert(`Error: ${e.message}`); } finally { setExcelCargando(false); setExcelData([]); }
   };
 
-  // --- Funciones Taller e Imputación de Repuestos ---
+  // --- Funciones Taller Centralizado + Sucursales ---
   const toggleItemChecklist = (item: string) => {
     setChecklist(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
   };
@@ -809,25 +855,31 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const guardarOrden = async (e: React.FormEvent) => {
     e.preventDefault();
     const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const origenFinal = esSucursalExterna ? sucursalAsociada.nombre : tallerOrigenOrden;
+    const idSucursalFinal = esSucursalExterna ? sucursalAsociada.id : (talleresGremio.find(t => t.nombre === tallerOrigenOrden)?.id || 'MASTER');
+
     await addDoc(collection(db, 'ordenes_taller'), {
       idTiendaOrigen: user.uid, 
-      tallerOrigen: tallerOrigenOrden,
+      tallerId: idSucursalFinal,
+      tallerOrigen: origenFinal,
       cliente: { nombre: cliNombre, telefono: cliTel, dni: cliDni }, 
       equipo: { marca, modelo, imei, contrasena, condicionVisual, checklist }, 
       fallaDeclarada: falla, 
-      tecnicoAsignado: tecnico,
-      costoReparacion: presupuestoInicial || '',
+      tecnicoAsignado: esSucursalExterna ? 'Laboratorio Central Walabba' : tecnico,
+      costoReparacion: presupuestoInicial || '', // Precio al cliente final del local
+      costoGremio: esSucursalExterna ? '' : (costoGremioInicial || ''), // Lo que Walabba le cobra al local
       costoRepuestosUsados: 0,
       repuestosLista: [],
       seña: Number(señaRecibida) || 0,
       estado: 'ingresado', 
       codigoSeguimiento: cod, 
       fechaIngreso: serverTimestamp(), 
-      historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: `Equipo recepcionado (${tallerOrigenOrden}).` }]
+      historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: `Equipo recepcionado en ${origenFinal}.` }]
     });
 
     if (Number(señaRecibida) > 0) {
       await addDoc(collection(db, 'finanzas'), {
+        ownerId: tenantId,
         tipo: 'ingreso',
         concepto: `Seña Orden #${cod} - ${cliNombre} (${marca} ${modelo})`,
         monto: Number(señaRecibida),
@@ -837,14 +889,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
       });
     }
 
-    setCliNombre(''); setCliTel(''); setCliDni(''); setMarca(''); setModelo(''); setFalla(''); setTecnico(''); setImei(''); setContrasena(''); setCondicionVisual(''); setPresupuestoInicial(''); setSeñaRecibida('');
-    alert(`⚡ Orden generada con éxito. Código: #${cod}`);
+    setCliNombre(''); setCliTel(''); setCliDni(''); setMarca(''); setModelo(''); setFalla(''); setTecnico(''); setImei(''); setContrasena(''); setCondicionVisual(''); setPresupuestoInicial(''); setCostoGremioInicial(''); setSeñaRecibida('');
+    alert(`⚡ Orden #${cod} generada. Ya está sincronizada con el Laboratorio Central.`);
   };
 
   const imputarRepuestoAOrden = async (orden: any) => {
     const busquedaRep = prompt('Escribe parte del nombre del repuesto usado (Ej: A52, Pin, Modulo):');
     if (!busquedaRep) return;
-    const candidatos = productos.filter(p => p.stock > 0 && p.nombre.toLowerCase().includes(busquedaRep.toLowerCase()));
+    const candidatos = misProductos.filter(p => p.stock > 0 && p.nombre.toLowerCase().includes(busquedaRep.toLowerCase()));
     if (candidatos.length === 0) return alert('No se encontraron repuestos con stock con ese nombre.');
     
     const listaOpciones = candidatos.slice(0, 8).map((c, idx) => `${idx + 1}. ${c.nombre} (Stock: ${c.stock} | Costo: $${c.costoProveedor || 0})`).join('\n');
@@ -857,42 +909,53 @@ const DashboardTaller = ({ user }: { user: User }) => {
     await updateDoc(doc(db, 'ordenes_taller', orden.id), {
       costoRepuestosUsados: Number(orden.costoRepuestosUsados || 0) + Number(repuesto.costoProveedor || 0),
       repuestosLista: arrayUnion({ nombre: repuesto.nombre, costo: Number(repuesto.costoProveedor || 0) }),
-      historial: arrayUnion({ estado: orden.estado, fecha: new Date().toLocaleString(), comentario: `Repuesto instalado desde Pañol: ${repuesto.nombre}` })
+      historial: arrayUnion({ estado: orden.estado, fecha: new Date().toLocaleString(), comentario: `Repuesto instalado en Laboratorio: ${repuesto.nombre}` })
     });
     alert(`🔩 Repuesto "${repuesto.nombre}" descontado del stock y vinculado a la orden #${orden.codigoSeguimiento}.`);
   };
 
+  // Control Absoluto de Estados por parte de Walabba Tecno
   const actualizarEstado = async (id: string, nuevoEstado: string, orden: any) => {
-    const comentario = prompt(`Diagnóstico / Comentario para estado '${nuevoEstado}':`) || 'Actualización técnica';
+    const comentario = prompt(`Diagnóstico / Comentario técnico para estado '${nuevoEstado}':`) || `Actualizado por ${nombreNegocioActivo}`;
     let data: any = { estado: nuevoEstado, historial: arrayUnion({ estado: nuevoEstado, fecha: new Date().toLocaleString(), comentario }) };
-    if (nuevoEstado === 'reparado') { 
-      const costo = prompt('Confirma el Precio Final a cobrar ($):', orden.costoReparacion || ''); 
-      if(costo) data.costoReparacion = costo; 
-    }
-    if (nuevoEstado === 'entregado' && orden.costoReparacion) {
-      const saldoRestante = Math.max(0, Number(orden.costoReparacion) - Number(orden.seña || 0));
-      const tallerColega = talleresGremio.find(t => t.nombre === orden.tallerOrigen);
-      if (tallerColega && saldoRestante > 0) {
-        if (window.confirm(`Esta orden pertenece al taller asociado "${tallerColega.nombre}". ¿Cargar el saldo de $${saldoRestante} a su Cuenta Corriente B2B?`)) {
-          await updateDoc(doc(db, 'talleres_gremio', tallerColega.id), {
-            saldoDeudor: Number(tallerColega.saldoDeudor || 0) + saldoRestante
-          });
-          await updateDoc(doc(db, 'ordenes_taller', id), data);
-          return alert(`Saldo de $${saldoRestante} cargado a la Cuenta Corriente de ${tallerColega.nombre}.`);
-        }
+    
+    if (nuevoEstado === 'reparado' && !esSucursalExterna) { 
+      if (orden.tallerOrigen && orden.tallerOrigen !== 'Mostrador Propio') {
+        const costoAlLocal = prompt(`Esta orden es del local "${orden.tallerOrigen}".\nIngresa tu Costo Mayorista Gremio a cobrarle al local ($):`, orden.costoGremio || '');
+        if (costoAlLocal !== null) data.costoGremio = costoAlLocal;
       }
+      const costoCliente = prompt('Precio Final al Cliente del Ticket ($):', orden.costoReparacion || ''); 
+      if(costoCliente !== null) data.costoReparacion = costoCliente; 
+    }
 
-      if (saldoRestante > 0 && window.confirm(`¿Registrar cobro del saldo restante ($${saldoRestante}) en Caja?`)) {
-        const metodo = prompt('Método de pago (efectivo, transferencia, mercadopago, tarjeta):', 'efectivo') || 'efectivo';
-        await addDoc(collection(db, 'finanzas'), {
-          tipo: 'ingreso',
-          concepto: `Cobro Taller Orden #${orden.codigoSeguimiento} - ${orden.equipo?.marca} ${orden.equipo?.modelo}`,
-          monto: saldoRestante,
-          costoAsociado: Number(orden.costoRepuestosUsados || 0),
-          metodoPago: metodo.toLowerCase(),
-          fecha: serverTimestamp(),
-          usuario: user.email
-        });
+    if (nuevoEstado === 'entregado') {
+      // Si lo entrega la Central a un Local Asociado, ofrecemos cargarlo a su Cuenta Corriente Gremio
+      if (!esSucursalExterna && orden.tallerOrigen && orden.tallerOrigen !== 'Mostrador Propio') {
+        const tallerColega = talleresGremio.find(t => t.nombre === orden.tallerOrigen || t.id === orden.tallerId);
+        const montoCtaCte = Number(orden.costoGremio || orden.costoReparacion || 0);
+        if (tallerColega && montoCtaCte > 0) {
+          if (window.confirm(`¿Cargar el costo gremio de $${montoCtaCte} a la Cuenta Corriente del local "${tallerColega.nombre}"?`)) {
+            await updateDoc(doc(db, 'talleres_gremio', tallerColega.id), {
+              saldoDeudor: Number(tallerColega.saldoDeudor || 0) + montoCtaCte
+            });
+          }
+        }
+      } else {
+        // Cobro al cliente final (impacta en la caja de quien entrega: el local o la central)
+        const saldoRestante = Math.max(0, Number(orden.costoReparacion || 0) - Number(orden.seña || 0));
+        if (saldoRestante > 0 && window.confirm(`¿Registrar cobro del saldo restante ($${saldoRestante}) en tu Caja?`)) {
+          const metodo = prompt('Método de pago (efectivo, transferencia, mercadopago, tarjeta):', 'efectivo') || 'efectivo';
+          await addDoc(collection(db, 'finanzas'), {
+            ownerId: tenantId,
+            tipo: 'ingreso',
+            concepto: `Cobro Orden #${orden.codigoSeguimiento} - ${orden.equipo?.marca} ${orden.equipo?.modelo}`,
+            monto: saldoRestante,
+            costoAsociado: esSucursalExterna ? Number(orden.costoGremio || 0) : Number(orden.costoRepuestosUsados || 0),
+            metodoPago: metodo.toLowerCase(),
+            fecha: serverTimestamp(),
+            usuario: user.email
+          });
+        }
       }
     }
     await updateDoc(doc(db, 'ordenes_taller', id), data);
@@ -901,7 +964,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const notificarClienteWhatsApp = (orden: any) => {
     const urlBase = window.location.origin;
     const saldo = Math.max(0, Number(orden.costoReparacion || 0) - Number(orden.seña || 0));
-    let msg = `Hola ${orden.cliente.nombre}, te escribimos de *${config.empresaNombre}*.\n`;
+    let msg = `Hola ${orden.cliente.nombre}, te escribimos de *${nombreNegocioActivo}*.\n`;
     msg += `Tu equipo *${orden.equipo.marca} ${orden.equipo.modelo}* (Orden #${orden.codigoSeguimiento}) cambió al estado: *${orden.estado.toUpperCase()}*.\n`;
     if (orden.historial?.length > 0) msg += `📝 *Informe:* ${orden.historial[orden.historial.length - 1].comentario}\n`;
     if (orden.costoReparacion) msg += `💰 *Total:* $${orden.costoReparacion} ${orden.seña ? `(Seña: $${orden.seña} | Saldo: $${saldo})` : ''}\n`;
@@ -909,9 +972,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
     window.open(`https://wa.me/549${orden.cliente.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  // Impresión de Orden Inteligente: Usa el membrete del Local Asociado si la orden es de un local
   const imprimirOrdenProfesional = (orden: any) => {
     const v = window.open('', '_blank');
     if(!v) return;
+    const localDeLaOrden = talleresGremio.find(t => t.id === orden.tallerId || t.nombre === orden.tallerOrigen);
+    const tituloEmpresaTicket = localDeLaOrden ? localDeLaOrden.nombre : config.empresaNombre;
+    const subtituloTicket = localDeLaOrden ? `Servicio Técnico & Accesorios (${localDeLaOrden.ciudad || ''})` : config.eslogan;
+    const direccionTicket = localDeLaOrden ? (localDeLaOrden.direccion || localDeLaOrden.ciudad || '') : config.direccion;
+    const whatsappTicket = localDeLaOrden ? localDeLaOrden.telefono : config.whatsapp;
+
     const urlSeguimiento = `${window.location.origin}/seguimiento?codigo=${orden.codigoSeguimiento}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(urlSeguimiento)}`;
     const fechaFormateada = orden.fechaIngreso ? new Date(orden.fechaIngreso.seconds * 1000).toLocaleString() : new Date().toLocaleString();
@@ -922,14 +992,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Orden #${orden.codigoSeguimiento} - ${config.empresaNombre}</title>
+          <title>Orden #${orden.codigoSeguimiento} - ${tituloEmpresaTicket}</title>
           <style>
             * { box-sizing: border-box; }
             body { font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #111; margin: 0; padding: 15px; background: #f0f2f5; }
             .toolbar { background: #111; color: #fff; padding: 12px 20px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; max-width: 820px; margin-left: auto; margin-right: auto; }
             .btn-print { background: #00f3ff; color: #000; border: none; padding: 8px 16px; border-radius: 5px; font-weight: bold; cursor: pointer; }
             .btn-mode { background: #333; color: #fff; border: 1px solid #555; padding: 8px 14px; border-radius: 5px; cursor: pointer; margin-right: 6px; }
-            .btn-mode.active { background: #00ff9d; color: #000; font-weight: bold; }
             .page-a4 { background: #fff; max-width: 820px; margin: 0 auto; padding: 25px; border: 1px solid #ccc; }
             .header-a4 { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #111; padding-bottom: 12px; margin-bottom: 15px; }
             .brand-title { font-size: 24px; font-weight: 900; margin: 0; }
@@ -960,7 +1029,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         <body>
           <div class="toolbar">
             <div>
-              <button class="btn-mode active" onclick="cambiarFormato('a4')">📄 Hoja A4 Dual</button>
+              <button class="btn-mode" onclick="cambiarFormato('a4')">📄 Hoja A4 Dual</button>
               <button class="btn-mode" onclick="cambiarFormato('thermal')">🧾 Ticket Térmico 80mm</button>
             </div>
             <button class="btn-print" onclick="window.print()">🖨️ IMPRIMIR</button>
@@ -968,25 +1037,25 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <div id="vista-a4" class="page-a4">
             <div class="header-a4">
               <div>
-                <h1 class="brand-title">${config.empresaNombre}</h1>
-                <div style="font-size:12px; font-weight:bold;">${config.eslogan}</div>
-                <div style="font-size:11px;">📍 ${config.direccion} | WhatsApp: ${config.whatsapp} | CUIT: ${config.cuit}</div>
+                <h1 class="brand-title">${tituloEmpresaTicket}</h1>
+                <div style="font-size:12px; font-weight:bold;">${subtituloTicket}</div>
+                <div style="font-size:11px;">📍 ${direccionTicket} | WhatsApp: ${whatsappTicket}</div>
               </div>
               <div class="order-box">
-                <div style="font-size:10px; font-weight:bold;">ORDEN DE LABORATORIO (${orden.tallerOrigen || 'Mostrador'})</div>
+                <div style="font-size:10px; font-weight:bold;">ORDEN DE SERVICIO</div>
                 <div class="order-code">#${orden.codigoSeguimiento}</div>
                 <div style="font-size:10px;">${fechaFormateada}</div>
               </div>
             </div>
             <div class="grid-2">
               <div class="panel">
-                <div class="panel-title">👤 Cliente / Origen</div>
+                <div class="panel-title">👤 Datos del Cliente</div>
                 <div class="row-data"><b>Nombre:</b> ${orden.cliente?.nombre}</div>
                 <div class="row-data"><b>WhatsApp:</b> ${orden.cliente?.telefono}</div>
-                <div class="row-data"><b>DNI / Origen:</b> ${orden.cliente?.dni || '-'} (${orden.tallerOrigen || 'Propio'})</div>
+                <div class="row-data"><b>DNI:</b> ${orden.cliente?.dni || '-'}</div>
               </div>
               <div class="panel">
-                <div class="panel-title">📱 Equipo</div>
+                <div class="panel-title">📱 Equipo Recibido</div>
                 <div class="row-data"><b>Modelo:</b> ${orden.equipo?.marca} ${orden.equipo?.modelo}</div>
                 <div class="row-data"><b>IMEI:</b> ${orden.equipo?.imei || 'S/D'}</div>
                 <div class="row-data"><b>PIN / Patrón:</b> ${orden.equipo?.contrasena || 'Sin Clave'}</div>
@@ -1007,13 +1076,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <div class="legal-text"><b>GARANTÍA (${config.garantiaDiasDefault} DÍAS):</b> ${config.ticketLeyenda}</div>
             <div class="signatures">
               <div class="sig-line">Firma Conformidad Cliente</div>
-              <div class="sig-line">Recibió por ${config.empresaNombre}</div>
+              <div class="sig-line">Recibió por ${tituloEmpresaTicket}</div>
             </div>
             <div class="cut-line"><span>✂️ TALÓN PARA EL CLIENTE ✂️</span></div>
             <div style="display: flex; justify-content: space-between; align-items: center; border: 2px solid #000; border-radius: 8px; padding: 14px;">
               <div>
-                <h3 style="margin: 0 0 4px 0;">${config.empresaNombre} - TALÓN DE RETIRO</h3>
-                <div style="font-size: 12px;">📍 ${config.direccion} | 📱 WhatsApp: ${config.whatsapp}</div>
+                <h3 style="margin: 0 0 4px 0;">${tituloEmpresaTicket} - TALÓN DE RETIRO</h3>
+                <div style="font-size: 12px;">📍 ${direccionTicket} | 📱 WhatsApp: ${whatsappTicket}</div>
                 <div style="font-size: 13px; margin-top: 4px;"><b>Equipo:</b> ${orden.equipo?.marca} ${orden.equipo?.modelo} | <b>Falla:</b> ${orden.fallaDeclarada}</div>
                 <div style="font-size: 14px; margin-top: 6px; font-weight: bold;">Total: $${orden.costoReparacion || 'A evaluar'} | Seña: $${orden.seña || 0} | Saldo: $${orden.costoReparacion ? saldoPendiente : '-'}</div>
               </div>
@@ -1024,8 +1093,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
             </div>
           </div>
           <div id="vista-thermal" class="page-thermal">
-            <h2 style="margin:0;">${config.empresaNombre}</h2>
-            <div style="font-size: 11px;">${config.direccion}<br/>Tel: ${config.whatsapp}</div>
+            <h2 style="margin:0;">${tituloEmpresaTicket}</h2>
+            <div style="font-size: 11px;">${direccionTicket}<br/>Tel: ${whatsappTicket}</div>
             <hr/>
             <div style="font-size: 24px; font-weight: bold;">#${orden.codigoSeguimiento}</div>
             <div style="text-align: left; font-size: 12px;">
@@ -1043,11 +1112,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
     v.document.close();
   };
 
-  // --- Funciones Inventario ---
+  // --- Funciones Inventario (Guarda con el ownerId del local o MASTER) ---
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     const fechaActualizacion = new Date().toLocaleDateString();
     const dataProducto = { 
+      ownerId: tenantId,
       nombre: prodNom, categoria: prodCat, precio: Number(prodPrecio), 
       costoProveedor: Number(prodCosto) || 0, stock: Number(prodStock), 
       ubicacion: prodUbicacion, descripcion: prodDesc, imagenUrl: prodImg, 
@@ -1077,21 +1147,50 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
   
   const pedirFaltantes = () => {
-    const faltantes = productos.filter(p => p.stock <= config.stockCriticoAlerta);
-    if (faltantes.length === 0) return alert('No hay faltantes.');
-    let msg = `Hola! Reponer para *${config.empresaNombre}*:\n\n`; faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre}\n`; }); 
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    const faltantes = misProductos.filter(p => p.stock <= config.stockCriticoAlerta);
+    if (faltantes.length === 0) return alert('No hay artículos con stock crítico.');
+    let msg = `Hola! Necesito reponer para *${nombreNegocioActivo}*:\n\n`; faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre}\n`; }); 
+    window.open(`https://wa.me/${esSucursalExterna ? config.whatsapp : ''}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // --- Funciones Red de Talleres Gremio B2B ---
+  // =========================================================================
+  // CREACIÓN DE USUARIO Y CONTRASEÑA PARA LOCALES SIN CERRAR TU SESIÓN ADMIN
+  // =========================================================================
   const guardarTallerGremio = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addDoc(collection(db, 'talleres_gremio'), {
-      nombre: tallerNom, encargado: tallerEncargado, telefono: tallerTel, email: tallerEmail.trim().toLowerCase(),
-      ciudad: tallerCiudad, nivel: tallerNivel, limiteCredito: Number(tallerLimiteCredito) || 0, saldoDeudor: 0, fechaAlta: serverTimestamp()
-    });
-    setTallerNom(''); setTallerEncargado(''); setTallerTel(''); setTallerEmail('');
-    alert('🏢 Taller asociado registrado en la red B2B.');
+    setCreandoCuentaLocal(true);
+    try {
+      const emailLimpio = tallerEmail.trim().toLowerCase();
+      // Si el admin ingresó una contraseña, creamos la cuenta en Firebase Auth usando una app secundaria para no desloguear al Admin
+      if (tallerPassword && tallerPassword.length >= 6) {
+        const secondaryAppName = "SecondaryCreatorApp";
+        const existingApp = getApps().find(a => a.name === secondaryAppName);
+        const secondaryApp = existingApp || initializeApp(auth.app.options, secondaryAppName);
+        const secondaryAuth = getAuth(secondaryApp);
+        await createUserWithEmailAndPassword(secondaryAuth, emailLimpio, tallerPassword);
+        await signOut(secondaryAuth);
+      }
+
+      await addDoc(collection(db, 'talleres_gremio'), {
+        nombre: tallerNom, 
+        encargado: tallerEncargado, 
+        telefono: tallerTel, 
+        direccion: tallerDireccion,
+        email: emailLimpio,
+        ciudad: tallerCiudad, 
+        nivel: tallerNivel, 
+        limiteCredito: Number(tallerLimiteCredito) || 0, 
+        saldoDeudor: 0, 
+        fechaAlta: serverTimestamp()
+      });
+
+      setTallerNom(''); setTallerEncargado(''); setTallerTel(''); setTallerDireccion(''); setTallerEmail(''); setTallerPassword('');
+      alert(`🏢 ¡Local "${tallerNom}" dado de alta!\nYa puede ingresar en tu web con:\nUsuario: ${emailLimpio}\nContraseña: ${tallerPassword || '(La que ya tenía)'}`);
+    } catch (err: any) {
+      alert(`Aviso al crear credenciales: ${err.message}`);
+    } finally {
+      setCreandoCuentaLocal(false);
+    }
   };
 
   const registrarPagoCtaCteTaller = async (taller: any) => {
@@ -1101,20 +1200,23 @@ const DashboardTaller = ({ user }: { user: User }) => {
       saldoDeudor: Math.max(0, Number(taller.saldoDeudor || 0) - abono)
     });
     await addDoc(collection(db, 'finanzas'), {
+      ownerId: 'MASTER',
       tipo: 'ingreso',
-      concepto: `Cobro Cta. Cte. Gremio - Taller: ${taller.nombre}`,
+      concepto: `Cobro Cta. Cte. Gremio - Local: ${taller.nombre}`,
       monto: abono,
       metodoPago: 'transferencia',
       fecha: serverTimestamp(),
       usuario: user.email
     });
-    alert('⚡ Pago imputado en Cuenta Corriente y sumado a Caja.');
+    alert('⚡ Pago imputado en Cuenta Corriente y sumado a tu Caja Central.');
   };
 
-  // --- Funciones RMA y Garantías ---
+  // --- Funciones RMA ---
   const guardarRMA = async (e: React.FormEvent) => {
     e.preventDefault();
     await addDoc(collection(db, 'rmas_garantias'), {
+      ownerId: tenantId,
+      origenNombre: nombreNegocioActivo,
       tipo: rmaTipo, producto: rmaProducto, entidad: rmaEntidad, motivo: rmaMotivo,
       monto: Number(rmaMonto) || 0, estado: 'pendiente', fecha: new Date().toLocaleDateString()
     });
@@ -1122,9 +1224,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   // --- Filtros ---
-  const ordenesFiltradas = ordenes.filter(o => {
+  const ordenesFiltradas = misOrdenesTaller.filter(o => {
     if (filtroEstadoTaller !== 'todos' && o.estado !== filtroEstadoTaller) return false;
-    if (filtroSectorTaller !== 'todos' && o.tecnicoAsignado !== filtroSectorTaller) return false;
+    if (!esSucursalExterna && filtroOrigenTaller !== 'todos' && o.tallerOrigen !== filtroOrigenTaller) return false;
     if (busquedaTaller) {
       const b = busquedaTaller.toLowerCase();
       const match = o.codigoSeguimiento?.toLowerCase().includes(b) ||
@@ -1137,8 +1239,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return true;
   });
 
-  const categoriasUnicasInv = ['Todas', ...Array.from(new Set(productos.map(p => p.categoria || 'General')))];
-  const inventarioFiltrado = productos.filter(p => {
+  const categoriasUnicasInv = ['Todas', ...Array.from(new Set(misProductos.map(p => p.categoria || 'General')))];
+  const inventarioFiltrado = misProductos.filter(p => {
     if (filtroCategoriaInv !== 'Todas' && (p.categoria || 'General') !== filtroCategoriaInv) return false;
     if (filtroStockInv === 'critico' && (p.stock > config.stockCriticoAlerta || p.stock === 0)) return false;
     if (filtroStockInv === 'agotado' && p.stock > 0) return false;
@@ -1153,16 +1255,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const toggleTodos = () => { if (seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0) setSeleccionados([]); else setSeleccionados(inventarioFiltrado.map(p => p.id)); };
 
   const eliminarSeleccionados = async () => {
-    if (!window.confirm(`¿Eliminar ${seleccionados.length} productos?`)) return;
+    if (!window.confirm(`¿Eliminar ${seleccionados.length} productos de tu inventario?`)) return;
     const batch = writeBatch(db); seleccionados.forEach(id => { batch.delete(doc(db, 'productos', id)); });
     await batch.commit(); setSeleccionados([]);
   };
 
   const cambiarEstadoPagoPedido = async (pedido: any, nuevoEstado: string) => {
     if (nuevoEstado === 'pagado' && pedido.estadoPago !== 'pagado') {
-      const confirmar = window.confirm(`¿Registrar ingreso de $${pedido.total} en Finanzas?`);
+      const confirmar = window.confirm(`¿Registrar ingreso de $${pedido.total} en tu Caja?`);
       if (confirmar) {
         await addDoc(collection(db, 'finanzas'), { 
+          ownerId: tenantId,
           tipo: 'ingreso', concepto: `Cobro Web #${pedido.id.slice(-6).toUpperCase()} - ${pedido.cliente?.nombre || 'Cliente'}`, 
           monto: Number(pedido.total), metodoPago: 'transferencia', fecha: serverTimestamp(), usuario: user.email,
           items: pedido.items || []
@@ -1174,7 +1277,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const registrarMovimientoFinanzas = async (e: React.FormEvent) => {
     e.preventDefault(); 
-    await addDoc(collection(db, 'finanzas'), { tipo: finTipo, concepto: finConcepto, monto: Number(finMonto), metodoPago: finMetodo, fecha: serverTimestamp(), usuario: user.email }); 
+    await addDoc(collection(db, 'finanzas'), { ownerId: tenantId, tipo: finTipo, concepto: finConcepto, monto: Number(finMonto), metodoPago: finMetodo, fecha: serverTimestamp(), usuario: user.email }); 
     setFinConcepto(''); setFinMonto('');
   };
 
@@ -1184,10 +1287,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
     alert('⚡ Parámetros guardados.'); 
   };
 
-  // --- Consolidación CRM ---
+  // --- Consolidación CRM (Aislado por Local) ---
   const clientesConsolidados = React.useMemo(() => {
     const mapa = new Map<string, any>();
-    ordenes.forEach(o => {
+    misOrdenesTaller.forEach(o => {
       const tel = (o.cliente?.telefono || '').replace(/\D/g, '');
       if (!tel) return;
       const actual = mapa.get(tel) || { nombre: o.cliente?.nombre || 'Sin Nombre', telefono: o.cliente?.telefono, equipos: 0, comprasWeb: 0, totalGastado: 0 };
@@ -1195,7 +1298,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       actual.totalGastado += Number(o.costoReparacion || 0);
       mapa.set(tel, actual);
     });
-    pedidosWeb.forEach(p => {
+    misPedidosWeb.forEach(p => {
       const tel = (p.cliente?.telefono || '').replace(/\D/g, '');
       if (!tel) return;
       const actual = mapa.get(tel) || { nombre: p.cliente?.nombre || 'Cliente Web', telefono: p.cliente?.telefono, equipos: 0, comprasWeb: 0, totalGastado: 0 };
@@ -1204,9 +1307,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
       mapa.set(tel, actual);
     });
     return Array.from(mapa.values()).filter(c => c.nombre.toLowerCase().includes(busquedaClienteCRM.toLowerCase()) || c.telefono.includes(busquedaClienteCRM)).sort((a, b) => b.totalGastado - a.totalGastado);
-  }, [ordenes, pedidosWeb, busquedaClienteCRM]);
+  }, [misOrdenesTaller, misPedidosWeb, busquedaClienteCRM]);
 
-  const movimientosFiltrados = movimientosFinanzas.filter(m => {
+  const movimientosFiltrados = misFinanzas.filter(m => {
     if (filtroTipoLista !== 'todos' && m.tipo !== filtroTipoLista) return false;
     if (filtroBusquedaConcepto && !m.concepto.toLowerCase().includes(filtroBusquedaConcepto.toLowerCase())) return false;
     if (m.fecha && filtroTiempo !== 'todos') {
@@ -1221,11 +1324,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const totalIngresos = movimientosFiltrados.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
   const totalEgresos = movimientosFiltrados.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
   const saldoNeto = totalIngresos - totalEgresos;
-  const capitalCostoPanol = productos.reduce((acc, p) => acc + ((p.costoProveedor || 0) * (p.stock || 0)), 0);
-  const capitalVentaPanol = productos.reduce((acc, p) => acc + ((p.precio || 0) * (p.stock || 0)), 0);
+  const capitalCostoPanol = misProductos.reduce((acc, p) => acc + ((p.costoProveedor || 0) * (p.stock || 0)), 0);
+  const capitalVentaPanol = misProductos.reduce((acc, p) => acc + ((p.precio || 0) * (p.stock || 0)), 0);
   const deudaTotalTalleresB2B = talleresGremio.reduce((acc, t) => acc + Number(t.saldoDeudor || 0), 0);
-  const equiposEnBanco = ordenes.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
-  const equiposListosSinRetirar = ordenes.filter(o => o.estado === 'reparado').length;
+  const equiposEnBanco = misOrdenesTaller.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
+  const equiposListosSinRetirar = misOrdenesTaller.filter(o => o.estado === 'reparado').length;
 
   const agregarUsuarioRol = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1235,6 +1338,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   const listaSectores = (config.sectoresTaller || CONFIG_DEFAULT.sectoresTaller).split(',').map((s:string) => s.trim());
+  const urlVitrinaPropia = esSucursalExterna ? `${window.location.origin}/?tienda=${sucursalAsociada.id}` : window.location.origin;
 
   return (
     <div className="erp-layout">
@@ -1248,34 +1352,43 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SIDEBAR DE NAVEGACIÓN ERP */}
+      {/* SIDEBAR INTELIGENTE: SE ADAPTA SI ES WALABBA CENTRAL O SI ES UN LOCAL ASOCIADO */}
       <aside className="erp-sidebar">
         <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(0,243,255,0.15)', marginBottom: '6px' }}>
-          <div className="glow-text-cyan" style={{ fontFamily: 'Orbitron', fontWeight: 900, fontSize: '14px' }}>{config.empresaNombre}</div>
-          <div style={{ fontSize: '11px', color: '#8b9bb4', marginTop: '3px' }}>Rol: <b style={{ color: '#00ff9d' }}>{rolActual.toUpperCase()}</b></div>
+          <div className="glow-text-cyan" style={{ fontFamily: 'Orbitron', fontWeight: 900, fontSize: '13.5px' }}>{nombreNegocioActivo}</div>
+          <div style={{ fontSize: '11px', color: '#8b9bb4', marginTop: '4px' }}>
+            Modo: <span className="neon-badge" style={{ background: esSucursalExterna ? 'rgba(255,0,255,0.15)' : 'rgba(0,255,157,0.15)', color: esSucursalExterna ? '#ff00ff' : '#00ff9d' }}>
+              {esSucursalExterna ? `LOCAL GREMIO ${sucursalAsociada.nivel}` : `CENTRAL (${rolActual})`}
+            </span>
+          </div>
         </div>
 
-        <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>📊 1. Centro de Comando</button>
+        <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>📊 1. Mi Resumen & Link Web</button>
         {rolActual !== 'tecnico' && (
-          <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Caja POS Mostrador</button>
+          <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Mi Caja POS Mostrador</button>
         )}
-        <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>🛠️ 3. Laboratorio ({equiposEnBanco})</button>
-        <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 4. Red Talleres B2B ({talleresGremio.length})</button>
-        <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 5. Pañol & Inventario</button>
+        <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>
+          🛠️ 3. {esSucursalExterna ? `Mis Órdenes (${equiposEnBanco})` : `Control Global Órdenes (${equiposEnBanco})`}
+        </button>
+
+        {!esSucursalExterna && rolActual === 'admin' && (
+          <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 4. Red Locales & Usuarios ({talleresGremio.length})</button>
+        )}
+
+        <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 5. Mi Stock & Artículos ({misProductos.length})</button>
         <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>🔄 6. Garantías & RMA</button>
         
         {rolActual !== 'tecnico' && (
           <>
-            <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 7. Pedidos Web B2B</button>
-            <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 8. CRM & Promos</button>
+            <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 7. Mis Pedidos Web</button>
+            <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 8. Mis Clientes CRM</button>
+            <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 9. Importar mi Excel</button>
+            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 10. Mi Caja & Finanzas</button>
           </>
         )}
-        {rolActual === 'admin' && (
-          <>
-            <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 9. Importador Excel</button>
-            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 10. Finanzas & IVA</button>
-            <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>⚙️ 11. Config & Roles</button>
-          </>
+
+        {!esSucursalExterna && rolActual === 'admin' && (
+          <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>⚙️ 11. Config Central</button>
         )}
 
         <button onClick={() => signOut(auth)} className="neon-btn neon-btn-red" style={{ marginTop: 'auto', width: '100%' }}>🚪 Cerrar Sesión</button>
@@ -1285,53 +1398,70 @@ const DashboardTaller = ({ user }: { user: User }) => {
       <main className="erp-main">
 
         {/* ========================================== */}
-        {/* MÓDULO 1: DASHBOARD EJECUTIVO & KPIS       */}
+        {/* MÓDULO 1: DASHBOARD (CENTRAL O LOCAL)      */}
         {/* ========================================== */}
         {pestaña === 'dashboard' && (
           <div>
-            <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>📊 CENTRO DE COMANDO // ESTADO EN TIEMPO REAL</h2>
+            <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderLeft: '4px solid #00ff9d' }}>
+              <div>
+                <h2 className="glow-text-cyan" style={{ margin: 0 }}>📊 PANEL PRIVADO // {nombreNegocioActivo}</h2>
+                <span style={{ fontSize: '13px', color: '#8b9bb4' }}>
+                  Link de tu Vitrina Pública de Ventas: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" style={{ color: '#00ff9d', fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
+                </span>
+              </div>
+              <button onClick={() => { navigator.clipboard.writeText(urlVitrinaPropia); alert('Link de tu tienda copiado al portapapeles'); }} className="neon-btn neon-btn-green">
+                🔗 Copiar Link de Mi Tienda
+              </button>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '25px' }}>
               <div className="neon-card">
-                <span className="label-neon">🔬 Equipos en Banco</span>
+                <span className="label-neon">🔬 Equipos en Proceso</span>
                 <h2 className="glow-text-cyan" style={{ margin: '6px 0' }}>{equiposEnBanco}</h2>
-                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Pendientes de diagnóstico/repuesto</span>
+                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Sincronizados con Laboratorio</span>
               </div>
               <div className="neon-card neon-card-green">
-                <span className="label-neon" style={{ color: '#00ff9d' }}>✅ Listos para Entregar</span>
+                <span className="label-neon" style={{ color: '#00ff9d' }}>✅ Reparados Listos</span>
                 <h2 className="glow-text-green" style={{ margin: '6px 0' }}>{equiposListosSinRetirar}</h2>
-                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Cobro pendiente en mostrador</span>
+                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Listos para entregar al cliente</span>
               </div>
-              <div className="neon-card neon-card-pink">
-                <span className="label-neon" style={{ color: '#ff00ff' }}>🏢 Ctas. Ctes. Talleres B2B</span>
-                <h2 className="glow-text-pink" style={{ margin: '6px 0' }}>${deudaTotalTalleresB2B.toLocaleString()}</h2>
-                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Saldo a cobrar de {talleresGremio.length} talleres</span>
-              </div>
-              {rolActual === 'admin' && (
-                <div className="neon-card neon-card-yellow">
-                  <span className="label-neon" style={{ color: '#ffee00' }}>📦 Capital en Pañol (Venta)</span>
-                  <h2 className="glow-text-yellow" style={{ margin: '6px 0' }}>${capitalVentaPanol.toLocaleString()}</h2>
-                  <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Costo base: ${capitalCostoPanol.toLocaleString()}</span>
+              {esSucursalExterna ? (
+                <div className="neon-card neon-card-pink">
+                  <span className="label-neon" style={{ color: '#ff00ff' }}>🏢 Mi Saldo con {config.empresaNombre}</span>
+                  <h2 className="glow-text-pink" style={{ margin: '6px 0' }}>${Number(sucursalAsociada.saldoDeudor || 0).toLocaleString()}</h2>
+                  <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Límite Cta. Cte.: ${Number(sucursalAsociada.limiteCredito || 0).toLocaleString()}</span>
+                </div>
+              ) : (
+                <div className="neon-card neon-card-pink">
+                  <span className="label-neon" style={{ color: '#ff00ff' }}>🏢 Ctas. Ctes. Locales B2B</span>
+                  <h2 className="glow-text-pink" style={{ margin: '6px 0' }}>${deudaTotalTalleresB2B.toLocaleString()}</h2>
+                  <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Total a cobrar de {talleresGremio.length} locales</span>
                 </div>
               )}
+              <div className="neon-card neon-card-yellow">
+                <span className="label-neon" style={{ color: '#ffee00' }}>📦 Mi Stock Valorizado</span>
+                <h2 className="glow-text-yellow" style={{ margin: '6px 0' }}>${capitalVentaPanol.toLocaleString()}</h2>
+                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Costo base: ${capitalCostoPanol.toLocaleString()}</span>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
               <div className="neon-card">
-                <h3 className="glow-text-cyan" style={{ marginTop: 0, fontSize: '15px' }}>⚡ ACCESOS RÁPIDOS DE OPERACIÓN</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0, fontSize: '15px' }}>⚡ ACCIONES DIRECTAS DE SUCURSAL</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Nueva Venta POS</button>
-                  <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>➕ Ingresar Equipo</button>
-                  <button onClick={() => setPestaña('talleres_b2b')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>🏢 Cuentas Gremio</button>
-                  <button onClick={pedirFaltantes} className="neon-btn" style={{ padding: '14px' }}>📱 Pedir Faltantes</button>
+                  <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Vender en Mi Caja POS</button>
+                  <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>➕ Crear Orden Servicio</button>
+                  <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>📦 Cargar Mis Artículos</button>
+                  <Link to="/" className="neon-btn neon-btn-pink" style={{ padding: '14px', textDecoration: 'none' }}>⚡ Comprar a {config.empresaNombre}</Link>
                 </div>
               </div>
 
               <div className="neon-card">
-                <h3 className="glow-text-green" style={{ marginTop: 0, fontSize: '15px' }}>🏆 TOP 5 REPUESTOS DE MAYOR ROTACIÓN</h3>
+                <h3 className="glow-text-green" style={{ marginTop: 0, fontSize: '15px' }}>🏆 MIS 5 ARTÍCULOS MÁS VENDIDOS</h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {[...productos].sort((a, b) => (b.ventas || 0) - (a.ventas || 0)).slice(0, 5).map((p, i) => (
+                  {[...misProductos].sort((a, b) => (b.ventas || 0) - (a.ventas || 0)).slice(0, 5).map((p, i) => (
                     <li key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '14px' }}>
-                      <span><b style={{ color: '#00f3ff' }}>#{i + 1}</b> {p.nombre} <small style={{ color: '#8b9bb4' }}>({p.ubicacion || 'S/U'})</small></span>
+                      <span><b style={{ color: '#00f3ff' }}>#{i + 1}</b> {p.nombre}</span>
                       <span className="neon-badge" style={{ background: 'rgba(0,255,157,0.15)', color: '#00ff9d' }}>{p.ventas || 0} vendidos</span>
                     </li>
                   ))}
@@ -1342,22 +1472,22 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 2: PUNTO DE VENTA (POS MOSTRADOR)   */}
+        {/* MÓDULO 2: PUNTO DE VENTA (AISLADO X LOCAL) */}
         {/* ========================================== */}
         {pestaña === 'pos' && (
           <div>
-            <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 PUNTO DE VENTA (POS MOSTRADOR MULTICAJA)</h2>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 CAJA POS MOSTRADOR // {nombreNegocioActivo}</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div className="neon-card" style={{ flex: '2 1 500px' }}>
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                  <input type="text" className="neon-input" placeholder="🔍 Escanea código de barras o escribe modelo del repuesto/accesorio..." value={busquedaPOS} onChange={e=>setBusquedaPOS(e.target.value)} />
+                  <input type="text" className="neon-input" placeholder="🔍 Buscar en MI stock por código de barras o nombre..." value={busquedaPOS} onChange={e=>setBusquedaPOS(e.target.value)} />
                   <button onClick={() => setEscaneandoPara('buscador')} className="neon-btn">📷 Lector</button>
                 </div>
                 <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
                   <table className="neon-table">
-                    <thead><tr><th>Ubicación</th><th>Artículo</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead>
+                    <thead><tr><th>Gaveta</th><th>Mi Artículo</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead>
                     <tbody>
-                      {productos.filter(p => p.stock > 0 && (p.nombre.toLowerCase().includes(busquedaPOS.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaPOS)))).slice(0, 20).map(p => (
+                      {misProductos.filter(p => p.stock > 0 && (p.nombre.toLowerCase().includes(busquedaPOS.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaPOS)))).slice(0, 20).map(p => (
                         <tr key={p.id}>
                           <td><span className="neon-badge" style={{ background: 'rgba(181,55,242,0.15)', color: '#b537f2' }}>{p.ubicacion || 'S/U'}</span></td>
                           <td><b>{p.nombre}</b><br/><small style={{ color: '#8b9bb4' }}>{p.categoria}</small></td>
@@ -1372,9 +1502,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </div>
 
               <div className="neon-card neon-card-green" style={{ flex: '1 1 320px' }}>
-                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 TICKET DE VENTA ACTUAL</h3>
+                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 TICKET DE VENTA LOCAL</h3>
                 <div style={{ marginBottom: '10px' }}>
-                  <label className="label-neon">Cliente / Destinatario</label>
+                  <label className="label-neon">Cliente</label>
                   <input type="text" className="neon-input" value={clientePOS} onChange={e=>setClientePOS(e.target.value)} />
                 </div>
                 <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '15px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
@@ -1384,11 +1514,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <button onClick={() => setCarritoPOS(carritoPOS.filter(i => i.id !== item.id))} className="neon-btn neon-btn-red" style={{ padding: '2px 6px' }}>✕</button>
                     </div>
                   ))}
-                  {carritoPOS.length === 0 && <p style={{ color: '#8b9bb4', textAlign: 'center', padding: '20px 0' }}>Ticket vacío. Selecciona artículos a la izquierda.</p>}
+                  {carritoPOS.length === 0 && <p style={{ color: '#8b9bb4', textAlign: 'center', padding: '20px 0' }}>Selecciona artículos de tu stock a la izquierda.</p>}
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
-                  <label className="label-neon">Condición de Pago (Calcula Desc./Recargo)</label>
+                  <label className="label-neon">Medio de Pago</label>
                   <select className="neon-select" value={metodoPagoPOS} onChange={e=>setMetodoPagoPOS(e.target.value as any)}>
                     <option value="efectivo">💵 Efectivo (-{config.descuentoEfectivoPorcentaje}% Desc.)</option>
                     <option value="transferencia">🏦 Transferencia (Precio Lista)</option>
@@ -1398,39 +1528,42 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
 
                 <div style={{ background: '#060911', padding: '14px', borderRadius: '8px', marginBottom: '15px', border: '1px solid rgba(0,255,157,0.3)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}><span>Subtotal Lista:</span><span>${subtotalPOS.toLocaleString()}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: ajusteFinancieroPOS < 0 ? '#00ff9d' : '#ff0055' }}>
-                    <span>Ajuste Financiero:</span><span>{ajusteFinancieroPOS >= 0 ? `+${ajusteFinancieroPOS}` : ajusteFinancieroPOS}</span>
-                  </div>
-                  <hr style={{ borderColor: 'rgba(255,255,255,0.1)' }}/>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '22px', fontWeight: 'bold' }}>
                     <span>TOTAL:</span><span className="glow-text-green">${totalFinalPOS.toLocaleString()}</span>
                   </div>
                 </div>
 
                 <button onClick={cobrarVentaPOS} disabled={carritoPOS.length === 0} className="neon-btn neon-btn-green" style={{ width: '100%', padding: '14px', fontSize: '13px' }}>
-                  ✅ COBRAR E IMPUTAR EN CAJA
+                  ✅ COBRAR EN MI CAJA
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* MÓDULO 3: LABORATORIO & TALLER             */}
-        {/* ========================================== */}
+        {/* ================================================================= */}
+        {/* MÓDULO 3: ORDENES DE SERVICIO (SINCRONIZADO SUCURSAL <-> CENTRAL) */}
+        {/* ================================================================= */}
         {pestaña === 'taller' && (
           <div>
             <form onSubmit={guardarOrden} className="neon-card" style={{ marginBottom: '22px' }}>
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>📝 RECEPCIÓN PROFESIONAL (CLIENTES Y TALLERES B2B)</h3>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
+                {esSucursalExterna ? `📝 GENERAR ORDEN DE SERVICIO EN ${nombreNegocioActivo}` : '📝 RECEPCIÓN CENTRAL DE LABORATORIO (CONTROL ABSOLUTO)'}
+              </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                 <div>
-                  <label className="label-neon">1. Origen & Cliente</label>
-                  <select className="neon-select" value={tallerOrigenOrden} onChange={e=>setTallerOrigenOrden(e.target.value)} style={{ marginBottom: '8px', borderColor: '#ff00ff' }}>
-                    <option value="Mostrador Propio">🏪 Cliente Mostrador Propio</option>
-                    {talleresGremio.map(t => <option key={t.id} value={t.nombre}>🏢 Gremio B2B: {t.nombre}</option>)}
-                  </select>
-                  <input type="text" className="neon-input" placeholder="Nombre Cliente / Referencia" value={cliNombre} onChange={e=>setCliNombre(e.target.value)} required style={{ marginBottom: '8px' }}/>
+                  <label className="label-neon">1. Sucursal & Cliente</label>
+                  {!esSucursalExterna ? (
+                    <select className="neon-select" value={tallerOrigenOrden} onChange={e=>setTallerOrigenOrden(e.target.value)} style={{ marginBottom: '8px', borderColor: '#ff00ff' }}>
+                      <option value="Mostrador Propio">🏪 Mostrador Central Walabba</option>
+                      {talleresGremio.map(t => <option key={t.id} value={t.nombre}>🏢 Local Asociado: {t.nombre}</option>)}
+                    </select>
+                  ) : (
+                    <div className="neon-badge" style={{ background: 'rgba(255,0,255,0.15)', color: '#ff00ff', marginBottom: '8px', padding: '7px 12px' }}>
+                      🏢 Origen: {sucursalAsociada.nombre}
+                    </div>
+                  )}
+                  <input type="text" className="neon-input" placeholder="Nombre del Cliente" value={cliNombre} onChange={e=>setCliNombre(e.target.value)} required style={{ marginBottom: '8px' }}/>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input type="text" className="neon-input" placeholder="WhatsApp (2262...)" value={cliTel} onChange={e=>setCliTel(e.target.value)} required />
                     <input type="text" className="neon-input" placeholder="DNI" value={cliDni} onChange={e=>setCliDni(e.target.value)} />
@@ -1448,20 +1581,25 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
                 <div>
-                  <label className="label-neon">3. Diagnóstico y Estética</label>
+                  <label className="label-neon">3. Falla y Estado Estético</label>
                   <input type="text" className="neon-input" placeholder="Falla a reparar" value={falla} onChange={e=>setFalla(e.target.value)} required style={{ marginBottom: '8px' }}/>
                   <input type="text" className="neon-input" placeholder="Estética (Rayas, golpes)" value={condicionVisual} onChange={e=>setCondicionVisual(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label-neon">4. Sector & Presupuesto</label>
-                  <select className="neon-select" value={tecnico} onChange={e=>setTecnico(e.target.value)} style={{ marginBottom: '8px' }}>
-                    <option value="">Asignar Sector...</option>
-                    {listaSectores.map((s:string)=><option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input type="number" className="neon-input" placeholder="Presupuesto $" value={presupuestoInicial} onChange={e=>setPresupuestoInicial(e.target.value)} />
+                  <label className="label-neon">4. Importes & Seña</label>
+                  {!esSucursalExterna && (
+                    <select className="neon-select" value={tecnico} onChange={e=>setTecnico(e.target.value)} style={{ marginBottom: '8px' }}>
+                      <option value="">Asignar Sector...</option>
+                      {listaSectores.map((s:string)=><option key={s} value={s}>{s}</option>)}
+                    </select>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <input type="number" className="neon-input" placeholder="Precio Cliente $" value={presupuestoInicial} onChange={e=>setPresupuestoInicial(e.target.value)} />
                     <input type="number" className="neon-input" placeholder="Seña $" value={señaRecibida} onChange={e=>setSeñaRecibida(e.target.value)} />
                   </div>
+                  {!esSucursalExterna && tallerOrigenOrden !== 'Mostrador Propio' && (
+                    <input type="number" className="neon-input" placeholder="Costo Gremio al Local $" value={costoGremioInicial} onChange={e=>setCostoGremioInicial(e.target.value)} style={{ borderColor: '#ff00ff' }} />
+                  )}
                 </div>
               </div>
               <div style={{ background: '#060911', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(0,243,255,0.2)', marginBottom: '14px' }}>
@@ -1474,110 +1612,128 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   ))}
                 </div>
               </div>
-              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '13px' }}>➕ GENERAR ORDEN DE LABORATORIO</button>
+              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '13px' }}>
+                ➕ GENERAR ORDEN E IMPRIMIR COMPROBANTE
+              </button>
             </form>
 
+            {/* Barra de Filtros con Selector de Sucursal para que tengas Control Absoluto */}
             <div className="neon-card" style={{ marginBottom: '18px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <input type="text" className="neon-input" placeholder="🔍 Buscar por orden, cliente, taller gremio o modelo..." value={busquedaTaller} onChange={e=>setBusquedaTaller(e.target.value)} style={{ flex: '1 1 220px' }} />
+              <input type="text" className="neon-input" placeholder="🔍 Buscar por código, cliente, local o modelo..." value={busquedaTaller} onChange={e=>setBusquedaTaller(e.target.value)} style={{ flex: '1 1 220px' }} />
+              {!esSucursalExterna && (
+                <select className="neon-select" value={filtroOrigenTaller} onChange={e=>setFiltroOrigenTaller(e.target.value)} style={{ width: 'auto', borderColor: '#ff00ff' }}>
+                  <option value="todos">🏢 Todos los Locales + Central</option>
+                  <option value="Mostrador Propio">🏪 Solo Mostrador Central</option>
+                  {talleresGremio.map(t => <option key={t.id} value={t.nombre}>🏢 Local: {t.nombre}</option>)}
+                </select>
+              )}
               <select className="neon-select" value={filtroEstadoTaller} onChange={e=>setFiltroEstadoTaller(e.target.value)} style={{ width: 'auto' }}>
                 <option value="todos">Todos los Estados</option>
-                <option value="ingresado">📥 Ingresado</option>
-                <option value="en revision">🔬 En Revisión</option>
+                <option value="ingresado">📥 Ingresado en Local</option>
+                <option value="en revision">🔬 En Laboratorio Central</option>
                 <option value="esperando repuesto">⏳ Esperando Repuesto</option>
-                <option value="reparado">✅ Reparado</option>
+                <option value="reparado">✅ Reparado / Listo</option>
                 <option value="reingreso garantia">🔄 Garantía</option>
                 <option value="entregado">📦 Entregado</option>
-              </select>
-              <select className="neon-select" value={filtroSectorTaller} onChange={e=>setFiltroSectorTaller(e.target.value)} style={{ width: 'auto' }}>
-                <option value="todos">Todos los Sectores</option>
-                {listaSectores.map((s:string)=><option key={s} value={s}>{s}</option>)}
               </select>
             </div>
 
             <div className="neon-card" style={{ overflowX: 'auto' }}>
               <table className="neon-table">
-                <thead><tr><th>Orden / Origen</th><th>Cliente</th><th>Equipo & Repuestos Imputados</th><th>Estado & Rentabilidad</th><th style={{ textAlign: 'center' }}>Acciones</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Orden / Local</th>
+                    <th>Cliente Final</th>
+                    <th>Equipo & Falla</th>
+                    <th>Control de Estado & Precios</th>
+                    <th style={{ textAlign: 'center' }}>Acciones</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {ordenesFiltradas.map(o => {
-                    const utilidadNeta = Math.max(0, Number(o.costoReparacion || 0) - Number(o.costoRepuestosUsados || 0));
-                    return (
-                      <tr key={o.id} style={{ opacity: o.estado === 'entregado' ? 0.55 : 1 }}>
-                        <td>
-                          <span style={{ fontFamily: 'Orbitron', color: '#00f3ff', fontWeight: 'bold' }}>#{o.codigoSeguimiento}</span><br/>
-                          <span className="neon-badge" style={{ background: o.tallerOrigen && o.tallerOrigen !== 'Mostrador Propio' ? 'rgba(255,0,255,0.15)' : 'rgba(0,243,255,0.1)', color: o.tallerOrigen && o.tallerOrigen !== 'Mostrador Propio' ? '#ff00ff' : '#00f3ff', marginTop: '4px' }}>
-                            {o.tallerOrigen || 'Mostrador'}
-                          </span>
-                        </td>
-                        <td><b>{o.cliente?.nombre}</b><br/><span style={{ fontSize: '13px', color: '#00ff9d' }}>📱 {o.cliente?.telefono}</span></td>
-                        <td>
-                          <b>{o.equipo?.marca} {o.equipo?.modelo}</b> {o.equipo?.contrasena && <span className="neon-badge" style={{ background: 'rgba(255,238,0,0.15)', color: '#ffee00' }}>🔑 {o.equipo.contrasena}</span>}<br/>
-                          <span style={{ color: '#ff0055' }}>Falla: {o.fallaDeclarada}</span>
-                          {o.repuestosLista?.length > 0 && (
-                            <div style={{ fontSize: '11.5px', color: '#00ff9d', marginTop: '3px' }}>
-                              🔩 Repuestos: {o.repuestosLista.map((r:any)=>r.nombre).join(', ')} (Costo: ${o.costoRepuestosUsados})
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <select className="neon-select" value={o.estado} onChange={e => actualizarEstado(o.id, e.target.value, o)} style={{ padding: '6px' }}>
-                            <option value="ingresado">📥 Ingresado</option>
-                            <option value="en revision">🔬 En Revisión</option>
-                            <option value="esperando repuesto">⏳ Esperando Repuesto</option>
-                            <option value="reparado">✅ Reparado</option>
-                            <option value="reingreso garantia">🔄 Garantía</option>
-                            <option value="sin solucion">❌ Sin Solución</option>
-                            <option value="entregado">📦 Entregado</option>
-                          </select>
-                          {o.costoReparacion && (
-                            <div style={{ fontSize: '12px', marginTop: '4px', textAlign: 'center' }}>
-                              <b className="glow-text-green">Cobro: ${o.costoReparacion}</b>
-                              {rolActual === 'admin' && <span style={{ color: '#8b9bb4' }}> | Neto: ${utilidadNeta}</span>}
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Descontar repuesto del Pañol e imputar a esta orden">🔩 +Repuesto</button>
-                            <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green">💬</button>
-                            <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir A4 / Térmica">🖨️</button>
-                            {rolActual === 'admin' && (
-                              <button onClick={async()=>{if(window.confirm('¿Borrar?'))await deleteDoc(doc(db,'ordenes_taller',o.id))}} className="neon-btn neon-btn-red">🗑️</button>
-                            )}
+                  {ordenesFiltradas.map(o => (
+                    <tr key={o.id} style={{ opacity: o.estado === 'entregado' ? 0.55 : 1 }}>
+                      <td>
+                        <span style={{ fontFamily: 'Orbitron', color: '#00f3ff', fontWeight: 'bold' }}>#{o.codigoSeguimiento}</span><br/>
+                        <span className="neon-badge" style={{ background: o.tallerOrigen && o.tallerOrigen !== 'Mostrador Propio' ? 'rgba(255,0,255,0.15)' : 'rgba(0,243,255,0.1)', color: o.tallerOrigen && o.tallerOrigen !== 'Mostrador Propio' ? '#ff00ff' : '#00f3ff', marginTop: '4px' }}>
+                          {o.tallerOrigen || 'Central'}
+                        </span>
+                      </td>
+                      <td><b>{o.cliente?.nombre}</b><br/><span style={{ fontSize: '13px', color: '#00ff9d' }}>📱 {o.cliente?.telefono}</span></td>
+                      <td>
+                        <b>{o.equipo?.marca} {o.equipo?.modelo}</b> {o.equipo?.contrasena && <span className="neon-badge" style={{ background: 'rgba(255,238,0,0.15)', color: '#ffee00' }}>🔑 {o.equipo.contrasena}</span>}<br/>
+                        <span style={{ color: '#ff0055' }}>Falla: {o.fallaDeclarada}</span>
+                        {o.historial?.length > 0 && (
+                          <div style={{ fontSize: '11.5px', color: '#8b9bb4', marginTop: '3px' }}>
+                            📝 Últ. Estado: {o.historial[o.historial.length - 1].comentario}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                        )}
+                      </td>
+                      <td>
+                        <select className="neon-select" value={o.estado} onChange={e => actualizarEstado(o.id, e.target.value, o)} style={{ padding: '6px' }}>
+                          <option value="ingresado">📥 Ingresado</option>
+                          <option value="en revision">🔬 En Revisión Laboratorio</option>
+                          <option value="esperando repuesto">⏳ Esperando Repuesto</option>
+                          <option value="reparado">✅ Reparado y Listo</option>
+                          <option value="reingreso garantia">🔄 Garantía</option>
+                          <option value="sin solucion">❌ Sin Solución</option>
+                          <option value="entregado">📦 Entregado</option>
+                        </select>
+                        <div style={{ fontSize: '12px', marginTop: '5px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span className="glow-text-green">Público: ${o.costoReparacion || 'S/P'}</span>
+                          {o.costoGremio && <span style={{ color: '#ff00ff', fontWeight: 'bold' }}>Gremio: ${o.costoGremio}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                          {!esSucursalExterna && (
+                            <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Imputar repuesto de Pañol">🔩</button>
+                          )}
+                          <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp">💬</button>
+                          <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden con membrete del Local">🖨️</button>
+                          {!esSucursalExterna && rolActual === 'admin' && (
+                            <button onClick={async()=>{if(window.confirm('¿Eliminar orden?'))await deleteDoc(doc(db,'ordenes_taller',o.id))}} className="neon-btn neon-btn-red">🗑️</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {/* ==================================================== */}
-        {/* MÓDULO 4: RED DE DEMÁS TALLERES B2B & CTAS CORRIENTES*/}
-        {/* ==================================================== */}
-        {pestaña === 'talleres_b2b' && (
+        {/* ==================================================================== */}
+        {/* MÓDULO 4: RED DE LOCALES ASOCIADOS + GENERADOR DE USUARIO/CONTRASEÑA */}
+        {/* ==================================================================== */}
+        {pestaña === 'talleres_b2b' && !esSucursalExterna && (
           <div>
-            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 GESTIÓN DE DEMÁS TALLERES (RED GREMIO B2B & CUENTAS CORRIENTES)</h2>
+            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 GESTIÓN DE LOCALES ASOCIADOS (CREACIÓN DE USUARIO Y CONTRASEÑA)</h2>
             <p style={{ color: '#8b9bb4', marginTop: '-10px', marginBottom: '20px' }}>
-              Administra a los talleres colegas que te tercerizan reparaciones de placa o te compran repuestos al por mayor con lista diferenciada y cuenta corriente.
+              Crea las credenciales de acceso para cada local. Al iniciar sesión con ese correo y contraseña, ellos verán su propio sistema aislado (su stock, sus ventas POS, su link de tienda pública y sus órdenes sincronizadas con tu laboratorio).
             </p>
 
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-              <form onSubmit={guardarTallerGremio} className="neon-card neon-card-pink" style={{ flex: '1 1 320px', alignSelf: 'flex-start' }}>
-                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ VINCULAR NUEVO TALLER</h3>
+              <form onSubmit={guardarTallerGremio} className="neon-card neon-card-pink" style={{ flex: '1 1 340px', alignSelf: 'flex-start' }}>
+                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ CREAR CUENTA DE LOCAL ASOCIADO</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div><label className="label-neon">Nombre del Taller</label><input type="text" className="neon-input" required value={tallerNom} onChange={e=>setTallerNom(e.target.value)} placeholder="Ej: Servicio Técnico Sur" /></div>
+                  <div><label className="label-neon">Nombre Comercial del Local</label><input type="text" className="neon-input" required value={tallerNom} onChange={e=>setTallerNom(e.target.value)} placeholder="Ej: TecnoCell Centro" /></div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}><label className="label-neon">Responsable</label><input type="text" className="neon-input" required value={tallerEncargado} onChange={e=>setTallerEncargado(e.target.value)} /></div>
-                    <div style={{ flex: 1 }}><label className="label-neon">Localidad / Ciudad</label><input type="text" className="neon-input" required value={tallerCiudad} onChange={e=>setTallerCiudad(e.target.value)} /></div>
+                    <div style={{ flex: 1 }}><label className="label-neon">Ciudad</label><input type="text" className="neon-input" required value={tallerCiudad} onChange={e=>setTallerCiudad(e.target.value)} /></div>
                   </div>
-                  <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={tallerTel} onChange={e=>setTallerTel(e.target.value)} /></div>
-                  <div><label className="label-neon">Email (Para Login en Tienda B2B)</label><input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="taller@correo.com" /></div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1 }}><label className="label-neon">Dirección del Local</label><input type="text" className="neon-input" required value={tallerDireccion} onChange={e=>setTallerDireccion(e.target.value)} placeholder="Calle 62 N° 2500" /></div>
+                    <div style={{ flex: 1 }}><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={tallerTel} onChange={e=>setTallerTel(e.target.value)} /></div>
+                  </div>
+                  <div style={{ background: '#060911', padding: '10px', borderRadius: '8px', border: '1px dashed #ff00ff' }}>
+                    <label className="label-neon" style={{ color: '#ff00ff' }}>🔐 Credenciales de Acceso al Sistema</label>
+                    <input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="Email de usuario (Ej: local1@walabba.com)" style={{ marginBottom: '8px' }} />
+                    <input type="text" className="neon-input" required minLength={6} value={tallerPassword} onChange={e=>setTallerPassword(e.target.value)} placeholder="Contraseña (Mínimo 6 caracteres)" />
+                  </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label className="label-neon">Nivel Descuento</label>
+                      <label className="label-neon">Nivel Descuento B2B</label>
                       <select className="neon-select" value={tallerNivel} onChange={e=>setTallerNivel(e.target.value as any)}>
                         <option value="Bronce">Bronce (-{config.descuentoGremioBronce}%)</option>
                         <option value="Oro">Oro (-{config.descuentoGremioOro}%)</option>
@@ -1588,32 +1744,40 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <input type="number" className="neon-input" value={tallerLimiteCredito} onChange={e=>setTallerLimiteCredito(e.target.value)} />
                     </div>
                   </div>
-                  <button type="submit" className="neon-btn neon-btn-pink" style={{ padding: '12px', marginTop: '6px' }}>Dar de Alta Taller B2B</button>
+                  <button type="submit" disabled={creandoCuentaLocal} className="neon-btn neon-btn-pink" style={{ padding: '13px', marginTop: '6px' }}>
+                    {creandoCuentaLocal ? 'Creando Usuario...' : '🚀 Crear Usuario y Habilitar Local'}
+                  </button>
                 </div>
               </form>
 
               <div className="neon-card" style={{ flex: '2 1 580px', overflowX: 'auto' }}>
                 <table className="neon-table">
-                  <thead><tr><th>Taller / Ciudad</th><th>Contacto</th><th>Categoría</th><th>Equipos En Taller</th><th>Saldo Deudor (Cta. Cte.)</th><th>Acciones</th></tr></thead>
+                  <thead><tr><th>Local / Usuario</th><th>Tienda Propia</th><th>Equipos Activos</th><th>Saldo Cta. Cte.</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {talleresGremio.map(t => {
-                      const equiposDelTaller = ordenes.filter(o => o.tallerOrigen === t.nombre && o.estado !== 'entregado').length;
+                      const equiposDelTaller = ordenes.filter(o => (o.tallerOrigen === t.nombre || o.tallerId === t.id) && o.estado !== 'entregado').length;
+                      const linkTiendaLocal = `${window.location.origin}/?tienda=${t.id}`;
                       return (
                         <tr key={t.id}>
-                          <td><b>{t.nombre}</b> ({t.ciudad || 'Local'})<br/><small style={{ color: '#8b9bb4' }}>{t.email}</small></td>
-                          <td>{t.encargado}<br/><span style={{ color: '#00ff9d', fontSize: '13px' }}>📱 {t.telefono}</span></td>
-                          <td><span className="neon-badge" style={{ background: t.nivel === 'Oro' ? 'rgba(255,238,0,0.15)' : 'rgba(0,243,255,0.1)', color: t.nivel === 'Oro' ? '#ffee00' : '#00f3ff' }}>GREMIO {t.nivel}</span></td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#00f3ff' }}>{equiposDelTaller} activos</td>
+                          <td>
+                            <b>{t.nombre}</b> ({t.ciudad || 'Local'})<br/>
+                            <small style={{ color: '#00f3ff' }}>👤 {t.email}</small><br/>
+                            <small style={{ color: '#8b9bb4' }}>📍 {t.direccion} | 📱 {t.telefono}</small>
+                          </td>
+                          <td>
+                            <a href={linkTiendaLocal} target="_blank" rel="noreferrer" className="neon-btn" style={{ textDecoration: 'none', padding: '5px 10px' }}>
+                              🌐 Ver Tienda del Local
+                            </a>
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#00f3ff' }}>{equiposDelTaller} en taller</td>
                           <td>
                             <b className={Number(t.saldoDeudor) > 0 ? 'glow-text-red' : 'glow-text-green'} style={{ fontSize: '16px' }}>
                               ${Number(t.saldoDeudor || 0).toLocaleString()}
                             </b>
-                            <div style={{ fontSize: '11px', color: '#8b9bb4' }}>Límite: ${Number(t.limiteCredito || 0).toLocaleString()}</div>
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: '6px' }}>
-                              <button onClick={() => registrarPagoCtaCteTaller(t)} className="neon-btn neon-btn-green">💵 Cobrar Saldo</button>
-                              <button onClick={() => window.open(`https://wa.me/549${t.telefono.replace(/\D/g,'')}?text=Hola%20${encodeURIComponent(t.nombre)},%20te%20escribimos%20de%20${encodeURIComponent(config.empresaNombre)}.%20Tu%20saldo%20actual%20en%20Cuenta%20Corriente%20es%20$${t.saldoDeudor || 0}.`, '_blank')} className="neon-btn">💬</button>
+                              <button onClick={() => registrarPagoCtaCteTaller(t)} className="neon-btn neon-btn-green">💵 Cobrar</button>
                               <button onClick={()=>deleteDoc(doc(db,'talleres_gremio',t.id))} className="neon-btn neon-btn-red">🗑️</button>
                             </div>
                           </td>
@@ -1628,45 +1792,47 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 5: PAÑOL E INVENTARIO               */}
+        {/* MÓDULO 5: STOCK PRIVADO (CENTRAL O LOCAL)  */}
         {/* ========================================== */}
         {pestaña === 'catalogo' && (
           <div>
             {rolActual !== 'tecnico' && (
               <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <h3 className="glow-text-cyan" style={{ margin: 0 }}>{idEditando ? '✏️ EDITAR ARTÍCULO' : '➕ ALTA EN PAÑOL E INVENTARIO'}</h3>
+                  <h3 className="glow-text-cyan" style={{ margin: 0 }}>
+                    {idEditando ? '✏️ EDITAR ARTÍCULO' : `➕ CARGAR ARTÍCULO AL STOCK DE ${nombreNegocioActivo}`}
+                  </h3>
                   <label style={{ color: '#ffee00', fontWeight: 'bold', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={prodDestacado} onChange={e=>setProdDestacado(e.target.checked)} /> ⭐ Destacar en Tienda B2B
+                    <input type="checkbox" checked={prodDestacado} onChange={e=>setProdDestacado(e.target.checked)} /> ⭐ Destacar en Mi Vitrina Web
                   </label>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '10px' }}>
                   <input type="text" className="neon-input" placeholder="Proveedor" value={prodProveedor} onChange={e=>setProdProveedor(e.target.value)} />
-                  <input type="text" className="neon-input" placeholder="📍 Ubicación (Ej: Gaveta A3)" value={prodUbicacion} onChange={e=>setProdUbicacion(e.target.value)} />
+                  <input type="text" className="neon-input" placeholder="📍 Ubicación / Estante" value={prodUbicacion} onChange={e=>setProdUbicacion(e.target.value)} />
                   <input type="number" className="neon-input" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} />
                   <button type="button" onClick={calcularPrecioVenta} className="neon-btn neon-btn-green">Calcular (+{config.margenGanancia}%)</button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                  <input type="text" className="neon-input" placeholder="Nombre / Modelo" value={prodNom} onChange={e=>setProdNom(e.target.value)} required />
+                  <input type="text" className="neon-input" placeholder="Nombre / Artículo" value={prodNom} onChange={e=>setProdNom(e.target.value)} required />
                   <input type="text" className="neon-input" placeholder="Categoría" value={prodCat} onChange={e=>setProdCat(e.target.value)} required />
                   <input type="text" className="neon-input" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e=>setProdCodigoBarras(e.target.value)} />
-                  <input type="number" className="neon-input" placeholder="Venta $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required />
+                  <input type="number" className="neon-input" placeholder="Precio Venta $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required />
                   <input type="number" className="neon-input" placeholder="Stock" value={prodStock} onChange={e=>setProdStock(e.target.value)} required />
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '12px' }}>{idEditando ? 'Guardar Cambios' : 'Guardar en Pañol'}</button>
+                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '12px' }}>{idEditando ? 'Guardar Cambios' : 'Publicar en Mi Inventario'}</button>
                   {idEditando && <button type="button" onClick={limpiarFormularioProducto} className="neon-btn neon-btn-red">Cancelar</button>}
                 </div>
               </form>
             )}
 
             <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <input type="text" className="neon-input" placeholder="🔍 Buscar por nombre, código o gaveta..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ flex: 1 }} />
+              <input type="text" className="neon-input" placeholder="🔍 Buscar en mi inventario..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ flex: 1 }} />
               <select className="neon-select" value={filtroCategoriaInv} onChange={e=>setFiltroCategoriaInv(e.target.value)} style={{ width: 'auto' }}>
                 {categoriasUnicasInv.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <select className="neon-select" value={filtroStockInv} onChange={e=>setFiltroStockInv(e.target.value)} style={{ width: 'auto' }}>
-                <option value="todos">Todo el Stock</option>
+                <option value="todos">Todo Mi Stock</option>
                 <option value="critico">⚠️ Crítico (≤{config.stockCriticoAlerta})</option>
                 <option value="agotado">❌ Sin Stock (0)</option>
               </select>
@@ -1684,11 +1850,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <thead>
                   <tr>
                     <th style={{ width: '35px' }}><input type="checkbox" checked={seleccionados.length === inventarioFiltrado.length && inventarioFiltrado.length > 0} onChange={toggleTodos} /></th>
-                    <th>Gaveta</th>
+                    <th>Ubicación</th>
                     <th>Artículo</th>
-                    {rolActual === 'admin' && <th>Costo</th>}
-                    <th>Público</th>
-                    <th>Gremio Oro (-{config.descuentoGremioOro}%)</th>
+                    <th>Costo</th>
+                    <th>Precio Venta</th>
                     <th>Stock</th>
                     <th>Acciones</th>
                   </tr>
@@ -1699,9 +1864,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <td><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
                       <td><span className="neon-badge" style={{ background: 'rgba(181,55,242,0.15)', color: '#b537f2' }}>📍 {p.ubicacion || 'S/U'}</span></td>
                       <td><b>{p.nombre}</b><br/><small style={{ color: '#8b9bb4' }}>{p.categoria} {p.proveedor && `| ${p.proveedor}`}</small></td>
-                      {rolActual === 'admin' && <td style={{ color: '#8b9bb4' }}>${p.costoProveedor?.toLocaleString() || 0}</td>}
+                      <td style={{ color: '#8b9bb4' }}>${p.costoProveedor?.toLocaleString() || 0}</td>
                       <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
-                      <td style={{ color: '#ffee00', fontWeight: 'bold' }}>${aplicarRedondeo(p.precio * (1 - Number(config.descuentoGremioOro || 18)/100), config.redondeoPrecios).toLocaleString()}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <button onClick={() => actualizarStock(p.id, p.stock - 1)} className="neon-btn neon-btn-red" style={{ padding: '2px 6px' }}>-</button>
@@ -1719,44 +1883,42 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 6: RMA & GARANTÍAS DE PROVEEDORES   */}
+        {/* MÓDULO 6: RMA & GARANTÍAS                  */}
         {/* ========================================== */}
         {pestaña === 'rma' && (
           <div>
-            <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>🔄 CONTROL DE RMA DE PROVEEDORES & GARANTÍAS</h2>
+            <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>🔄 CONTROL DE RMA & GARANTÍAS</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={guardarRMA} className="neon-card" style={{ flex: '1 1 300px' }}>
-                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ REGISTRAR FALLA / RMA</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ REGISTRAR TICKET RMA</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <select className="neon-select" value={rmaTipo} onChange={e=>setRmaTipo(e.target.value as any)}>
-                    <option value="proveedor">📦 Reclamo a Proveedor (Repuesto Fallado)</option>
-                    <option value="cliente">🛠️ Garantía de Cliente / Taller</option>
+                    <option value="proveedor">📦 Reclamo de Repuesto</option>
+                    <option value="cliente">🛠️ Garantía de Reparación</option>
                   </select>
-                  <input type="text" className="neon-input" required placeholder="Repuesto / Equipo (Ej: Módulo A52 OLED)" value={rmaProducto} onChange={e=>setRmaProducto(e.target.value)} />
+                  <input type="text" className="neon-input" required placeholder="Repuesto / Equipo" value={rmaProducto} onChange={e=>setRmaProducto(e.target.value)} />
                   <input type="text" className="neon-input" required placeholder="Proveedor o Cliente" value={rmaEntidad} onChange={e=>setRmaEntidad(e.target.value)} />
-                  <input type="text" className="neon-input" required placeholder="Falla detectada (Ej: Falla táctil sin pegar)" value={rmaMotivo} onChange={e=>setRmaMotivo(e.target.value)} />
-                  <input type="number" className="neon-input" placeholder="Costo a recuperar ($)" value={rmaMonto} onChange={e=>setRmaMonto(e.target.value)} />
-                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '12px' }}>Registrar Ticket RMA</button>
+                  <input type="text" className="neon-input" required placeholder="Falla detectada" value={rmaMotivo} onChange={e=>setRmaMotivo(e.target.value)} />
+                  <input type="number" className="neon-input" placeholder="Monto ($)" value={rmaMonto} onChange={e=>setRmaMonto(e.target.value)} />
+                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '12px' }}>Guardar RMA</button>
                 </div>
               </form>
 
               <div className="neon-card" style={{ flex: '2 1 550px' }}>
                 <table className="neon-table">
-                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Artículo</th><th>Proveedor/Cliente</th><th>Falla</th><th>Monto</th><th>Estado</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Local</th><th>Artículo</th><th>Falla</th><th>Estado</th></tr></thead>
                   <tbody>
-                    {rmas.map(r => (
+                    {rmas.filter(r => !esSucursalExterna || r.ownerId === tenantId).map(r => (
                       <tr key={r.id}>
                         <td>{r.fecha}</td>
-                        <td><span className="neon-badge" style={{ background: 'rgba(0,243,255,0.1)', color: '#00f3ff' }}>{r.tipo}</span></td>
-                        <td><b>{r.producto}</b></td>
-                        <td>{r.entidad}</td>
+                        <td><span className="neon-badge" style={{ background: 'rgba(0,243,255,0.1)', color: '#00f3ff' }}>{r.origenNombre || 'Central'}</span></td>
+                        <td><b>{r.producto}</b> ({r.entidad})</td>
                         <td style={{ color: '#ff0055' }}>{r.motivo}</td>
-                        <td>${r.monto}</td>
                         <td>
                           <select className="neon-select" value={r.estado} onChange={e=>updateDoc(doc(db,'rmas_garantias',r.id), {estado: e.target.value})} style={{ padding: '4px' }}>
                             <option value="pendiente">⏳ Pendiente</option>
-                            <option value="enviado">🚚 Enviado a Prov.</option>
-                            <option value="resuelto">✅ Nota Crédito / Cambiado</option>
+                            <option value="enviado">🚚 En Revisión</option>
+                            <option value="resuelto">✅ Resuelto</option>
                           </select>
                         </td>
                       </tr>
@@ -1769,16 +1931,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 7: PEDIDOS WEB B2B                  */}
+        {/* MÓDULO 7: PEDIDOS WEB DE MI TIENDA         */}
         {/* ========================================== */}
         {pestaña === 'pedidos' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🌐 PEDIDOS MAYORISTAS RECIBIDOS DESDE LA TIENDA B2B</h2>
-            {pedidosWeb.map(pedido => (
+            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🌐 PEDIDOS RECIBIDOS EN LA TIENDA DE {nombreNegocioActivo}</h2>
+            {misPedidosWeb.map(pedido => (
               <div key={pedido.id} className="neon-card" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h4 className="glow-text-pink" style={{ margin: '0 0 6px 0' }}>ORDEN WEB #{pedido.id.slice(-6).toUpperCase()}</h4>
-                  <p style={{ margin: '2px 0' }}><b>Cliente/Taller:</b> {pedido.cliente.nombre} ({pedido.cliente.telefono})</p>
+                  <p style={{ margin: '2px 0' }}><b>Cliente:</b> {pedido.cliente.nombre} ({pedido.cliente.telefono})</p>
                   <p style={{ margin: '2px 0' }}><b>Modalidad:</b> {pedido.cliente.metodoEnvio.toUpperCase()} | <b>Pago:</b> {pedido.estadoPago.toUpperCase()}</p>
                 </div>
                 <div style={{ background: '#070a12', padding: '12px', borderRadius: '6px', flex: 1, minWidth: '220px' }}>
@@ -1791,7 +1953,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <select className="neon-select" value={pedido.estadoPago} onChange={e=>cambiarEstadoPagoPedido(pedido, e.target.value)}>
                     <option value="pendiente">Pago Pendiente</option>
                     <option value="cta_cte">🏢 En Cta. Cte. Gremio</option>
-                    <option value="pagado">✅ Pagado (Caja)</option>
+                    <option value="pagado">✅ Pagado (A Mi Caja)</option>
                   </select>
                   <select className="neon-select" value={pedido.estadoEnvio} onChange={e=>updateDoc(doc(db,'pedidos_ecommerce',pedido.id), {estadoEnvio: e.target.value})}>
                     <option value="preparacion">En Preparación</option>
@@ -1801,16 +1963,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
               </div>
             ))}
+            {misPedidosWeb.length === 0 && <div className="neon-card">No tienes pedidos web registrados aún.</div>}
           </div>
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 8: CRM CLIENTES & MARKETING         */}
+        {/* MÓDULO 8: CRM CLIENTES PRIVADO             */}
         {/* ========================================== */}
         {pestaña === 'clientes' && (
           <div>
             <div className="neon-card neon-card-green" style={{ marginBottom: '20px' }}>
-              <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 CRM & CAMPAÑAS DE FIDELIZACIÓN POR WHATSAPP</h3>
+              <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 MIS CLIENTES & CAMPAÑAS DE WHATSAPP ({nombreNegocioActivo})</h3>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <input type="text" className="neon-input" value={mensajePromoCRM} onChange={e=>setMensajePromoCRM(e.target.value)} style={{ flex: 1 }} />
                 <input type="text" className="neon-input" placeholder="🔍 Buscar cliente..." value={busquedaClienteCRM} onChange={e=>setBusquedaClienteCRM(e.target.value)} style={{ width: '250px' }} />
@@ -1818,7 +1981,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
             </div>
             <div className="neon-card" style={{ overflowX: 'auto' }}>
               <table className="neon-table">
-                <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Historial</th><th>Total Gastado (LTV)</th><th>Acción</th></tr></thead>
+                <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Historial</th><th>Total Gastado</th><th>Acción</th></tr></thead>
                 <tbody>
                   {clientesConsolidados.map((c, idx) => (
                     <tr key={idx}>
@@ -1826,7 +1989,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <td style={{ color: '#00ff9d' }}>📱 {c.telefono}</td>
                       <td>🛠️ {c.equipos} equipos | 🛒 {c.comprasWeb} pedidos</td>
                       <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${c.totalGastado.toLocaleString()}</td>
-                      <td><button onClick={() => window.open(`https://wa.me/549${c.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(mensajePromoCRM.replace('{nombre}', c.nombre).replace('{empresa}', config.empresaNombre))}`, '_blank')} className="neon-btn neon-btn-green">🚀 Enviar Promo</button></td>
+                      <td><button onClick={() => window.open(`https://wa.me/549${c.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(mensajePromoCRM.replace('{nombre}', c.nombre).replace('{empresa}', nombreNegocioActivo))}`, '_blank')} className="neon-btn neon-btn-green">🚀 Enviar Promo</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1836,11 +1999,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 9: IMPORTADOR EXCEL                 */}
+        {/* MÓDULO 9: IMPORTADOR EXCEL PRIVADO         */}
         {/* ========================================== */}
         {pestaña === 'proveedores' && (
           <div className="neon-card">
-            <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 IMPORTADOR MASIVO DE LISTAS DE PRECIOS (SIN DUPLICAR)</h3>
+            <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 IMPORTAR LISTA EXCEL AL STOCK DE {nombreNegocioActivo}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
               <div><label className="label-neon">Proveedor</label><input type="text" className="neon-input" value={nombreProveedorExcel} onChange={e=>setNombreProveedorExcel(e.target.value)} /></div>
               <div><label className="label-neon">Moneda</label><select className="neon-select" value={monedaListaExcel} onChange={e=>setMonedaListaExcel(e.target.value as any)}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (x ${config.cotizacionDolar})</option></select></div>
@@ -1854,17 +2017,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <div><label className="label-neon">Col. Costo</label><select className="neon-select" value={colCosto} onChange={e=>setColCosto(Number(e.target.value))}>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
                   <div><label className="label-neon">Col. Marca</label><select className="neon-select" value={colMarca} onChange={e=>setColMarca(Number(e.target.value))}><option value={-1}>No Aplica</option>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
                 </div>
-                <button onClick={importarDatosAlInventario} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>🚀 Sincronizar Lista con Base de Datos</button>
+                <button onClick={importarDatosAlInventario} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>🚀 Sincronizar con Mi Inventario</button>
               </div>
             )}
           </div>
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 10: FINANZAS, CAJA & FACTURACIÓN    */}
+        {/* MÓDULO 10: FINANZAS PRIVADAS POR LOCAL     */}
         {/* ========================================== */}
         {pestaña === 'finanzas' && (
           <div>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 CAJA Y FINANZAS PRIVADAS // {nombreNegocioActivo}</h2>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               <select className="neon-select" value={filtroTiempo} onChange={e=>setFiltroTiempo(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todo el Historial</option><option value="hoy">Hoy</option><option value="mes">Este Mes</option></select>
               <select className="neon-select" value={filtroTipoLista} onChange={e=>setFiltroTipoLista(e.target.value)} style={{ width: 'auto' }}><option value="todos">Ingresos y Egresos</option><option value="ingreso">Solo Ingresos</option><option value="egreso">Solo Egresos</option></select>
@@ -1872,14 +2036,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '22px' }}>
-              <div className="neon-card neon-card-green" style={{ textAlign: 'center' }}><span className="label-neon" style={{ color: '#00ff9d' }}>INGRESOS</span><h2 className="glow-text-green" style={{ margin: '5px 0 0 0' }}>${totalIngresos.toLocaleString()}</h2></div>
-              <div className="neon-card neon-card-pink" style={{ textAlign: 'center' }}><span className="label-neon" style={{ color: '#ff0055' }}>EGRESOS</span><h2 className="glow-text-red" style={{ margin: '5px 0 0 0' }}>${totalEgresos.toLocaleString()}</h2></div>
-              <div className="neon-card" style={{ textAlign: 'center' }}><span className="label-neon">CAJA NETA</span><h2 className="glow-text-cyan" style={{ margin: '5px 0 0 0' }}>${saldoNeto.toLocaleString()}</h2></div>
+              <div className="neon-card neon-card-green" style={{ textAlign: 'center' }}><span className="label-neon" style={{ color: '#00ff9d' }}>MIS INGRESOS</span><h2 className="glow-text-green" style={{ margin: '5px 0 0 0' }}>${totalIngresos.toLocaleString()}</h2></div>
+              <div className="neon-card neon-card-pink" style={{ textAlign: 'center' }}><span className="label-neon" style={{ color: '#ff0055' }}>MIS EGRESOS</span><h2 className="glow-text-red" style={{ margin: '5px 0 0 0' }}>${totalEgresos.toLocaleString()}</h2></div>
+              <div className="neon-card" style={{ textAlign: 'center' }}><span className="label-neon">MI CAJA NETA</span><h2 className="glow-text-cyan" style={{ margin: '5px 0 0 0' }}>${saldoNeto.toLocaleString()}</h2></div>
             </div>
 
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={registrarMovimientoFinanzas} className="neon-card" style={{ flex: '1 1 280px', alignSelf: 'flex-start' }}>
-                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ ASIENTO CONTABLE</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ REGISTRAR EN MI CAJA</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <select className="neon-select" value={finTipo} onChange={e=>setFinTipo(e.target.value)}><option value="ingreso">Ingreso (+)</option><option value="egreso">Egreso / Gasto (-)</option></select>
                   <input type="text" className="neon-input" placeholder="Concepto" required value={finConcepto} onChange={e=>setFinConcepto(e.target.value)} />
@@ -1924,22 +2088,20 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 11: CONFIGURACIÓN & ROLES           */}
+        {/* MÓDULO 11: CONFIGURACIÓN CENTRAL           */}
         {/* ========================================== */}
-        {pestaña === 'configuracion' && (
+        {pestaña === 'configuracion' && !esSucursalExterna && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚙️ PARÁMETROS GLOBALES Y FINANCIEROS</h3>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚙️ PARÁMETROS GLOBALES DE LA CENTRAL</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-                <div><label className="label-neon">Empresa</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
+                <div><label className="label-neon">Empresa Central</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
                 <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
                 <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={conf.whatsapp} onChange={e=>setConf({...conf, whatsapp: e.target.value})} /></div>
                 <div><label className="label-neon">Dólar Ref ($)</label><input type="number" className="neon-input" value={conf.cotizacionDolar} onChange={e=>setConf({...conf, cotizacionDolar: Number(e.target.value)})} /></div>
                 <div><label className="label-neon">Markup Público (%)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
                 <div><label className="label-neon">Desc. Gremio Bronce (%)</label><input type="number" className="neon-input" value={conf.descuentoGremioBronce} onChange={e=>setConf({...conf, descuentoGremioBronce: Number(e.target.value)})} /></div>
                 <div><label className="label-neon">Desc. Gremio Oro (%)</label><input type="number" className="neon-input" value={conf.descuentoGremioOro} onChange={e=>setConf({...conf, descuentoGremioOro: Number(e.target.value)})} /></div>
-                <div><label className="label-neon">Desc. Efectivo POS (%)</label><input type="number" className="neon-input" value={conf.descuentoEfectivoPorcentaje} onChange={e=>setConf({...conf, descuentoEfectivoPorcentaje: Number(e.target.value)})} /></div>
-                <div><label className="label-neon">Recargo Tarjeta POS (%)</label><input type="number" className="neon-input" value={conf.recargoTarjetaPorcentaje} onChange={e=>setConf({...conf, recargoTarjetaPorcentaje: Number(e.target.value)})} /></div>
                 <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
               </div>
@@ -1947,14 +2109,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
             </form>
 
             <div className="neon-card">
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ GESTIÓN DE ROLES DEL PERSONAL</h3>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ ROLES DEL PERSONAL DE TU CENTRAL</h3>
               <form onSubmit={agregarUsuarioRol} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
                 <input type="text" className="neon-input" placeholder="Nombre" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} style={{ flex: 1 }} />
                 <input type="email" className="neon-input" placeholder="Email Firebase" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} style={{ flex: 1 }} />
                 <select className="neon-select" value={nuevoUserRol} onChange={e=>setNuevoUserRol(e.target.value as any)} style={{ width: 'auto' }}>
-                  <option value="tecnico">🔧 Técnico</option>
-                  <option value="vendedor">🛒 Vendedor</option>
-                  <option value="admin">👑 Admin</option>
+                  <option value="tecnico">🔧 Técnico Central</option>
+                  <option value="vendedor">🛒 Vendedor Central</option>
+                  <option value="admin">👑 Admin Total</option>
                 </select>
                 <button type="submit" className="neon-btn neon-btn-fillCyan">+ Asignar Rol</button>
               </form>
@@ -1992,18 +2154,18 @@ export default function App() {
     return () => u(); 
   }, []);
 
-  if (cargando) return <div style={{ padding: '50px', textAlign: 'center', color: '#00f3ff', background: '#060911', height: '100vh', fontFamily: 'Orbitron' }}>⚡ INICIANDO WALABBA TECNO ERP...</div>;
+  if (cargando) return <div style={{ padding: '50px', textAlign: 'center', color: '#00f3ff', background: '#060911', height: '100vh', fontFamily: 'Orbitron' }}>⚡ INICIANDO PLATAFORMA MULTI-LOCAL...</div>;
 
   return (
     <BrowserRouter>
       <style>{NEON_STYLES}</style>
       <nav style={{ padding: '12px 25px', background: 'rgba(6, 9, 17, 0.98)', borderBottom: '1px solid rgba(0, 243, 255, 0.35)', display: 'flex', gap: '20px', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
-        <Link to="/" className="glow-text-cyan" style={{ textDecoration: 'none', fontWeight: 900, fontFamily: 'Orbitron', fontSize: '14px' }}>⚡ CATÁLOGO MAYORISTA B2B</Link>
+        <Link to="/" className="glow-text-cyan" style={{ textDecoration: 'none', fontWeight: 900, fontFamily: 'Orbitron', fontSize: '14px' }}>⚡ CATÁLOGO CENTRAL B2B</Link>
         <Link to="/seguimiento" style={{ color: '#e2e8f0', textDecoration: 'none', fontWeight: 600, fontFamily: 'Orbitron', fontSize: '12px' }}>🔍 RASTREAR EQUIPO</Link>
         {!user ? (
-          <Link to="/admin-login" className="neon-btn" style={{ marginLeft: 'auto', textDecoration: 'none' }}>🔐 Acceso Gremio / ERP</Link>
+          <Link to="/admin-login" className="neon-btn" style={{ marginLeft: 'auto', textDecoration: 'none' }}>🔐 Acceso Locales / ERP</Link>
         ) : (
-          <Link to="/admin-panel" className="neon-btn neon-btn-fillCyan" style={{ marginLeft: 'auto', textDecoration: 'none' }}>⚙️ PANEL CENTRAL ERP</Link>
+          <Link to="/admin-panel" className="neon-btn neon-btn-fillCyan" style={{ marginLeft: 'auto', textDecoration: 'none' }}>⚙️ MI PANEL DE GESTIÓN</Link>
         )}
       </nav>
       <Routes>
