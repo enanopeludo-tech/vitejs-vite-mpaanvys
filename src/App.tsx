@@ -11,6 +11,8 @@ import { auth, db } from './firebase';
 
 // --- Configuración por defecto ERP Central ---
 const CONFIG_DEFAULT = {
+  temaVisual: "claro", // 'claro' | 'oscuro' | 'sistema' | 'neon'
+  tamanoFuenteBase: 17, // Tamaño aumentado y cómodo por defecto
   empresaNombre: "WALABBA TECNO",
   eslogan: "Laboratorio Central de Microelectrónica & Hub B2B",
   cuit: "20-35441122-3",
@@ -48,142 +50,285 @@ const CHECKLIST_ITEMS = [
   "Bandeja SIM", "MicroSD", "Con Funda", "Mojado / Sulfato"
 ];
 
-// --- ESTILOS NEON CYBERPUNK ---
-const NEON_STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+// --- GENERADOR DE ESTILOS DINÁMICOS (CLÁSICO iOS 26.1 / SISTEMA / NEÓN) ---
+const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
+  const prefiereOscuroSO = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const temaEfectivo = temaConfig === 'sistema' ? (prefiereOscuroSO ? 'oscuro' : 'claro') : (temaConfig || 'claro');
 
-  :root {
-    --bg-dark: #060911;
-    --bg-card: #0d1322;
-    --bg-input: #080c16;
-    --neon-cyan: #00f3ff;
-    --neon-pink: #ff00ff;
-    --neon-green: #00ff9d;
-    --neon-purple: #b537f2;
-    --neon-yellow: #ffee00;
-    --neon-red: #ff0055;
-    --text-main: #e2e8f0;
-    --text-muted: #8b9bb4;
-  }
+  const paletas: Record<string, any> = {
+    claro: {
+      bgMain: '#f2f2f7',
+      bgCard: 'rgba(255, 255, 255, 0.88)',
+      bgInput: '#ffffff',
+      bgSidebar: 'rgba(248, 249, 252, 0.95)',
+      bgNav: 'rgba(255, 255, 255, 0.85)',
+      textMain: '#1c1c1e',
+      textMuted: '#636366',
+      primary: '#007aff',
+      success: '#28cd41',
+      accentPink: '#5856d6',
+      accentPurple: '#af52de',
+      warning: '#ff9500',
+      danger: '#ff3b30',
+      borderCard: 'rgba(0, 0, 0, 0.08)',
+      borderInput: '#d1d1d6',
+      shadowCard: '0 8px 24px rgba(0, 0, 0, 0.05)',
+      fontHeading: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif",
+      fontBody: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif",
+      esNeon: false
+    },
+    oscuro: {
+      bgMain: '#000000',
+      bgCard: 'rgba(28, 28, 30, 0.88)',
+      bgInput: '#2c2c2e',
+      bgSidebar: 'rgba(18, 18, 20, 0.95)',
+      bgNav: 'rgba(28, 28, 30, 0.85)',
+      textMain: '#f2f2f7',
+      textMuted: '#98989d',
+      primary: '#0a84ff',
+      success: '#30d158',
+      accentPink: '#5e5ce6',
+      accentPurple: '#bf5af2',
+      warning: '#ff9f0a',
+      danger: '#ff453a',
+      borderCard: 'rgba(255, 255, 255, 0.12)',
+      borderInput: '#3a3a3c',
+      shadowCard: '0 8px 28px rgba(0, 0, 0, 0.4)',
+      fontHeading: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif",
+      fontBody: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif",
+      esNeon: false
+    },
+    neon: {
+      bgMain: '#060911',
+      bgCard: 'rgba(13, 19, 34, 0.92)',
+      bgInput: '#080c16',
+      bgSidebar: 'rgba(8, 12, 22, 0.98)',
+      bgNav: 'rgba(6, 9, 17, 0.95)',
+      textMain: '#e2e8f0',
+      textMuted: '#8b9bb4',
+      primary: '#00f3ff',
+      success: '#00ff9d',
+      accentPink: '#ff00ff',
+      accentPurple: '#b537f2',
+      warning: '#ffee00',
+      danger: '#ff0055',
+      borderCard: 'rgba(0, 243, 255, 0.25)',
+      borderInput: 'rgba(0, 243, 255, 0.3)',
+      shadowCard: '0 8px 28px rgba(0, 0, 0, 0.6)',
+      fontHeading: "'Orbitron', sans-serif",
+      fontBody: "'Rajdhani', sans-serif",
+      esNeon: true
+    }
+  };
 
-  body {
-    background-color: var(--bg-dark);
-    color: var(--text-main);
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 16px;
-    margin: 0;
-    padding: 0;
-  }
+  const p = paletas[temaEfectivo] || paletas.claro;
 
-  h1, h2, h3, h4, .neon-title {
-    font-family: 'Orbitron', sans-serif;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-  }
+  return `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&display=swap');
 
-  .neon-card {
-    background: rgba(13, 19, 34, 0.92);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(0, 243, 255, 0.22);
-    border-radius: 12px;
-    box-shadow: 0 8px 28px 0 rgba(0, 0, 0, 0.55);
-    padding: 18px;
-  }
+    :root {
+      --bg-dark: ${p.bgMain};
+      --bg-card: ${p.bgCard};
+      --bg-input: ${p.bgInput};
+      --neon-cyan: ${p.primary};
+      --neon-pink: ${p.accentPink};
+      --neon-green: ${p.success};
+      --neon-purple: ${p.accentPurple};
+      --neon-yellow: ${p.warning};
+      --neon-red: ${p.danger};
+      --text-main: ${p.textMain};
+      --text-muted: ${p.textMuted};
+    }
 
-  .neon-card-pink { border-color: rgba(255, 0, 255, 0.35); }
-  .neon-card-green { border-color: rgba(0, 255, 157, 0.35); }
-  .neon-card-purple { border-color: rgba(181, 55, 242, 0.35); }
-  .neon-card-yellow { border-color: rgba(255, 238, 0, 0.35); }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: ${p.fontBody};
+      font-size: ${fontSizeBase}px;
+      line-height: 1.5;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.25s ease, color 0.25s ease;
+      -webkit-font-smoothing: antialiased;
+    }
 
-  .neon-input, .neon-select, .neon-textarea {
-    background: var(--bg-input);
-    border: 1px solid rgba(0, 243, 255, 0.28);
-    color: var(--text-main);
-    padding: 9px 12px;
-    border-radius: 7px;
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 15px;
-    font-weight: 500;
-    width: 100%;
-    box-sizing: border-box;
-  }
+    h1, h2, h3, h4, .neon-title {
+      font-family: ${p.fontHeading};
+      letter-spacing: ${p.esNeon ? '0.8px' : '-0.3px'};
+      font-weight: 700;
+      color: var(--text-main);
+    }
 
-  .neon-input:focus, .neon-select:focus, .neon-textarea:focus {
-    outline: none;
-    border-color: var(--neon-cyan);
-    box-shadow: 0 0 10px rgba(0, 243, 255, 0.35);
-  }
+    h2 { font-size: ${fontSizeBase + 6}px; }
+    h3 { font-size: ${fontSizeBase + 3}px; }
+    h4 { font-size: ${fontSizeBase + 1}px; }
 
-  .neon-btn {
-    background: rgba(0, 243, 255, 0.04);
-    border: 1px solid var(--neon-cyan);
-    color: var(--neon-cyan);
-    padding: 8px 14px;
-    border-radius: 7px;
-    font-family: 'Orbitron', sans-serif;
-    font-size: 10.5px;
-    font-weight: 700;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    transition: all 0.18s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-  }
+    /* Tarjetas con estética limpia o neón según tema */
+    .neon-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid ${p.borderCard};
+      border-radius: 20px;
+      box-shadow: ${p.shadowCard};
+      padding: 22px;
+      transition: all 0.2s ease;
+    }
 
-  .neon-btn:hover:not(:disabled) {
-    background: var(--neon-cyan);
-    color: #000;
-    box-shadow: 0 0 15px var(--neon-cyan);
-  }
+    .neon-card-pink { border-color: ${p.esNeon ? 'rgba(255, 0, 255, 0.35)' : 'rgba(88, 86, 214, 0.3)'}; }
+    .neon-card-green { border-color: ${p.esNeon ? 'rgba(0, 255, 157, 0.35)' : 'rgba(40, 205, 65, 0.3)'}; }
+    .neon-card-purple { border-color: ${p.esNeon ? 'rgba(181, 55, 242, 0.35)' : 'rgba(175, 82, 222, 0.3)'}; }
+    .neon-card-yellow { border-color: ${p.esNeon ? 'rgba(255, 238, 0, 0.35)' : 'rgba(255, 149, 0, 0.3)'}; }
 
-  .neon-btn:disabled { opacity: 0.35; cursor: not-allowed; border-color: #555; color: #777; }
+    /* Inputs más grandes y cómodos de leer */
+    .neon-input, .neon-select, .neon-textarea {
+      background: var(--bg-input);
+      border: 1px solid ${p.borderInput};
+      color: var(--text-main);
+      padding: 12px 15px;
+      border-radius: 14px;
+      font-family: ${p.fontBody};
+      font-size: ${fontSizeBase - 1}px;
+      font-weight: 500;
+      width: 100%;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
+    }
 
-  .neon-btn-fillCyan { background: linear-gradient(90deg, #00c6ff, #0072ff); border: 1px solid var(--neon-cyan); color: #fff; }
-  .neon-btn-fillCyan:hover:not(:disabled) { background: var(--neon-cyan); color: #000; box-shadow: 0 0 20px var(--neon-cyan); }
+    .neon-input:focus, .neon-select:focus, .neon-textarea:focus {
+      outline: none;
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 0 3px ${p.esNeon ? 'rgba(0, 243, 255, 0.25)' : 'rgba(0, 122, 255, 0.2)'};
+    }
 
-  .neon-btn-green { border-color: var(--neon-green); color: var(--neon-green); }
-  .neon-btn-green:hover:not(:disabled) { background: var(--neon-green); color: #000; box-shadow: 0 0 15px var(--neon-green); }
+    /* =========================================================
+       BOTONES ESTILO iOS 26.1 (Píldora Liquid Glass + Spring)
+       ========================================================= */
+    .neon-btn {
+      background: ${p.esNeon ? 'rgba(0, 243, 255, 0.08)' : (temaEfectivo === 'claro' ? 'rgba(0, 122, 255, 0.1)' : 'rgba(10, 132, 255, 0.18)')};
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid ${p.esNeon ? 'var(--neon-cyan)' : 'rgba(0, 122, 255, 0.22)'};
+      color: var(--neon-cyan);
+      padding: 11px 20px;
+      border-radius: 9999px; /* Píldora iOS 26.1 */
+      font-family: ${p.fontHeading};
+      font-size: ${fontSizeBase - 2}px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.2px;
+      transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease, box-shadow 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
 
-  .neon-btn-pink { border-color: var(--neon-pink); color: var(--neon-pink); }
-  .neon-btn-pink:hover:not(:disabled) { background: var(--neon-pink); color: #000; box-shadow: 0 0 15px var(--neon-pink); }
+    .neon-btn:hover:not(:disabled) {
+      background: var(--neon-cyan);
+      color: ${p.esNeon ? '#000' : '#fff'};
+      transform: scale(1.02);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 16px ${p.esNeon ? 'rgba(0, 243, 255, 0.4)' : 'rgba(0, 122, 255, 0.3)'};
+    }
 
-  .neon-btn-purple { border-color: var(--neon-purple); color: var(--neon-purple); }
-  .neon-btn-purple:hover:not(:disabled) { background: var(--neon-purple); color: #fff; box-shadow: 0 0 15px var(--neon-purple); }
+    .neon-btn:active:not(:disabled) {
+      transform: scale(0.96);
+    }
 
-  .neon-btn-red { border-color: var(--neon-red); color: var(--neon-red); }
-  .neon-btn-red:hover:not(:disabled) { background: var(--neon-red); color: #fff; box-shadow: 0 0 15px var(--neon-red); }
+    .neon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .neon-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
-  .neon-table th { background: rgba(0, 243, 255, 0.08); color: var(--neon-cyan); font-family: 'Orbitron', sans-serif; font-size: 10.5px; padding: 11px; text-align: left; border-bottom: 2px solid rgba(0, 243, 255, 0.35); }
-  .neon-table td { padding: 10px 11px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
-  .neon-table tr:hover td { background: rgba(0, 243, 255, 0.03); }
+    .neon-btn-fillCyan { 
+      background: linear-gradient(180deg, ${p.esNeon ? '#00c6ff' : '#2e90ff'} 0%, var(--neon-cyan) 100%); 
+      border: 1px solid rgba(255, 255, 255, 0.2); 
+      color: #ffffff; 
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 4px 14px rgba(0, 122, 255, 0.28);
+    }
+    .neon-btn-fillCyan:hover:not(:disabled) { 
+      filter: brightness(1.06);
+      color: #ffffff;
+    }
 
-  .neon-badge { padding: 3px 8px; border-radius: 16px; font-size: 9.5px; font-weight: 700; font-family: 'Orbitron', sans-serif; text-transform: uppercase; display: inline-block; }
+    .neon-btn-green { 
+      background: ${p.esNeon ? 'transparent' : 'rgba(40, 205, 65, 0.12)'};
+      border-color: ${p.esNeon ? 'var(--neon-green)' : 'rgba(40, 205, 65, 0.3)'}; 
+      color: ${temaEfectivo === 'claro' ? '#198754' : 'var(--neon-green)'}; 
+    }
+    .neon-btn-green:hover:not(:disabled) { background: var(--neon-green); color: #fff; }
 
-  .glow-text-cyan { color: var(--neon-cyan); text-shadow: 0 0 8px rgba(0, 243, 255, 0.5); }
-  .glow-text-green { color: var(--neon-green); text-shadow: 0 0 8px rgba(0, 255, 157, 0.5); }
-  .glow-text-pink { color: var(--neon-pink); text-shadow: 0 0 8px rgba(255, 0, 255, 0.5); }
-  .glow-text-red { color: var(--neon-red); text-shadow: 0 0 8px rgba(255, 0, 85, 0.5); }
-  .glow-text-yellow { color: var(--neon-yellow); text-shadow: 0 0 8px rgba(255, 238, 0, 0.5); }
+    .neon-btn-pink { 
+      background: ${p.esNeon ? 'transparent' : 'rgba(88, 86, 214, 0.12)'};
+      border-color: ${p.esNeon ? 'var(--neon-pink)' : 'rgba(88, 86, 214, 0.3)'}; 
+      color: var(--neon-pink); 
+    }
+    .neon-btn-pink:hover:not(:disabled) { background: var(--neon-pink); color: #fff; }
 
-  .label-neon { display: block; font-size: 10.5px; font-weight: 700; color: var(--neon-cyan); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .neon-btn-purple { 
+      background: ${p.esNeon ? 'transparent' : 'rgba(175, 82, 222, 0.12)'};
+      border-color: ${p.esNeon ? 'var(--neon-purple)' : 'rgba(175, 82, 222, 0.3)'}; 
+      color: var(--neon-purple); 
+    }
+    .neon-btn-purple:hover:not(:disabled) { background: var(--neon-purple); color: #fff; }
 
-  .erp-layout { display: flex; min-height: calc(100vh - 60px); }
-  .erp-sidebar { width: 245px; background: rgba(8, 12, 22, 0.98); border-right: 1px solid rgba(0, 243, 255, 0.2); padding: 18px 12px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
-  .erp-main { flex: 1; padding: 22px; overflow-x: hidden; }
-  .side-btn { width: 100%; justify-content: flex-start; padding: 11px 14px; font-size: 10.5px; border-color: transparent; color: #94a3b8; background: transparent; text-align: left; }
-  .side-btn:hover { background: rgba(0, 243, 255, 0.08); color: #fff; box-shadow: none; }
-  .side-btn.active { background: linear-gradient(90deg, rgba(0, 243, 255, 0.18), transparent); border-left: 3px solid var(--neon-cyan); color: var(--neon-cyan); }
+    .neon-btn-red { 
+      background: ${p.esNeon ? 'transparent' : 'rgba(255, 59, 48, 0.12)'};
+      border-color: ${p.esNeon ? 'var(--neon-red)' : 'rgba(255, 59, 48, 0.3)'}; 
+      color: var(--neon-red); 
+    }
+    .neon-btn-red:hover:not(:disabled) { background: var(--neon-red); color: #fff; }
 
-  @media (max-width: 900px) {
-    .erp-layout { flex-direction: column; }
-    .erp-sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px; box-sizing: border-box; }
-    .side-btn { width: auto; white-space: nowrap; }
-  }
-`;
+    /* Tablas con letra más grande */
+    .neon-table { width: 100%; border-collapse: collapse; font-size: ${fontSizeBase - 1}px; }
+    .neon-table th { 
+      background: ${temaEfectivo === 'claro' ? '#f2f2f7' : 'rgba(255, 255, 255, 0.06)'}; 
+      color: var(--text-muted); 
+      font-weight: 700;
+      font-size: ${fontSizeBase - 3}px; 
+      padding: 13px 12px; 
+      text-align: left; 
+      border-bottom: 1px solid ${p.borderInput}; 
+      text-transform: uppercase;
+    }
+    .neon-table td { padding: 13px 12px; border-bottom: 1px solid ${p.borderCard}; color: var(--text-main); }
+    .neon-table tr:hover td { background: ${temaEfectivo === 'claro' ? 'rgba(0, 122, 255, 0.04)' : 'rgba(255, 255, 255, 0.03)'}; }
+
+    .neon-badge { padding: 5px 12px; border-radius: 9999px; font-size: ${fontSizeBase - 4}px; font-weight: 700; display: inline-block; }
+
+    .glow-text-cyan { color: var(--neon-cyan); ${p.esNeon ? 'text-shadow: 0 0 8px rgba(0, 243, 255, 0.5);' : ''} }
+    .glow-text-green { color: ${temaEfectivo === 'claro' ? '#198754' : 'var(--neon-green)'}; ${p.esNeon ? 'text-shadow: 0 0 8px rgba(0, 255, 157, 0.5);' : ''} }
+    .glow-text-pink { color: var(--neon-pink); ${p.esNeon ? 'text-shadow: 0 0 8px rgba(255, 0, 255, 0.5);' : ''} }
+    .glow-text-red { color: var(--neon-red); ${p.esNeon ? 'text-shadow: 0 0 8px rgba(255, 0, 85, 0.5);' : ''} }
+    .glow-text-yellow { color: ${temaEfectivo === 'claro' ? '#d97706' : 'var(--neon-yellow)'}; }
+
+    .label-neon { display: block; font-size: ${fontSizeBase - 3}px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+
+    .erp-layout { display: flex; min-height: calc(100vh - 65px); }
+    .erp-sidebar { width: 260px; background: ${p.bgSidebar}; border-right: 1px solid ${p.borderCard}; padding: 18px 14px; display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; backdrop-filter: blur(20px); }
+    .erp-main { flex: 1; padding: 24px; overflow-x: hidden; }
+    .side-btn { width: 100%; justify-content: flex-start; padding: 12px 16px; font-size: ${fontSizeBase - 2}px; border-color: transparent; color: var(--text-muted); background: transparent; text-align: left; border-radius: 14px; box-shadow: none; }
+    .side-btn:hover { background: ${temaEfectivo === 'claro' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.06)'}; color: var(--text-main); transform: none; box-shadow: none; }
+    .side-btn.active { background: var(--neon-cyan); color: ${p.esNeon ? '#000' : '#fff'}; font-weight: 700; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25); }
+
+    .top-nav-bar {
+      padding: 12px 25px; 
+      background: ${p.bgNav}; 
+      border-bottom: 1px solid ${p.borderCard}; 
+      display: flex; 
+      gap: 20px; 
+      align-items: center; 
+      position: sticky; 
+      top: 0; 
+      zIndex: 100;
+      backdrop-filter: blur(20px);
+    }
+
+    @media (max-width: 900px) {
+      .erp-layout { flex-direction: column; }
+      .erp-sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px; box-sizing: border-box; }
+      .side-btn { width: auto; white-space: nowrap; }
+    }
+  `;
+};
 
 const aplicarRedondeo = (valor: number, multiploStr: string) => {
   const multiplo = Number(multiploStr) || 1;
@@ -304,27 +449,27 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     } catch (error) { alert('Error al procesar pedido.'); } finally { setProcesando(false); }
   };
 
-  if (cargando) return <div style={{ textAlign: 'center', padding: '80px', color: '#00f3ff', fontFamily: 'Orbitron' }}>⚡ CARGANDO TIENDA ONLINE...</div>;
+  if (cargando) return <div style={{ textAlign: 'center', padding: '80px', fontWeight: 'bold' }}>Cargando Tienda Online...</div>;
 
   return (
     <div style={{ padding: '25px', maxWidth: '1380px', margin: '0 auto', display: 'flex', gap: '25px', flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 65%' }}>
-        <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderLeft: '4px solid #00f3ff' }}>
+        <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderLeft: '4px solid var(--neon-cyan)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <div style={{ fontSize: '32px' }}>⚡</div>
             <div>
               <h2 className="glow-text-cyan" style={{ margin: 0 }}>{nombreVitrina}</h2>
-              <p style={{ margin: '3px 0 0 0', color: '#8b9bb4', fontSize: '14px' }}>
+              <p style={{ margin: '3px 0 0 0', color: 'var(--text-muted)', fontSize: '15px' }}>
                 {localDueñoVitrina ? `Tienda Oficial del Local | 📍 ${direccionVitrina}` : `${config.eslogan} | 📍 ${direccionVitrina}`}
               </p>
             </div>
           </div>
-          <div style={{ textAlign: 'right', fontSize: '13px', color: '#8b9bb4' }}>
+          <div style={{ textAlign: 'right', fontSize: '14px', color: 'var(--text-muted)' }}>
             {localDueñoVitrina ? (
               <Link to="/" className="neon-btn" style={{ textDecoration: 'none' }}>Ir a Central {config.empresaNombre}</Link>
             ) : (
               tallerLogueado && (
-                <div className="neon-badge" style={{ background: 'rgba(0,255,157,0.15)', color: '#00ff9d', marginTop: '5px' }}>
+                <div className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)', marginTop: '5px' }}>
                   🏢 CONVENIO GREMIO {tallerLogueado.nivel.toUpperCase()} (-{porcentajeDescuentoGremio}%) | Cta. Cte: ${tallerLogueado.saldoDeudor || 0}
                 </div>
               )
@@ -333,9 +478,9 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
         </div>
 
         {!puedeVerPrecios && (
-          <div className="neon-card neon-card-pink" style={{ padding: '14px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#ff99ff', fontWeight: 600 }}>🔒 Catálogo Mayorista. Inicia sesión con la cuenta de tu Local para ver precios gremio o administrar tu sucursal.</span>
-            <Link to="/admin-login" className="neon-btn neon-btn-pink" style={{ textDecoration: 'none' }}>Acceso Locales</Link>
+          <div className="neon-card neon-card-pink" style={{ padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <span style={{ fontWeight: 600 }}>🔒 Catálogo Mayorista. Inicia sesión con la cuenta de tu Local para ver precios gremio o administrar tu sucursal.</span>
+            <Link to="/admin-login" className="neon-btn neon-btn-fillCyan" style={{ textDecoration: 'none' }}>Acceso Locales</Link>
           </div>
         )}
         
@@ -346,45 +491,45 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
           </select>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '18px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '18px' }}>
           {productosFiltrados.map(prod => {
             const precioMostrado = calcularPrecioFinalCliente(prod.precio);
             return (
-              <div key={prod.idBaseDatos} className="neon-card" style={{ border: prod.destacado && prod.stock > 0 ? '1px solid #ffee00' : undefined, position: 'relative', opacity: prod.stock === 0 ? 0.55 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div key={prod.idBaseDatos} className="neon-card" style={{ position: 'relative', opacity: prod.stock === 0 ? 0.55 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
                   {prod.destacado && prod.stock > 0 && (
-                    <div style={{ position: 'absolute', top: '-10px', right: '12px', background: '#ffee00', color: '#000', padding: '2px 9px', borderRadius: '20px', fontWeight: 900, fontSize: '10px', fontFamily: 'Orbitron' }}>⚡ DESTACADO</div>
+                    <div style={{ position: 'absolute', top: '-10px', right: '12px', background: 'var(--neon-yellow)', color: '#000', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, fontSize: '11px' }}>⭐ DESTACADO</div>
                   )}
-                  <div style={{ height: '125px', background: '#070a12', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    {prod.imagenUrl ? <img src={prod.imagenUrl} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} alt="prod" /> : <span style={{ fontSize: '32px', opacity: 0.3 }}>📦</span>}
+                  <div style={{ height: '130px', background: 'var(--bg-input)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', border: '1px solid rgba(128,128,128,0.12)' }}>
+                    {prod.imagenUrl ? <img src={prod.imagenUrl} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} alt="prod" /> : <span style={{ fontSize: '34px', opacity: 0.4 }}>📦</span>}
                   </div>
-                  <span className="neon-badge" style={{ background: 'rgba(0,243,255,0.1)', color: '#00f3ff', border: '1px solid rgba(0,243,255,0.3)', marginBottom: '6px' }}>{prod.categoria || 'General'}</span>
-                  <h4 style={{ margin: '6px 0 4px 0', fontSize: '15px', color: '#fff' }}>{prod.nombre}</h4>
-                  <p style={{ fontSize: '13px', color: '#8b9bb4', margin: '0 0 10px 0' }}>{prod.descripcion}</p>
+                  <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.1)', color: 'var(--neon-cyan)', marginBottom: '6px' }}>{prod.categoria || 'General'}</span>
+                  <h4 style={{ margin: '6px 0 4px 0' }}>{prod.nombre}</h4>
+                  <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>{prod.descripcion}</p>
                 </div>
                 <div>
-                  <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 'bold' }}>
-                    {prod.stock === 0 ? <span className="glow-text-red">● AGOTADO</span> : <span className="glow-text-green">● DISPONIBLE ({prod.stock})</span>}
+                  <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                    {prod.stock === 0 ? <span className="glow-text-red">● Agotado</span> : <span className="glow-text-green">● Disponible ({prod.stock})</span>}
                   </div>
                   {puedeVerPrecios ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '12px' }}>
                       <div>
-                        {porcentajeDescuentoGremio > 0 && <span style={{ fontSize: '11px', textDecoration: 'line-through', color: '#8b9bb4', display: 'block' }}>${prod.precio?.toLocaleString()}</span>}
-                        <b className="glow-text-cyan" style={{ fontSize: '20px', fontFamily: 'Orbitron' }}>${precioMostrado?.toLocaleString()}</b>
+                        {porcentajeDescuentoGremio > 0 && <span style={{ fontSize: '12px', textDecoration: 'line-through', color: 'var(--text-muted)', display: 'block' }}>${prod.precio?.toLocaleString()}</span>}
+                        <b className="glow-text-cyan" style={{ fontSize: '21px' }}>${precioMostrado?.toLocaleString()}</b>
                       </div>
                       <button onClick={() => agregarAlCarrito(prod)} disabled={prod.stock <= 0} className="neon-btn neon-btn-fillCyan">
                         {prod.stock > 0 ? '+ Sumar' : 'Sin Stock'}
                       </button>
                     </div>
                   ) : (
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '10px', textAlign: 'center', fontSize: '12px', color: '#8b9bb4' }}>🔒 Precio Gremio Oculto</div>
+                    <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '10px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>🔒 Precio Gremio Oculto</div>
                   )}
                 </div>
               </div>
             );
           })}
           {productosFiltrados.length === 0 && (
-            <div className="neon-card" style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#8b9bb4' }}>
+            <div className="neon-card" style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)' }}>
               Aún no hay artículos publicados en esta vitrina.
             </div>
           )}
@@ -395,10 +540,10 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
         <div style={{ flex: '1 1 30%', minWidth: '320px' }}>
           {pedidoRealizado ? (
             <div className="neon-card neon-card-green" style={{ position: 'sticky', top: '20px' }}>
-              <h3 className="glow-text-green" style={{ margin: '0 0 10px 0' }}>✅ ¡PEDIDO CONFIRMADO!</h3>
-              <p style={{ margin: '0 0 15px 0', color: '#8b9bb4' }}>Orden: <b style={{ color: '#fff' }}>#{pedidoRealizado.id.slice(-6).toUpperCase()}</b></p>
-              <div style={{ background: '#070a12', padding: '15px', borderRadius: '8px', border: '1px solid rgba(0,255,157,0.3)', marginBottom: '20px' }}>
-                <div className="glow-text-green" style={{ fontSize: '26px', fontFamily: 'Orbitron' }}>${pedidoRealizado.total.toLocaleString()}</div>
+              <h3 className="glow-text-green" style={{ margin: '0 0 10px 0' }}>✅ ¡Pedido Confirmado!</h3>
+              <p style={{ margin: '0 0 15px 0', color: 'var(--text-muted)' }}>Orden: <b>#{pedidoRealizado.id.slice(-6).toUpperCase()}</b></p>
+              <div style={{ background: 'var(--bg-input)', padding: '15px', borderRadius: '14px', marginBottom: '20px' }}>
+                <div className="glow-text-green" style={{ fontSize: '26px', fontWeight: 'bold' }}>${pedidoRealizado.total.toLocaleString()}</div>
               </div>
               <button onClick={() => window.open(`https://wa.me/${whatsappVitrina.replace(/\D/g,'')}?text=Hola%20${encodeURIComponent(nombreVitrina)},%20confirmo%20pedido%20%23${pedidoRealizado.id.slice(-6).toUpperCase()}%20por%20$${pedidoRealizado.total}`, '_blank')} className="neon-btn neon-btn-green" style={{ width: '100%' }}>
                 💬 Coordinar por WhatsApp
@@ -406,7 +551,7 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
             </div>
           ) : modoCheckout ? (
             <div className="neon-card" style={{ position: 'sticky', top: '20px' }}>
-              <h3 className="glow-text-cyan" style={{ margin: '0 0 20px 0' }}>📝 FINALIZAR PEDIDO</h3>
+              <h3 className="glow-text-cyan" style={{ margin: '0 0 20px 0' }}>📝 Finalizar Pedido</h3>
               <form onSubmit={confirmarPedido} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div><label className="label-neon">Nombre / Local</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
                 <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={formCheckout.telefono} onChange={e=>setFormCheckout({...formCheckout, telefono: e.target.value})} /></div>
@@ -421,21 +566,21 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
                 <button type="submit" disabled={procesando} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>
                   {procesando ? 'Procesando...' : 'Confirmar Orden ➔'}
                 </button>
-                <button type="button" onClick={() => setModoCheckout(false)} className="neon-btn" style={{ width: '100%', border: 'none' }}>Volver</button>
+                <button type="button" onClick={() => setModoCheckout(false)} className="neon-btn" style={{ width: '100%' }}>Volver</button>
               </form>
             </div>
           ) : (
             <div className="neon-card" style={{ position: 'sticky', top: '20px' }}>
-              <h3 className="glow-text-cyan" style={{ margin: '0 0 15px 0' }}>🛒 CARRITO ({carrito.length})</h3>
+              <h3 className="glow-text-cyan" style={{ margin: '0 0 15px 0' }}>🛒 Carrito ({carrito.length})</h3>
               <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                 {carrito.map(item => (
-                  <div key={item.idBaseDatos} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '10px 0' }}>
-                    <div><b>{item.cantidad}x {item.nombre}</b><br/><span style={{ color: '#00f3ff' }}>${(item.precio * item.cantidad).toLocaleString()}</span></div>
-                    <button onClick={() => setCarrito(carrito.filter(i => i.idBaseDatos !== item.idBaseDatos))} className="neon-btn neon-btn-red" style={{ padding: '2px 6px' }}>✕</button>
+                  <div key={item.idBaseDatos} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(128,128,128,0.12)', padding: '10px 0' }}>
+                    <div><b>{item.cantidad}x {item.nombre}</b><br/><span className="glow-text-cyan">${(item.precio * item.cantidad).toLocaleString()}</span></div>
+                    <button onClick={() => setCarrito(carrito.filter(i => i.idBaseDatos !== item.idBaseDatos))} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>✕</button>
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', fontSize: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', fontSize: '19px' }}>
                 <span>TOTAL:</span><b className="glow-text-green">${totalCarrito.toLocaleString()}</b>
               </div>
               <button onClick={() => setModoCheckout(true)} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>Continuar Pedido ➔</button>
@@ -478,36 +623,36 @@ const Seguimiento = () => {
   return (
     <div style={{ padding: '50px 20px', maxWidth: '680px', margin: '0 auto' }}>
       <div className="neon-card" style={{ textAlign: 'center', marginBottom: '30px' }}>
-        <h2 className="glow-text-cyan">🔍 RASTREO DE SERVICIO TÉCNICO EN VIVO</h2>
-        <p style={{ color: '#8b9bb4', marginBottom: '20px' }}>Ingresa el código de 6 dígitos o escanea el QR de tu comprobante</p>
+        <h2 className="glow-text-cyan">🔍 Rastreo de Servicio Técnico</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Ingresa el código de 6 dígitos o escanea el QR de tu comprobante</p>
         <form onSubmit={buscar} style={{ display: 'flex', gap: '10px', justifyContent: 'center', maxWidth: '420px', margin: '0 auto' }}>
-          <input type="text" className="neon-input" placeholder="CÓDIGO (EJ: X9B2V)" value={codigo} onChange={e => setCodigo(e.target.value)} style={{ textAlign: 'center', fontFamily: 'Orbitron', letterSpacing: '3px', fontSize: '18px' }} maxLength={6}/>
+          <input type="text" className="neon-input" placeholder="CÓDIGO (EJ: X9B2V)" value={codigo} onChange={e => setCodigo(e.target.value)} style={{ textAlign: 'center', letterSpacing: '3px', fontSize: '19px', fontWeight: 'bold' }} maxLength={6}/>
           <button type="submit" className="neon-btn neon-btn-fillCyan">Consultar</button>
         </form>
       </div>
 
       {resultado && (
         <div className="neon-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0,243,255,0.2)', paddingBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(128,128,128,0.2)', paddingBottom: '12px' }}>
             <div>
-              <span style={{ fontSize: '11px', color: '#8b9bb4' }}>SUCURSAL RECEPTORA: {resultado.tallerOrigen || 'CENTRAL'}</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>SUCURSAL RECEPTORA: {resultado.tallerOrigen || 'CENTRAL'}</span>
               <h3 style={{ margin: 0 }}>{resultado.equipo.marca} {resultado.equipo.modelo}</h3>
             </div>
-            <span className="neon-badge" style={{ background: 'rgba(0,243,255,0.15)', color: '#00f3ff', border: '1px solid #00f3ff' }}>#{resultado.codigoSeguimiento}</span>
+            <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.15)', color: 'var(--neon-cyan)' }}>#{resultado.codigoSeguimiento}</span>
           </div>
           <p style={{ marginTop: '12px' }}><b>Falla declarada:</b> {resultado.fallaDeclarada}</p>
-          <div style={{ background: '#070a12', padding: '18px', borderRadius: '8px', textAlign: 'center', margin: '18px 0', border: '1px solid #00f3ff' }}>
-            <span style={{ fontSize: '11px', color: '#8b9bb4', fontFamily: 'Orbitron' }}>ESTADO ACTUAL DEL EQUIPO</span>
+          <div style={{ background: 'var(--bg-input)', padding: '18px', borderRadius: '14px', textAlign: 'center', margin: '18px 0', border: '1px solid var(--neon-cyan)' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ESTADO ACTUAL DEL EQUIPO</span>
             <h2 className="glow-text-cyan" style={{ margin: '6px 0 0 0', textTransform: 'uppercase' }}>{resultado.estado}</h2>
             {resultado.costoReparacion && <h3 className="glow-text-green" style={{ margin: '10px 0 0 0' }}>Importe al Cliente: ${resultado.costoReparacion}</h3>}
           </div>
-          <h4 className="glow-text-cyan" style={{ fontSize: '13px' }}>📋 BITÁCORA TÉCNICA:</h4>
-          <div style={{ borderLeft: '2px solid #00f3ff', paddingLeft: '15px', marginLeft: '6px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h4 className="glow-text-cyan">📋 Bitácora Técnica:</h4>
+          <div style={{ borderLeft: '3px solid var(--neon-cyan)', paddingLeft: '15px', marginLeft: '6px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {resultado.historial?.map((h:any, i:number) => (
               <div key={i}>
-                <b style={{ color: '#00f3ff', textTransform: 'uppercase', fontSize: '12px', fontFamily: 'Orbitron' }}>{h.estado}</b>
-                <div style={{ color: '#fff', fontSize: '15px' }}>{h.comentario}</div>
-                <div style={{ fontSize: '11px', color: '#8b9bb4' }}>🕒 {h.fecha}</div>
+                <b className="glow-text-cyan" style={{ textTransform: 'uppercase', fontSize: '13px' }}>{h.estado}</b>
+                <div style={{ fontSize: '16px' }}>{h.comentario}</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🕒 {h.fecha}</div>
               </div>
             ))}
           </div>
@@ -524,16 +669,16 @@ const LoginAdmin = () => {
   const [e, setE] = useState(''); const [p, setP] = useState('');
   const navigate = useNavigate();
   return (
-    <div style={{ padding: '80px 20px', maxWidth: '400px', margin: '0 auto' }}>
+    <div style={{ padding: '80px 20px', maxWidth: '420px', margin: '0 auto' }}>
       <div className="neon-card" style={{ textAlign: 'center' }}>
-        <h2 className="glow-text-cyan">🔐 ACCESO ERP & LOCALES</h2>
-        <p style={{ fontSize: '13px', color: '#8b9bb4', marginBottom: '20px' }}>
+        <h2 className="glow-text-cyan">🔐 Acceso al Sistema</h2>
+        <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '20px' }}>
           Ingresa con tu cuenta de <b>Laboratorio Central</b> o con el usuario y contraseña asignado a tu <b>Local Asociado</b>.
         </p>
         <form onSubmit={async (ev) => { ev.preventDefault(); try { await signInWithEmailAndPassword(auth, e, p); navigate('/admin-panel'); } catch (err) { alert('Usuario o contraseña incorrectos'); } }} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <input type="email" className="neon-input" placeholder="Email de Usuario / Local" value={e} onChange={ex => setE(ex.target.value)} required/>
           <input type="password" className="neon-input" placeholder="Contraseña" value={p} onChange={ex => setP(ex.target.value)} required/>
-          <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '12px' }}>Ingresar a mi Panel ➔</button>
+          <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>Ingresar a mi Panel ➔</button>
         </form>
       </div>
     </div>
@@ -593,7 +738,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
-  // --- Red de Talleres Asociados B2B (Gremio + Creación de Credenciales) ---
+  // --- Red de Talleres Asociados B2B ---
   const [tallerNom, setTallerNom] = useState('');
   const [tallerEncargado, setTallerEncargado] = useState('');
   const [tallerTel, setTallerTel] = useState('');
@@ -668,7 +813,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   }, []);
 
   // =========================================================================
-  // DETECCIÓN MULTI-TENANT: ¿ES CENTRAL WALABBA O ES UN LOCAL ASOCIADO?
+  // DETECCIÓN MULTI-TENANT + RESCATE SUPERADMIN
   // =========================================================================
   const sucursalAsociada = talleresGremio.find(t => t.email?.toLowerCase() === user.email?.toLowerCase());
   const esSucursalExterna = Boolean(sucursalAsociada);
@@ -681,6 +826,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const rolActual: 'admin' | 'tecnico' | 'vendedor' | 'sucursal' = esSucursalExterna 
     ? 'sucursal' 
     : (registroRolActual ? registroRolActual.rol : 'admin');
+
+  const restaurarSuperAdmin = async () => {
+    if (registroRolActual) {
+      await deleteDoc(doc(db, 'usuarios_roles', registroRolActual.id));
+      alert('👑 ¡Privilegios de SuperAdmin restaurados!');
+    }
+  };
 
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
@@ -988,8 +1140,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
             * { box-sizing: border-box; }
             body { font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #111; margin: 0; padding: 15px; background: #f0f2f5; }
             .toolbar { background: #111; color: #fff; padding: 12px 20px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; max-width: 820px; margin-left: auto; margin-right: auto; }
-            .btn-print { background: #00f3ff; color: #000; border: none; padding: 8px 16px; border-radius: 5px; font-weight: bold; cursor: pointer; }
-            .btn-mode { background: #333; color: #fff; border: 1px solid #555; padding: 8px 14px; border-radius: 5px; cursor: pointer; margin-right: 6px; }
+            .btn-print { background: #007aff; color: #fff; border: none; padding: 8px 18px; border-radius: 999px; font-weight: bold; cursor: pointer; }
+            .btn-mode { background: #333; color: #fff; border: 1px solid #555; padding: 8px 14px; border-radius: 999px; cursor: pointer; margin-right: 6px; }
             .page-a4 { background: #fff; max-width: 820px; margin: 0 auto; padding: 25px; border: 1px solid #ccc; }
             .header-a4 { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #111; padding-bottom: 12px; margin-bottom: 15px; }
             .brand-title { font-size: 24px; font-weight: 900; margin: 0; }
@@ -1270,7 +1422,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const guardarConfiguracion = async (e: React.FormEvent) => { 
     e.preventDefault(); 
     await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); 
-    alert('⚡ Parámetros guardados.'); 
+    alert('⚡ Parámetros y Tema Visual guardados.'); 
   };
 
   const clientesConsolidados = React.useMemo(() => {
@@ -1314,9 +1466,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const equiposEnBanco = misOrdenesTaller.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
   const equiposListosSinRetirar = misOrdenesTaller.filter(o => o.estado === 'reparado').length;
 
+  // Blindaje para que el SuperAdmin no pueda bajarse el rol por accidente
   const agregarUsuarioRol = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoUserEmail) return;
+    if (nuevoUserEmail.trim().toLowerCase() === user.email?.toLowerCase() && nuevoUserRol !== 'admin') {
+      return alert('⚠️ No puedes bajarte el rol a tu propio correo de SuperAdmin.');
+    }
     await addDoc(collection(db, 'usuarios_roles'), { email: nuevoUserEmail.trim().toLowerCase(), nombre: nuevoUserNombre, rol: nuevoUserRol, fecha: serverTimestamp() });
     setNuevoUserEmail(''); setNuevoUserNombre('');
   };
@@ -1327,10 +1483,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
   return (
     <div className="erp-layout">
       {escaneandoPara && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="neon-card" style={{ width: '100%', maxWidth: '420px', textAlign: 'center' }}>
-            <h3 className="glow-text-cyan">📷 ESCÁNER ACTIVO</h3>
-            <div id="reader" style={{ width: '100%', borderRadius: '8px', background: '#fff' }}></div>
+            <h3 className="glow-text-cyan">📷 Escáner Activo</h3>
+            <div id="reader" style={{ width: '100%', borderRadius: '12px', background: '#fff' }}></div>
             <button onClick={() => setEscaneandoPara(null)} className="neon-btn neon-btn-red" style={{ marginTop: '15px', width: '100%' }}>Cerrar</button>
           </div>
         </div>
@@ -1338,14 +1494,21 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
       {/* SIDEBAR INTELIGENTE */}
       <aside className="erp-sidebar">
-        <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(0,243,255,0.15)', marginBottom: '6px' }}>
-          <div className="glow-text-cyan" style={{ fontFamily: 'Orbitron', fontWeight: 900, fontSize: '13.5px' }}>{nombreNegocioActivo}</div>
-          <div style={{ fontSize: '11px', color: '#8b9bb4', marginTop: '4px' }}>
-            Modo: <span className="neon-badge" style={{ background: esSucursalExterna ? 'rgba(255,0,255,0.15)' : 'rgba(0,255,157,0.15)', color: esSucursalExterna ? '#ff00ff' : '#00ff9d' }}>
+        <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(128,128,128,0.18)', marginBottom: '6px' }}>
+          <div className="glow-text-cyan" style={{ fontWeight: 800, fontSize: '16px' }}>{nombreNegocioActivo}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            Modo: <span className="neon-badge" style={{ background: esSucursalExterna ? 'rgba(88,86,214,0.15)' : 'rgba(40,205,65,0.15)', color: esSucursalExterna ? 'var(--neon-pink)' : 'var(--neon-green)' }}>
               {esSucursalExterna ? `LOCAL GREMIO ${sucursalAsociada.nivel}` : `CENTRAL (${rolActual})`}
             </span>
           </div>
         </div>
+
+        {/* BOTÓN DE RESCATE SI EL SUPERADMIN SE PUSO ROL TÉCNICO POR ERROR */}
+        {!esSucursalExterna && rolActual !== 'admin' && (
+          <button onClick={restaurarSuperAdmin} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', marginBottom: '10px' }}>
+            👑 Recuperar SuperAdmin
+          </button>
+        )}
 
         <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>📊 1. Mi Resumen & Link Web</button>
         {rolActual !== 'tecnico' && (
@@ -1372,7 +1535,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {!esSucursalExterna && rolActual === 'admin' && (
-          <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>⚙️ 11. Config Central</button>
+          <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>⚙️ 11. Temas & Config</button>
         )}
 
         <button onClick={() => signOut(auth)} className="neon-btn neon-btn-red" style={{ marginTop: 'auto', width: '100%' }}>🚪 Cerrar Sesión</button>
@@ -1386,14 +1549,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {pestaña === 'dashboard' && (
           <div>
-            <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderLeft: '4px solid #00ff9d' }}>
+            <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderLeft: '4px solid var(--neon-green)' }}>
               <div>
-                <h2 className="glow-text-cyan" style={{ margin: 0 }}>📊 PANEL PRIVADO // {nombreNegocioActivo}</h2>
-                <div style={{ fontSize: '12.5px', color: '#8b9bb4', marginTop: '4px' }}>
+                <h2 className="glow-text-cyan" style={{ margin: 0 }}>📊 Panel de Control // {nombreNegocioActivo}</h2>
+                <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   📍 {direccionNegocioActivo} | 📱 WhatsApp Activo: {whatsappNegocioActivo}
                 </div>
-                <span style={{ fontSize: '13px', color: '#8b9bb4' }}>
-                  Link de tu Vitrina Pública de Ventas: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" style={{ color: '#00ff9d', fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
+                <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+                  Link de tu Vitrina Pública de Ventas: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-green" style={{ fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
                 </span>
               </div>
               <button onClick={() => { navigator.clipboard.writeText(urlVitrinaPropia); alert('Link de tu tienda copiado al portapapeles'); }} className="neon-btn neon-btn-green">
@@ -1405,51 +1568,51 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <div className="neon-card">
                 <span className="label-neon">🔬 Equipos en Proceso</span>
                 <h2 className="glow-text-cyan" style={{ margin: '6px 0' }}>{equiposEnBanco}</h2>
-                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Sincronizados con Laboratorio</span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Sincronizados con Laboratorio</span>
               </div>
               <div className="neon-card neon-card-green">
-                <span className="label-neon" style={{ color: '#00ff9d' }}>✅ Reparados Listos</span>
+                <span className="label-neon">✅ Reparados Listos</span>
                 <h2 className="glow-text-green" style={{ margin: '6px 0' }}>{equiposListosSinRetirar}</h2>
-                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Listos para entregar al cliente</span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Listos para entregar al cliente</span>
               </div>
               {esSucursalExterna ? (
                 <div className="neon-card neon-card-pink">
-                  <span className="label-neon" style={{ color: '#ff00ff' }}>🏢 Mi Saldo con {config.empresaNombre}</span>
+                  <span className="label-neon">🏢 Mi Saldo con {config.empresaNombre}</span>
                   <h2 className="glow-text-pink" style={{ margin: '6px 0' }}>${Number(sucursalAsociada.saldoDeudor || 0).toLocaleString()}</h2>
-                  <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Límite Cta. Cte.: ${Number(sucursalAsociada.limiteCredito || 0).toLocaleString()}</span>
+                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Límite Cta. Cte.: ${Number(sucursalAsociada.limiteCredito || 0).toLocaleString()}</span>
                 </div>
               ) : (
                 <div className="neon-card neon-card-pink">
-                  <span className="label-neon" style={{ color: '#ff00ff' }}>🏢 Ctas. Ctes. Locales B2B</span>
+                  <span className="label-neon">🏢 Ctas. Ctes. Locales B2B</span>
                   <h2 className="glow-text-pink" style={{ margin: '6px 0' }}>${deudaTotalTalleresB2B.toLocaleString()}</h2>
-                  <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Total a cobrar de {talleresGremio.length} locales</span>
+                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Total a cobrar de {talleresGremio.length} locales</span>
                 </div>
               )}
               <div className="neon-card neon-card-yellow">
-                <span className="label-neon" style={{ color: '#ffee00' }}>📦 Mi Stock Valorizado</span>
+                <span className="label-neon">📦 Mi Stock Valorizado</span>
                 <h2 className="glow-text-yellow" style={{ margin: '6px 0' }}>${capitalVentaPanol.toLocaleString()}</h2>
-                <span style={{ fontSize: '12px', color: '#8b9bb4' }}>Costo base: ${capitalCostoPanol.toLocaleString()}</span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Costo base: ${capitalCostoPanol.toLocaleString()}</span>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
               <div className="neon-card">
-                <h3 className="glow-text-cyan" style={{ marginTop: 0, fontSize: '15px' }}>⚡ ACCIONES DIRECTAS DE SUCURSAL</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Vender en Mi Caja POS</button>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚡ Acciones Directas</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Vender en Caja POS</button>
                   <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>➕ Crear Orden Servicio</button>
                   <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>📦 Cargar Mis Artículos</button>
-                  <Link to="/" className="neon-btn neon-btn-pink" style={{ padding: '14px', textDecoration: 'none' }}>⚡ Comprar a {config.empresaNombre}</Link>
+                  <Link to="/" className="neon-btn neon-btn-pink" style={{ padding: '14px', textDecoration: 'none' }}>⚡ Catálogo {config.empresaNombre}</Link>
                 </div>
               </div>
 
               <div className="neon-card">
-                <h3 className="glow-text-green" style={{ marginTop: 0, fontSize: '15px' }}>🏆 MIS 5 ARTÍCULOS MÁS VENDIDOS</h3>
+                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🏆 Mis 5 Artículos Más Vendidos</h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {[...misProductos].sort((a, b) => (b.ventas || 0) - (a.ventas || 0)).slice(0, 5).map((p, i) => (
-                    <li key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '14px' }}>
-                      <span><b style={{ color: '#00f3ff' }}>#{i + 1}</b> {p.nombre}</span>
-                      <span className="neon-badge" style={{ background: 'rgba(0,255,157,0.15)', color: '#00ff9d' }}>{p.ventas || 0} vendidos</span>
+                    <li key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid rgba(128,128,128,0.12)' }}>
+                      <span><b className="glow-text-cyan">#{i + 1}</b> {p.nombre}</span>
+                      <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)' }}>{p.ventas || 0} vendidos</span>
                     </li>
                   ))}
                 </ul>
@@ -1463,7 +1626,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {pestaña === 'pos' && (
           <div>
-            <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 CAJA POS MOSTRADOR // {nombreNegocioActivo}</h2>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 Caja POS Mostrador // {nombreNegocioActivo}</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div className="neon-card" style={{ flex: '2 1 500px' }}>
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
@@ -1476,9 +1639,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <tbody>
                       {misProductos.filter(p => p.stock > 0 && (p.nombre.toLowerCase().includes(busquedaPOS.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaPOS)))).slice(0, 20).map(p => (
                         <tr key={p.id}>
-                          <td><span className="neon-badge" style={{ background: 'rgba(181,55,242,0.15)', color: '#b537f2' }}>{p.ubicacion || 'S/U'}</span></td>
-                          <td><b>{p.nombre}</b><br/><small style={{ color: '#8b9bb4' }}>{p.categoria}</small></td>
-                          <td style={{ color: '#00ff9d', fontWeight: 'bold' }}>{p.stock}</td>
+                          <td><span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>{p.ubicacion || 'S/U'}</span></td>
+                          <td><b>{p.nombre}</b><br/><small style={{ color: 'var(--text-muted)' }}>{p.categoria}</small></td>
+                          <td className="glow-text-green" style={{ fontWeight: 'bold' }}>{p.stock}</td>
                           <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
                           <td><button onClick={() => agregarAlPOS(p)} className="neon-btn neon-btn-fillCyan">+ Sumar</button></td>
                         </tr>
@@ -1489,19 +1652,19 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </div>
 
               <div className="neon-card neon-card-green" style={{ flex: '1 1 320px' }}>
-                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 TICKET DE VENTA LOCAL</h3>
+                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 Ticket de Venta Local</h3>
                 <div style={{ marginBottom: '10px' }}>
                   <label className="label-neon">Cliente</label>
                   <input type="text" className="neon-input" value={clientePOS} onChange={e=>setClientePOS(e.target.value)} />
                 </div>
-                <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '15px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '15px', borderTop: '1px solid rgba(128,128,128,0.15)' }}>
                   {carritoPOS.map(item => (
-                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div><b>{item.cantidad}x</b> {item.nombre}<br/><small style={{ color: '#00f3ff' }}>${(item.precio * item.cantidad).toLocaleString()}</small></div>
-                      <button onClick={() => setCarritoPOS(carritoPOS.filter(i => i.id !== item.id))} className="neon-btn neon-btn-red" style={{ padding: '2px 6px' }}>✕</button>
+                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(128,128,128,0.1)' }}>
+                      <div><b>{item.cantidad}x</b> {item.nombre}<br/><small className="glow-text-cyan">${(item.precio * item.cantidad).toLocaleString()}</small></div>
+                      <button onClick={() => setCarritoPOS(carritoPOS.filter(i => i.id !== item.id))} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>✕</button>
                     </div>
                   ))}
-                  {carritoPOS.length === 0 && <p style={{ color: '#8b9bb4', textAlign: 'center', padding: '20px 0' }}>Selecciona artículos de tu stock a la izquierda.</p>}
+                  {carritoPOS.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>Selecciona artículos de tu stock a la izquierda.</p>}
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
@@ -1514,14 +1677,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </select>
                 </div>
 
-                <div style={{ background: '#060911', padding: '14px', borderRadius: '8px', marginBottom: '15px', border: '1px solid rgba(0,255,157,0.3)' }}>
+                <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', marginBottom: '15px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '22px', fontWeight: 'bold' }}>
                     <span>TOTAL:</span><span className="glow-text-green">${totalFinalPOS.toLocaleString()}</span>
                   </div>
                 </div>
 
-                <button onClick={cobrarVentaPOS} disabled={carritoPOS.length === 0} className="neon-btn neon-btn-green" style={{ width: '100%', padding: '14px', fontSize: '13px' }}>
-                  ✅ COBRAR EN MI CAJA
+                <button onClick={cobrarVentaPOS} disabled={carritoPOS.length === 0} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
+                  ✅ Cobrar en Mi Caja
                 </button>
               </div>
             </div>
@@ -1535,18 +1698,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <div>
             <form onSubmit={guardarOrden} className="neon-card" style={{ marginBottom: '22px' }}>
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
-                {esSucursalExterna ? `📝 GENERAR ORDEN DE SERVICIO EN ${nombreNegocioActivo}` : '📝 RECEPCIÓN CENTRAL DE LABORATORIO (CONTROL ABSOLUTO)'}
+                {esSucursalExterna ? `📝 Generar Orden de Servicio en ${nombreNegocioActivo}` : '📝 Recepción Central de Laboratorio (Control Absoluto)'}
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                 <div>
                   <label className="label-neon">1. Sucursal & Cliente</label>
                   {!esSucursalExterna ? (
-                    <select className="neon-select" value={tallerOrigenOrden} onChange={e=>setTallerOrigenOrden(e.target.value)} style={{ marginBottom: '8px', borderColor: '#ff00ff' }}>
+                    <select className="neon-select" value={tallerOrigenOrden} onChange={e=>setTallerOrigenOrden(e.target.value)} style={{ marginBottom: '8px' }}>
                       <option value="Mostrador Propio">🏪 Mostrador Central Walabba</option>
                       {talleresGremio.map(t => <option key={t.id} value={t.nombre}>🏢 Local Asociado: {t.nombre}</option>)}
                     </select>
                   ) : (
-                    <div className="neon-badge" style={{ background: 'rgba(255,0,255,0.15)', color: '#ff00ff', marginBottom: '8px', padding: '7px 12px' }}>
+                    <div className="neon-badge" style={{ background: 'rgba(88,86,214,0.15)', color: 'var(--neon-pink)', marginBottom: '8px', padding: '7px 12px' }}>
                       🏢 Origen: {sucursalAsociada.nombre}
                     </div>
                   )}
@@ -1585,29 +1748,29 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <input type="number" className="neon-input" placeholder="Seña $" value={señaRecibida} onChange={e=>setSeñaRecibida(e.target.value)} />
                   </div>
                   {!esSucursalExterna && tallerOrigenOrden !== 'Mostrador Propio' && (
-                    <input type="number" className="neon-input" placeholder="Costo Gremio al Local $" value={costoGremioInicial} onChange={e=>setCostoGremioInicial(e.target.value)} style={{ borderColor: '#ff00ff' }} />
+                    <input type="number" className="neon-input" placeholder="Costo Gremio al Local $" value={costoGremioInicial} onChange={e=>setCostoGremioInicial(e.target.value)} />
                   )}
                 </div>
               </div>
-              <div style={{ background: '#060911', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(0,243,255,0.2)', marginBottom: '14px' }}>
-                <span className="label-neon">✅ CHECKLIST DE RECEPCIÓN:</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '6px' }}>
+              <div style={{ background: 'var(--bg-input)', padding: '12px 15px', borderRadius: '14px', marginBottom: '14px' }}>
+                <span className="label-neon">✅ Checklist de Recepción:</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px' }}>
                   {CHECKLIST_ITEMS.map(item => (
-                    <label key={item} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', cursor: 'pointer', color: checklist.includes(item) ? '#00ff9d' : '#8b9bb4' }}>
+                    <label key={item} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: checklist.includes(item) ? 700 : 400, color: checklist.includes(item) ? 'var(--neon-cyan)' : 'var(--text-muted)' }}>
                       <input type="checkbox" checked={checklist.includes(item)} onChange={() => toggleItemChecklist(item)} /> {item}
                     </label>
                   ))}
                 </div>
               </div>
-              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '13px' }}>
-                ➕ GENERAR ORDEN E IMPRIMIR COMPROBANTE
+              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
+                ➕ Generar Orden de Servicio
               </button>
             </form>
 
             <div className="neon-card" style={{ marginBottom: '18px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <input type="text" className="neon-input" placeholder="🔍 Buscar por código, cliente, local o modelo..." value={busquedaTaller} onChange={e=>setBusquedaTaller(e.target.value)} style={{ flex: '1 1 220px' }} />
               {!esSucursalExterna && (
-                <select className="neon-select" value={filtroOrigenTaller} onChange={e=>setFiltroOrigenTaller(e.target.value)} style={{ width: 'auto', borderColor: '#ff00ff' }}>
+                <select className="neon-select" value={filtroOrigenTaller} onChange={e=>setFiltroOrigenTaller(e.target.value)} style={{ width: 'auto' }}>
                   <option value="todos">🏢 Todos los Locales + Central</option>
                   <option value="Mostrador Propio">🏪 Solo Mostrador Central</option>
                   {talleresGremio.map(t => <option key={t.id} value={t.nombre}>🏢 Local: {t.nombre}</option>)}
@@ -1639,23 +1802,23 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   {ordenesFiltradas.map(o => (
                     <tr key={o.id} style={{ opacity: o.estado === 'entregado' ? 0.55 : 1 }}>
                       <td>
-                        <span style={{ fontFamily: 'Orbitron', color: '#00f3ff', fontWeight: 'bold' }}>#{o.codigoSeguimiento}</span><br/>
-                        <span className="neon-badge" style={{ background: o.tallerOrigen && o.tallerOrigen !== 'Mostrador Propio' ? 'rgba(255,0,255,0.15)' : 'rgba(0,243,255,0.1)', color: o.tallerOrigen && o.tallerOrigen !== 'Mostrador Propio' ? '#ff00ff' : '#00f3ff', marginTop: '4px' }}>
+                        <b className="glow-text-cyan" style={{ fontSize: '17px' }}>#{o.codigoSeguimiento}</b><br/>
+                        <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.12)', color: 'var(--neon-cyan)', marginTop: '4px' }}>
                           {o.tallerOrigen || 'Central'}
                         </span>
                       </td>
-                      <td><b>{o.cliente?.nombre}</b><br/><span style={{ fontSize: '13px', color: '#00ff9d' }}>📱 {o.cliente?.telefono}</span></td>
+                      <td><b>{o.cliente?.nombre}</b><br/><span className="glow-text-green" style={{ fontSize: '14px' }}>📱 {o.cliente?.telefono}</span></td>
                       <td>
-                        <b>{o.equipo?.marca} {o.equipo?.modelo}</b> {o.equipo?.contrasena && <span className="neon-badge" style={{ background: 'rgba(255,238,0,0.15)', color: '#ffee00' }}>🔑 {o.equipo.contrasena}</span>}<br/>
-                        <span style={{ color: '#ff0055' }}>Falla: {o.fallaDeclarada}</span>
+                        <b>{o.equipo?.marca} {o.equipo?.modelo}</b> {o.equipo?.contrasena && <span className="neon-badge" style={{ background: 'rgba(255,149,0,0.15)', color: 'var(--neon-yellow)' }}>🔑 {o.equipo.contrasena}</span>}<br/>
+                        <span className="glow-text-red">Falla: {o.fallaDeclarada}</span>
                         {o.historial?.length > 0 && (
-                          <div style={{ fontSize: '11.5px', color: '#8b9bb4', marginTop: '3px' }}>
+                          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px' }}>
                             📝 Últ. Estado: {o.historial[o.historial.length - 1].comentario}
                           </div>
                         )}
                       </td>
                       <td>
-                        <select className="neon-select" value={o.estado} onChange={e => actualizarEstado(o.id, e.target.value, o)} style={{ padding: '6px' }}>
+                        <select className="neon-select" value={o.estado} onChange={e => actualizarEstado(o.id, e.target.value, o)} style={{ padding: '8px' }}>
                           <option value="ingresado">📥 Ingresado</option>
                           <option value="en revision">🔬 En Revisión Laboratorio</option>
                           <option value="esperando repuesto">⏳ Esperando Repuesto</option>
@@ -1664,18 +1827,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
                           <option value="sin solucion">❌ Sin Solución</option>
                           <option value="entregado">📦 Entregado</option>
                         </select>
-                        <div style={{ fontSize: '12px', marginTop: '5px', display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '13px', marginTop: '5px', display: 'flex', justifyContent: 'space-between' }}>
                           <span className="glow-text-green">Público: ${o.costoReparacion || 'S/P'}</span>
-                          {o.costoGremio && <span style={{ color: '#ff00ff', fontWeight: 'bold' }}>Gremio: ${o.costoGremio}</span>}
+                          {o.costoGremio && <span className="glow-text-pink" style={{ fontWeight: 'bold' }}>Gremio: ${o.costoGremio}</span>}
                         </div>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
                           {!esSucursalExterna && (
                             <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Imputar repuesto de Pañol">🔩</button>
                           )}
                           <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp">💬</button>
-                          <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden con membrete del Local">🖨️</button>
+                          <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden">🖨️</button>
                           {!esSucursalExterna && rolActual === 'admin' && (
                             <button onClick={async()=>{if(window.confirm('¿Eliminar orden?'))await deleteDoc(doc(db,'ordenes_taller',o.id))}} className="neon-btn neon-btn-red">🗑️</button>
                           )}
@@ -1694,14 +1857,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ==================================================================== */}
         {pestaña === 'talleres_b2b' && !esSucursalExterna && (
           <div>
-            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 GESTIÓN DE LOCALES ASOCIADOS (CREACIÓN DE USUARIO Y CONTRASEÑA)</h2>
-            <p style={{ color: '#8b9bb4', marginTop: '-10px', marginBottom: '20px' }}>
+            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 Gestión de Locales Asociados (Creación de Usuario y Contraseña)</h2>
+            <p style={{ color: 'var(--text-muted)', marginTop: '-10px', marginBottom: '20px' }}>
               Crea las credenciales de acceso para cada local. Al iniciar sesión con ese correo y contraseña, ellos verán su propio sistema aislado (su stock, sus ventas POS, su link de tienda pública y sus órdenes sincronizadas con tu laboratorio).
             </p>
 
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={guardarTallerGremio} className="neon-card neon-card-pink" style={{ flex: '1 1 340px', alignSelf: 'flex-start' }}>
-                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ CREAR CUENTA DE LOCAL ASOCIADO</h3>
+                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ Crear Cuenta de Local Asociado</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div><label className="label-neon">Nombre Comercial del Local</label><input type="text" className="neon-input" required value={tallerNom} onChange={e=>setTallerNom(e.target.value)} placeholder="Ej: TecnoCell Centro" /></div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1712,8 +1875,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <div style={{ flex: 1 }}><label className="label-neon">Dirección del Local</label><input type="text" className="neon-input" required value={tallerDireccion} onChange={e=>setTallerDireccion(e.target.value)} placeholder="Calle 62 N° 2500" /></div>
                     <div style={{ flex: 1 }}><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={tallerTel} onChange={e=>setTallerTel(e.target.value)} /></div>
                   </div>
-                  <div style={{ background: '#060911', padding: '10px', borderRadius: '8px', border: '1px dashed #ff00ff' }}>
-                    <label className="label-neon" style={{ color: '#ff00ff' }}>🔐 Credenciales de Acceso al Sistema</label>
+                  <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', border: '1px dashed var(--neon-pink)' }}>
+                    <label className="label-neon" style={{ color: 'var(--neon-pink)' }}>🔐 Credenciales de Acceso al Sistema</label>
                     <input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="Email de usuario (Ej: local1@walabba.com)" style={{ marginBottom: '8px' }} />
                     <input type="text" className="neon-input" required minLength={6} value={tallerPassword} onChange={e=>setTallerPassword(e.target.value)} placeholder="Contraseña (Mínimo 6 caracteres)" />
                   </div>
@@ -1730,7 +1893,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <input type="number" className="neon-input" value={tallerLimiteCredito} onChange={e=>setTallerLimiteCredito(e.target.value)} />
                     </div>
                   </div>
-                  <button type="submit" disabled={creandoCuentaLocal} className="neon-btn neon-btn-pink" style={{ padding: '13px', marginTop: '6px' }}>
+                  <button type="submit" disabled={creandoCuentaLocal} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px', marginTop: '6px' }}>
                     {creandoCuentaLocal ? 'Creando Usuario...' : '🚀 Crear Usuario y Habilitar Local'}
                   </button>
                 </div>
@@ -1747,17 +1910,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
                         <tr key={t.id}>
                           <td>
                             <b>{t.nombre}</b> ({t.ciudad || 'Local'})<br/>
-                            <small style={{ color: '#00f3ff' }}>👤 {t.email}</small><br/>
-                            <small style={{ color: '#8b9bb4' }}>📍 {t.direccion} | 📱 {t.telefono}</small>
+                            <small className="glow-text-cyan">👤 {t.email}</small><br/>
+                            <small style={{ color: 'var(--text-muted)' }}>📍 {t.direccion} | 📱 {t.telefono}</small>
                           </td>
                           <td>
-                            <a href={linkTiendaLocal} target="_blank" rel="noreferrer" className="neon-btn" style={{ textDecoration: 'none', padding: '5px 10px' }}>
-                              🌐 Ver Tienda del Local
+                            <a href={linkTiendaLocal} target="_blank" rel="noreferrer" className="neon-btn" style={{ textDecoration: 'none', padding: '6px 12px' }}>
+                              🌐 Ver Tienda
                             </a>
                           </td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#00f3ff' }}>{equiposDelTaller} en taller</td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold' }} className="glow-text-cyan">{equiposDelTaller} en taller</td>
                           <td>
-                            <b className={Number(t.saldoDeudor) > 0 ? 'glow-text-red' : 'glow-text-green'} style={{ fontSize: '16px' }}>
+                            <b className={Number(t.saldoDeudor) > 0 ? 'glow-text-red' : 'glow-text-green'} style={{ fontSize: '17px' }}>
                               ${Number(t.saldoDeudor || 0).toLocaleString()}
                             </b>
                           </td>
@@ -1784,11 +1947,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <div>
             {rolActual !== 'tecnico' && (
               <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap' }}>
                   <h3 className="glow-text-cyan" style={{ margin: 0 }}>
-                    {idEditando ? '✏️ EDITAR ARTÍCULO' : `➕ CARGAR ARTÍCULO AL STOCK DE ${nombreNegocioActivo}`}
+                    {idEditando ? '✏️ Editar Artículo' : `➕ Cargar Artículo al Stock de ${nombreNegocioActivo}`}
                   </h3>
-                  <label style={{ color: '#ffee00', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <label style={{ fontWeight: 'bold', cursor: 'pointer' }}>
                     <input type="checkbox" checked={prodDestacado} onChange={e=>setProdDestacado(e.target.checked)} /> ⭐ Destacar en Mi Vitrina Web
                   </label>
                 </div>
@@ -1806,7 +1969,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <input type="number" className="neon-input" placeholder="Stock" value={prodStock} onChange={e=>setProdStock(e.target.value)} required />
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '12px' }}>{idEditando ? 'Guardar Cambios' : 'Publicar en Mi Inventario'}</button>
+                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>{idEditando ? 'Guardar Cambios' : 'Publicar en Mi Inventario'}</button>
                   {idEditando && <button type="button" onClick={limpiarFormularioProducto} className="neon-btn neon-btn-red">Cancelar</button>}
                 </div>
               </form>
@@ -1849,15 +2012,15 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   {inventarioFiltrado.map(p => (
                     <tr key={p.id}>
                       <td><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
-                      <td><span className="neon-badge" style={{ background: 'rgba(181,55,242,0.15)', color: '#b537f2' }}>📍 {p.ubicacion || 'S/U'}</span></td>
-                      <td><b>{p.nombre}</b><br/><small style={{ color: '#8b9bb4' }}>{p.categoria} {p.proveedor && `| ${p.proveedor}`}</small></td>
-                      <td style={{ color: '#8b9bb4' }}>${p.costoProveedor?.toLocaleString() || 0}</td>
+                      <td><span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>📍 {p.ubicacion || 'S/U'}</span></td>
+                      <td><b>{p.nombre}</b><br/><small style={{ color: 'var(--text-muted)' }}>{p.categoria} {p.proveedor && `| ${p.proveedor}`}</small></td>
+                      <td style={{ color: 'var(--text-muted)' }}>${p.costoProveedor?.toLocaleString() || 0}</td>
                       <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <button onClick={() => actualizarStock(p.id, p.stock - 1)} className="neon-btn neon-btn-red" style={{ padding: '2px 6px' }}>-</button>
-                          <b style={{ color: p.stock <= config.stockCriticoAlerta ? '#ff0055' : '#00ff9d' }}>{p.stock}</b>
-                          <button onClick={() => actualizarStock(p.id, p.stock + 1)} className="neon-btn neon-btn-green" style={{ padding: '2px 6px' }}>+</button>
+                          <button onClick={() => actualizarStock(p.id, p.stock - 1)} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>-</button>
+                          <b className={p.stock <= config.stockCriticoAlerta ? 'glow-text-red' : 'glow-text-green'}>{p.stock}</b>
+                          <button onClick={() => actualizarStock(p.id, p.stock + 1)} className="neon-btn neon-btn-green" style={{ padding: '4px 10px' }}>+</button>
                         </div>
                       </td>
                       <td><button onClick={() => cargarProductoParaEdicion(p)} className="neon-btn">✏️</button></td>
@@ -1874,10 +2037,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {pestaña === 'rma' && (
           <div>
-            <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>🔄 CONTROL DE RMA & GARANTÍAS</h2>
+            <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>🔄 Control de RMA & Garantías</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={guardarRMA} className="neon-card" style={{ flex: '1 1 300px' }}>
-                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ REGISTRAR TICKET RMA</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ Registrar Ticket RMA</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <select className="neon-select" value={rmaTipo} onChange={e=>setRmaTipo(e.target.value as any)}>
                     <option value="proveedor">📦 Reclamo de Repuesto</option>
@@ -1898,11 +2061,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     {rmas.filter(r => !esSucursalExterna || r.ownerId === tenantId).map(r => (
                       <tr key={r.id}>
                         <td>{r.fecha}</td>
-                        <td><span className="neon-badge" style={{ background: 'rgba(0,243,255,0.1)', color: '#00f3ff' }}>{r.origenNombre || 'Central'}</span></td>
+                        <td><span className="neon-badge" style={{ background: 'rgba(0,122,255,0.1)', color: 'var(--neon-cyan)' }}>{r.origenNombre || 'Central'}</span></td>
                         <td><b>{r.producto}</b> ({r.entidad})</td>
-                        <td style={{ color: '#ff0055' }}>{r.motivo}</td>
+                        <td className="glow-text-red">{r.motivo}</td>
                         <td>
-                          <select className="neon-select" value={r.estado} onChange={e=>updateDoc(doc(db,'rmas_garantias',r.id), {estado: e.target.value})} style={{ padding: '4px' }}>
+                          <select className="neon-select" value={r.estado} onChange={e=>updateDoc(doc(db,'rmas_garantias',r.id), {estado: e.target.value})} style={{ padding: '6px' }}>
                             <option value="pendiente">⏳ Pendiente</option>
                             <option value="enviado">🚚 En Revisión</option>
                             <option value="resuelto">✅ Resuelto</option>
@@ -1922,7 +2085,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {pestaña === 'pedidos' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🌐 PEDIDOS RECIBIDOS EN LA TIENDA DE {nombreNegocioActivo}</h2>
+            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🌐 Pedidos Recibidos en la Tienda de {nombreNegocioActivo}</h2>
             {misPedidosWeb.map(pedido => (
               <div key={pedido.id} className="neon-card" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -1930,8 +2093,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <p style={{ margin: '2px 0' }}><b>Cliente:</b> {pedido.cliente.nombre} ({pedido.cliente.telefono})</p>
                   <p style={{ margin: '2px 0' }}><b>Modalidad:</b> {pedido.cliente.metodoEnvio.toUpperCase()} | <b>Pago:</b> {pedido.estadoPago.toUpperCase()}</p>
                 </div>
-                <div style={{ background: '#070a12', padding: '12px', borderRadius: '6px', flex: 1, minWidth: '220px' }}>
-                  <ul style={{ margin: 0, paddingLeft: '15px', fontSize: '13px' }}>
+                <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '12px', flex: 1, minWidth: '220px' }}>
+                  <ul style={{ margin: 0, paddingLeft: '15px', fontSize: '14px' }}>
                     {pedido.items.map((it:any, idx:number)=><li key={idx}>{it.cantidad}x {it.nombre} (${it.precio})</li>)}
                   </ul>
                   <b className="glow-text-green" style={{ display: 'block', marginTop: '6px' }}>Total: ${pedido.total?.toLocaleString()}</b>
@@ -1960,7 +2123,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {pestaña === 'clientes' && (
           <div>
             <div className="neon-card neon-card-green" style={{ marginBottom: '20px' }}>
-              <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 MIS CLIENTES & CAMPAÑAS DE WHATSAPP ({nombreNegocioActivo})</h3>
+              <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 Mis Clientes & Campañas de WhatsApp ({nombreNegocioActivo})</h3>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <input type="text" className="neon-input" value={mensajePromoCRM} onChange={e=>setMensajePromoCRM(e.target.value)} style={{ flex: 1 }} />
                 <input type="text" className="neon-input" placeholder="🔍 Buscar cliente..." value={busquedaClienteCRM} onChange={e=>setBusquedaClienteCRM(e.target.value)} style={{ width: '250px' }} />
@@ -1973,7 +2136,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   {clientesConsolidados.map((c, idx) => (
                     <tr key={idx}>
                       <td><b>{c.nombre}</b></td>
-                      <td style={{ color: '#00ff9d' }}>📱 {c.telefono}</td>
+                      <td className="glow-text-green">📱 {c.telefono}</td>
                       <td>🛠️ {c.equipos} equipos | 🛒 {c.comprasWeb} pedidos</td>
                       <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${c.totalGastado.toLocaleString()}</td>
                       <td><button onClick={() => window.open(`https://wa.me/549${c.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(mensajePromoCRM.replace('{nombre}', c.nombre).replace('{empresa}', nombreNegocioActivo))}`, '_blank')} className="neon-btn neon-btn-green">🚀 Enviar Promo</button></td>
@@ -1990,14 +2153,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {pestaña === 'proveedores' && (
           <div className="neon-card">
-            <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 IMPORTAR LISTA EXCEL AL STOCK DE {nombreNegocioActivo}</h3>
+            <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 Importar Lista Excel al Stock de {nombreNegocioActivo}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
               <div><label className="label-neon">Proveedor</label><input type="text" className="neon-input" value={nombreProveedorExcel} onChange={e=>setNombreProveedorExcel(e.target.value)} /></div>
               <div><label className="label-neon">Moneda</label><select className="neon-select" value={monedaListaExcel} onChange={e=>setMonedaListaExcel(e.target.value as any)}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (x ${config.cotizacionDolar})</option></select></div>
               <div><label className="label-neon">Archivo .xlsx</label><input type="file" id="fileExcel" accept=".xlsx, .xls" className="neon-input" onChange={procesarArchivoExcel} /></div>
             </div>
             {excelHojas.length > 0 && !excelCargando && (
-              <div style={{ background: '#070a12', padding: '15px', borderRadius: '8px' }}>
+              <div style={{ background: 'var(--bg-input)', padding: '15px', borderRadius: '14px' }}>
                 <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', flexWrap: 'wrap' }}>
                   <div><label className="label-neon">Pestaña</label><select className="neon-select" value={hojaActiva} onChange={cambiarHojaDropdown}>{excelHojas.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
                   <div><label className="label-neon">Col. Nombre</label><select className="neon-select" value={colNombre} onChange={e=>setColNombre(Number(e.target.value))}>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
@@ -2015,7 +2178,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {pestaña === 'finanzas' && (
           <div>
-            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 CAJA Y FINANZAS PRIVADAS // {nombreNegocioActivo}</h2>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 Caja y Finanzas Privadas // {nombreNegocioActivo}</h2>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               <select className="neon-select" value={filtroTiempo} onChange={e=>setFiltroTiempo(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todo el Historial</option><option value="hoy">Hoy</option><option value="mes">Este Mes</option></select>
               <select className="neon-select" value={filtroTipoLista} onChange={e=>setFiltroTipoLista(e.target.value)} style={{ width: 'auto' }}><option value="todos">Ingresos y Egresos</option><option value="ingreso">Solo Ingresos</option><option value="egreso">Solo Egresos</option></select>
@@ -2023,14 +2186,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '22px' }}>
-              <div className="neon-card neon-card-green" style={{ textAlign: 'center' }}><span className="label-neon" style={{ color: '#00ff9d' }}>MIS INGRESOS</span><h2 className="glow-text-green" style={{ margin: '5px 0 0 0' }}>${totalIngresos.toLocaleString()}</h2></div>
-              <div className="neon-card neon-card-pink" style={{ textAlign: 'center' }}><span className="label-neon" style={{ color: '#ff0055' }}>MIS EGRESOS</span><h2 className="glow-text-red" style={{ margin: '5px 0 0 0' }}>${totalEgresos.toLocaleString()}</h2></div>
+              <div className="neon-card neon-card-green" style={{ textAlign: 'center' }}><span className="label-neon">MIS INGRESOS</span><h2 className="glow-text-green" style={{ margin: '5px 0 0 0' }}>${totalIngresos.toLocaleString()}</h2></div>
+              <div className="neon-card neon-card-pink" style={{ textAlign: 'center' }}><span className="label-neon">MIS EGRESOS</span><h2 className="glow-text-red" style={{ margin: '5px 0 0 0' }}>${totalEgresos.toLocaleString()}</h2></div>
               <div className="neon-card" style={{ textAlign: 'center' }}><span className="label-neon">MI CAJA NETA</span><h2 className="glow-text-cyan" style={{ margin: '5px 0 0 0' }}>${saldoNeto.toLocaleString()}</h2></div>
             </div>
 
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={registrarMovimientoFinanzas} className="neon-card" style={{ flex: '1 1 280px', alignSelf: 'flex-start' }}>
-                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ REGISTRAR EN MI CAJA</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>➕ Registrar en Mi Caja</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <select className="neon-select" value={finTipo} onChange={e=>setFinTipo(e.target.value)}><option value="ingreso">Ingreso (+)</option><option value="egreso">Egreso / Gasto (-)</option></select>
                   <input type="text" className="neon-input" placeholder="Concepto" required value={finConcepto} onChange={e=>setFinConcepto(e.target.value)} />
@@ -2047,19 +2210,19 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     {movimientosFiltrados.map(m => (
                       <React.Fragment key={m.id}>
                         <tr>
-                          <td style={{ fontSize: '12px', color: '#8b9bb4' }}>{m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td>
+                          <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td>
                           <td>
                             {m.items?.length > 0 && (
-                              <button onClick={() => setExpandidoId(expandidoId === m.id ? null : m.id)} className="neon-btn" style={{ padding: '2px 6px', marginRight: '6px' }}>{expandidoId === m.id ? '▼' : '▶'}</button>
+                              <button onClick={() => setExpandidoId(expandidoId === m.id ? null : m.id)} className="neon-btn" style={{ padding: '4px 10px', marginRight: '6px' }}>{expandidoId === m.id ? '▼' : '▶'}</button>
                             )}
                             <b>{m.concepto}</b>
                           </td>
-                          <td style={{ textTransform: 'uppercase', color: '#00f3ff' }}>{m.metodoPago}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold', color: m.tipo === 'ingreso' ? '#00ff9d' : '#ff0055' }}>{m.tipo === 'ingreso' ? '+' : '-'}${m.monto?.toLocaleString()}</td>
-                          <td><button onClick={async()=>{if(window.confirm('¿Borrar?'))await deleteDoc(doc(db,'finanzas',m.id))}} className="neon-btn neon-btn-red" style={{ padding: '4px 8px' }}>🗑️</button></td>
+                          <td className="glow-text-cyan" style={{ textTransform: 'uppercase' }}>{m.metodoPago}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold' }} className={m.tipo === 'ingreso' ? 'glow-text-green' : 'glow-text-red'}>{m.tipo === 'ingreso' ? '+' : '-'}${m.monto?.toLocaleString()}</td>
+                          <td><button onClick={async()=>{if(window.confirm('¿Borrar?'))await deleteDoc(doc(db,'finanzas',m.id))}} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>🗑️</button></td>
                         </tr>
                         {expandidoId === m.id && (
-                          <tr style={{ background: 'rgba(0, 243, 255, 0.04)' }}>
+                          <tr style={{ background: 'rgba(0, 122, 255, 0.04)' }}>
                             <td colSpan={5} style={{ padding: '12px' }}>
                               <b>Ítems:</b> {m.items?.map((it:any)=>`${it.cantidad}x ${it.nombre} ($${it.precio})`).join(' | ')}
                             </td>
@@ -2074,13 +2237,34 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* MÓDULO 11: CONFIGURACIÓN CENTRAL           */}
-        {/* ========================================== */}
+        {/* ============================================================ */}
+        {/* MÓDULO 11: TEMAS VISUALES (iOS 26.1 / SISTEMA / NEÓN) & ROLES */}
+        {/* ============================================================ */}
         {pestaña === 'configuracion' && !esSucursalExterna && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚙️ PARÁMETROS GLOBALES DE LA CENTRAL</h3>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
+                <div>
+                  <label className="label-neon">Seleccionar Tema de la Aplicación</label>
+                  <select className="neon-select" value={conf.temaVisual || 'claro'} onChange={e=>setConf({...conf, temaVisual: e.target.value})}>
+                    <option value="claro">☀️ Clásico Claro (Estilo iOS 26.1 Suave)</option>
+                    <option value="oscuro">🌙 Clásico Oscuro (Grafito Descansado)</option>
+                    <option value="sistema">🖥️ Automático (Tomar Configuración del Sistema)</option>
+                    <option value="neon">⚡ Cyberpunk Neón (Tema Original)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label-neon">Tamaño de Letra General</label>
+                  <select className="neon-select" value={conf.tamanoFuenteBase || 17} onChange={e=>setConf({...conf, tamanoFuenteBase: Number(e.target.value)})}>
+                    <option value={15}>Normal (15px)</option>
+                    <option value={17}>Grande y Cómodo (17px - Recomendado)</option>
+                    <option value={19}>Extra Grande (19px - Máxima Lectura)</option>
+                  </select>
+                </div>
+              </div>
+
+              <h3 className="glow-text-cyan" style={{ marginTop: '10px', marginBottom: 0 }}>⚙️ Parámetros Globales de la Central</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                 <div><label className="label-neon">Empresa Central</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
                 <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
@@ -2092,11 +2276,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
               </div>
-              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>💾 GUARDAR PARÁMETROS</button>
+              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '15px' }}>💾 Guardar Tema y Parámetros</button>
             </form>
 
             <div className="neon-card">
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ ROLES DEL PERSONAL DE TU CENTRAL</h3>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ Roles del Personal de tu Central</h3>
               <form onSubmit={agregarUsuarioRol} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
                 <input type="text" className="neon-input" placeholder="Nombre" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} style={{ flex: 1 }} />
                 <input type="email" className="neon-input" placeholder="Email Firebase" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} style={{ flex: 1 }} />
@@ -2128,32 +2312,64 @@ const DashboardTaller = ({ user }: { user: User }) => {
 };
 
 // ========================================================
-// 5. ENRUTADOR PRINCIPAL
+// 5. ENRUTADOR PRINCIPAL CON INYECCIÓN DE TEMA REACTIVO
 // ========================================================
 const RutaProtegida = ({ children, user }: { children: React.ReactNode, user: User | null }) => user ? children : <Navigate to="/admin-login" />;
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null); 
   const [cargando, setCargando] = useState(true);
+  const [temaActivo, setTemaActivo] = useState<string>('claro');
+  const [fontSizeActivo, setFontSizeActivo] = useState<number>(17);
 
   useEffect(() => { 
     const u = onAuthStateChanged(auth, u => { setUser(u); setCargando(false); }); 
-    return () => u(); 
+    const unsubConf = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => {
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        if (d.temaVisual) setTemaActivo(d.temaVisual);
+        if (d.tamanoFuenteBase) setFontSizeActivo(Number(d.tamanoFuenteBase));
+      }
+    });
+    return () => { u(); unsubConf(); }; 
   }, []);
 
-  if (cargando) return <div style={{ padding: '50px', textAlign: 'center', color: '#00f3ff', background: '#060911', height: '100vh', fontFamily: 'Orbitron' }}>⚡ INICIANDO PLATAFORMA MULTI-LOCAL...</div>;
+  const cambiarTemaRapido = async (nuevoTema: string) => {
+    setTemaActivo(nuevoTema);
+    if (user) {
+      await setDoc(doc(db, 'configuracion', 'general'), { temaVisual: nuevoTema }, { merge: true });
+    }
+  };
+
+  if (cargando) return <div style={{ padding: '50px', textAlign: 'center', fontWeight: 'bold' }}>Iniciando Plataforma Multi-Local...</div>;
 
   return (
     <BrowserRouter>
-      <style>{NEON_STYLES}</style>
-      <nav style={{ padding: '12px 25px', background: 'rgba(6, 9, 17, 0.98)', borderBottom: '1px solid rgba(0, 243, 255, 0.35)', display: 'flex', gap: '20px', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
-        <Link to="/" className="glow-text-cyan" style={{ textDecoration: 'none', fontWeight: 900, fontFamily: 'Orbitron', fontSize: '14px' }}>⚡ CATÁLOGO CENTRAL B2B</Link>
-        <Link to="/seguimiento" style={{ color: '#e2e8f0', textDecoration: 'none', fontWeight: 600, fontFamily: 'Orbitron', fontSize: '12px' }}>🔍 RASTREAR EQUIPO</Link>
-        {!user ? (
-          <Link to="/admin-login" className="neon-btn" style={{ marginLeft: 'auto', textDecoration: 'none' }}>🔐 Acceso Locales / ERP</Link>
-        ) : (
-          <Link to="/admin-panel" className="neon-btn neon-btn-fillCyan" style={{ marginLeft: 'auto', textDecoration: 'none' }}>⚙️ MI PANEL DE GESTIÓN</Link>
-        )}
+      <style>{getEstilosTema(temaActivo, fontSizeActivo)}</style>
+      <nav className="top-nav-bar">
+        <Link to="/" className="glow-text-cyan" style={{ textDecoration: 'none', fontWeight: 800, fontSize: '16px' }}>⚡ Catálogo Central B2B</Link>
+        <Link to="/seguimiento" style={{ color: 'var(--text-main)', textDecoration: 'none', fontWeight: 600, fontSize: '15px' }}>🔍 Rastrear Equipo</Link>
+        
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <select 
+            className="neon-select" 
+            value={temaActivo} 
+            onChange={e => cambiarTemaRapido(e.target.value)} 
+            style={{ width: 'auto', padding: '7px 14px', borderRadius: '9999px', fontSize: '13px' }}
+            title="Cambiar Tema Visual"
+          >
+            <option value="claro">☀️ Clásico Claro</option>
+            <option value="oscuro">🌙 Clásico Oscuro</option>
+            <option value="sistema">🖥️ Sistema Auto</option>
+            <option value="neon">⚡ Tema Neón</option>
+          </select>
+
+          {!user ? (
+            <Link to="/admin-login" className="neon-btn" style={{ textDecoration: 'none' }}>🔐 Acceso Locales</Link>
+          ) : (
+            <Link to="/admin-panel" className="neon-btn neon-btn-fillCyan" style={{ textDecoration: 'none' }}>⚙️ Mi Panel</Link>
+          )}
+        </div>
       </nav>
       <Routes>
         <Route path="/" element={<TiendaPublica user={user} />} />
