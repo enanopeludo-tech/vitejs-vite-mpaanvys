@@ -12,7 +12,7 @@ import { auth, db } from './firebase';
 // --- Configuración por defecto ERP Central ---
 const CONFIG_DEFAULT = {
   temaVisual: "claro", // 'claro' | 'oscuro' | 'sistema' | 'neon'
-  tamanoFuenteBase: 17, // Tamaño aumentado y cómodo por defecto
+  tamanoFuenteBase: 17,
   empresaNombre: "WALABBA TECNO",
   eslogan: "Laboratorio Central de Microelectrónica & Hub B2B",
   cuit: "20-35441122-3",
@@ -163,7 +163,6 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
     h3 { font-size: ${fontSizeBase + 3}px; }
     h4 { font-size: ${fontSizeBase + 1}px; }
 
-    /* Tarjetas con estética limpia o neón según tema */
     .neon-card {
       background: var(--bg-card);
       backdrop-filter: blur(20px);
@@ -180,7 +179,6 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
     .neon-card-purple { border-color: ${p.esNeon ? 'rgba(181, 55, 242, 0.35)' : 'rgba(175, 82, 222, 0.3)'}; }
     .neon-card-yellow { border-color: ${p.esNeon ? 'rgba(255, 238, 0, 0.35)' : 'rgba(255, 149, 0, 0.3)'}; }
 
-    /* Inputs más grandes y cómodos de leer */
     .neon-input, .neon-select, .neon-textarea {
       background: var(--bg-input);
       border: 1px solid ${p.borderInput};
@@ -201,9 +199,7 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
       box-shadow: 0 0 0 3px ${p.esNeon ? 'rgba(0, 243, 255, 0.25)' : 'rgba(0, 122, 255, 0.2)'};
     }
 
-    /* =========================================================
-       BOTONES ESTILO iOS 26.1 (Píldora Liquid Glass + Spring)
-       ========================================================= */
+    /* BOTONES ESTILO iOS 26.1 (Píldora Liquid Glass + Spring) */
     .neon-btn {
       background: ${p.esNeon ? 'rgba(0, 243, 255, 0.08)' : (temaEfectivo === 'claro' ? 'rgba(0, 122, 255, 0.1)' : 'rgba(10, 132, 255, 0.18)')};
       backdrop-filter: blur(20px) saturate(180%);
@@ -211,7 +207,7 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
       border: 1px solid ${p.esNeon ? 'var(--neon-cyan)' : 'rgba(0, 122, 255, 0.22)'};
       color: var(--neon-cyan);
       padding: 11px 20px;
-      border-radius: 9999px; /* Píldora iOS 26.1 */
+      border-radius: 9999px;
       font-family: ${p.fontHeading};
       font-size: ${fontSizeBase - 2}px;
       font-weight: 600;
@@ -232,10 +228,7 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 16px ${p.esNeon ? 'rgba(0, 243, 255, 0.4)' : 'rgba(0, 122, 255, 0.3)'};
     }
 
-    .neon-btn:active:not(:disabled) {
-      transform: scale(0.96);
-    }
-
+    .neon-btn:active:not(:disabled) { transform: scale(0.96); }
     .neon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .neon-btn-fillCyan { 
@@ -244,10 +237,7 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
       color: #ffffff; 
       box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 4px 14px rgba(0, 122, 255, 0.28);
     }
-    .neon-btn-fillCyan:hover:not(:disabled) { 
-      filter: brightness(1.06);
-      color: #ffffff;
-    }
+    .neon-btn-fillCyan:hover:not(:disabled) { filter: brightness(1.06); color: #ffffff; }
 
     .neon-btn-green { 
       background: ${p.esNeon ? 'transparent' : 'rgba(40, 205, 65, 0.12)'};
@@ -277,7 +267,6 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
     }
     .neon-btn-red:hover:not(:disabled) { background: var(--neon-red); color: #fff; }
 
-    /* Tablas con letra más grande */
     .neon-table { width: 100%; border-collapse: collapse; font-size: ${fontSizeBase - 1}px; }
     .neon-table th { 
       background: ${temaEfectivo === 'claro' ? '#f2f2f7' : 'rgba(255, 255, 255, 0.06)'}; 
@@ -303,7 +292,7 @@ const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) => {
     .label-neon { display: block; font-size: ${fontSizeBase - 3}px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
 
     .erp-layout { display: flex; min-height: calc(100vh - 65px); }
-    .erp-sidebar { width: 260px; background: ${p.bgSidebar}; border-right: 1px solid ${p.borderCard}; padding: 18px 14px; display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; backdrop-filter: blur(20px); }
+    .erp-sidebar { width: 265px; background: ${p.bgSidebar}; border-right: 1px solid ${p.borderCard}; padding: 18px 14px; display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; backdrop-filter: blur(20px); }
     .erp-main { flex: 1; padding: 24px; overflow-x: hidden; }
     .side-btn { width: 100%; justify-content: flex-start; padding: 12px 16px; font-size: ${fontSizeBase - 2}px; border-color: transparent; color: var(--text-muted); background: transparent; text-align: left; border-radius: 14px; box-shadow: none; }
     .side-btn:hover { background: ${temaEfectivo === 'claro' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.06)'}; color: var(--text-main); transform: none; box-shadow: none; }
@@ -337,12 +326,13 @@ const aplicarRedondeo = (valor: number, multiploStr: string) => {
 };
 
 // ========================================================
-// 1. VITRINA COMERCIAL MULTI-TIENDA (CENTRAL O LOCAL ASOCIADO)
+// 1. VITRINA COMERCIAL MULTI-TIENDA (AISLADA POR LOCAL)
 // ========================================================
 const TiendaPublica = ({ user }: { user: User | null }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
   const [productos, setProductos] = useState<any[]>([]);
   const [talleresGremio, setTalleresGremio] = useState<any[]>([]);
+  const [usuariosRoles, setUsuariosRoles] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
   const [carrito, setCarrito] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState('');
@@ -353,7 +343,7 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
   const [procesando, setProcesando] = useState(false);
 
   const params = new URLSearchParams(window.location.search);
-  const tiendaIdParam = params.get('tienda') || 'MASTER';
+  const tiendaUrlParam = params.get('tienda');
 
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => {
@@ -366,28 +356,28 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     const unsubTalleres = onSnapshot(query(collection(db, 'talleres_gremio')), (snapshot) => {
       setTalleresGremio(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => { unsubConfig(); unsubProd(); unsubTalleres(); };
+    const unsubRoles = onSnapshot(query(collection(db, 'usuarios_roles')), (snapshot) => {
+      setUsuariosRoles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { unsubConfig(); unsubProd(); unsubTalleres(); unsubRoles(); };
   }, []);
 
-  const localDueñoVitrina = tiendaIdParam !== 'MASTER' ? talleresGremio.find(t => t.id === tiendaIdParam) : null;
+  // AISLAMIENTO ESTRICTO: Si el usuario logueado es un Local Gremio (o empleado de un Local Gremio), NUNCA ve el stock MASTER; ve solo su tienda.
+  const tallerComoDueño = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
+  const rolComoEmpleado = usuariosRoles.find(u => u.email?.toLowerCase() === user?.email?.toLowerCase());
+  const idLocalDelUsuario = tallerComoDueño ? tallerComoDueño.id : (rolComoEmpleado?.tenantId && rolComoEmpleado.tenantId !== 'MASTER' ? rolComoEmpleado.tenantId : null);
+
+  const tiendaIdEfectiva = idLocalDelUsuario ? idLocalDelUsuario : (tiendaUrlParam || 'MASTER');
+
+  const localDueñoVitrina = tiendaIdEfectiva !== 'MASTER' ? talleresGremio.find(t => t.id === tiendaIdEfectiva) : null;
   const nombreVitrina = localDueñoVitrina ? localDueñoVitrina.nombre : config.empresaNombre;
   const direccionVitrina = localDueñoVitrina ? `${localDueñoVitrina.direccion || ''} - ${localDueñoVitrina.ciudad || ''}` : config.direccion;
   const whatsappVitrina = localDueñoVitrina ? localDueñoVitrina.telefono : config.whatsapp;
 
   const productosDeEstaVitrina = productos.filter(p => {
     const owner = p.ownerId || 'MASTER';
-    return owner === tiendaIdParam;
+    return owner === tiendaIdEfectiva;
   });
-
-  const tallerLogueado = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
-  const porcentajeDescuentoGremio = (tiendaIdParam === 'MASTER' && tallerLogueado)
-    ? (tallerLogueado.nivel === 'Oro' ? Number(config.descuentoGremioOro || 18) : Number(config.descuentoGremioBronce || 10))
-    : 0;
-
-  const calcularPrecioFinalCliente = (precioBase: number) => {
-    if (!porcentajeDescuentoGremio) return precioBase;
-    return aplicarRedondeo(precioBase * (1 - porcentajeDescuentoGremio / 100), config.redondeoPrecios);
-  };
 
   const categorias = ['Todas', ...Array.from(new Set(productosDeEstaVitrina.map(p => p.categoria || 'Otros')))];
   const puedeVerPrecios = localDueñoVitrina ? true : (user || config.catalogoPublicoPrecios);
@@ -401,12 +391,11 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     .sort((a, b) => (b.destacado && b.stock > 0 ? 1 : 0) - (a.destacado && a.stock > 0 ? 1 : 0));
 
   const agregarAlCarrito = (producto: any) => {
-    const precioAplicado = calcularPrecioFinalCliente(producto.precio);
     const item = carrito.find(i => i.idBaseDatos === producto.idBaseDatos);
     if (item && item.cantidad < producto.stock) {
-      setCarrito(carrito.map(i => i.idBaseDatos === producto.idBaseDatos ? { ...i, cantidad: i.cantidad + 1, precio: precioAplicado } : i));
+      setCarrito(carrito.map(i => i.idBaseDatos === producto.idBaseDatos ? { ...i, cantidad: i.cantidad + 1 } : i));
     } else if (!item && producto.stock > 0) {
-      setCarrito([...carrito, { ...producto, precio: precioAplicado, cantidad: 1 }]);
+      setCarrito([...carrito, { ...producto, cantidad: 1 }]);
     } else {
       alert('Stock máximo disponible alcanzado.');
     }
@@ -422,18 +411,12 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     setProcesando(true);
     try {
       const docRef = await addDoc(collection(db, 'pedidos_ecommerce'), {
-        ownerId: tiendaIdParam,
-        cliente: { ...formCheckout, emailUsuario: user?.email || '', tallerId: tallerLogueado?.id || null }, 
+        ownerId: tiendaIdEfectiva,
+        cliente: { ...formCheckout, emailUsuario: user?.email || '' }, 
         items: carrito, subtotal: totalCarrito, costoEnvio: costoEnvioActual, total: totalFinal,
-        estadoPago: formCheckout.metodoPago === 'cta_cte' ? 'cta_cte' : 'pendiente', 
+        estadoPago: 'pendiente', 
         estadoEnvio: 'preparacion', fecha: serverTimestamp(),
       });
-
-      if (tiendaIdParam === 'MASTER' && formCheckout.metodoPago === 'cta_cte' && tallerLogueado) {
-        await updateDoc(doc(db, 'talleres_gremio', tallerLogueado.id), {
-          saldoDeudor: Number(tallerLogueado.saldoDeudor || 0) + totalFinal
-        });
-      }
 
       for (const item of carrito) {
         const prodActual = productos.find(p => p.idBaseDatos === item.idBaseDatos);
@@ -456,31 +439,20 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
       <div style={{ flex: '1 1 65%' }}>
         <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderLeft: '4px solid var(--neon-cyan)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <div style={{ fontSize: '32px' }}>⚡</div>
+            <div style={{ fontSize: '32px' }}>🛍️</div>
             <div>
               <h2 className="glow-text-cyan" style={{ margin: 0 }}>{nombreVitrina}</h2>
               <p style={{ margin: '3px 0 0 0', color: 'var(--text-muted)', fontSize: '15px' }}>
-                {localDueñoVitrina ? `Tienda Oficial del Local | 📍 ${direccionVitrina}` : `${config.eslogan} | 📍 ${direccionVitrina}`}
+                {localDueñoVitrina ? `Catálogo Oficial del Local | 📍 ${direccionVitrina}` : `${config.eslogan} | 📍 ${direccionVitrina}`}
               </p>
             </div>
-          </div>
-          <div style={{ textAlign: 'right', fontSize: '14px', color: 'var(--text-muted)' }}>
-            {localDueñoVitrina ? (
-              <Link to="/" className="neon-btn" style={{ textDecoration: 'none' }}>Ir a Central {config.empresaNombre}</Link>
-            ) : (
-              tallerLogueado && (
-                <div className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)', marginTop: '5px' }}>
-                  🏢 CONVENIO GREMIO {tallerLogueado.nivel.toUpperCase()} (-{porcentajeDescuentoGremio}%) | Cta. Cte: ${tallerLogueado.saldoDeudor || 0}
-                </div>
-              )
-            )}
           </div>
         </div>
 
         {!puedeVerPrecios && (
           <div className="neon-card neon-card-pink" style={{ padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-            <span style={{ fontWeight: 600 }}>🔒 Catálogo Mayorista. Inicia sesión con la cuenta de tu Local para ver precios gremio o administrar tu sucursal.</span>
-            <Link to="/admin-login" className="neon-btn neon-btn-fillCyan" style={{ textDecoration: 'none' }}>Acceso Locales</Link>
+            <span style={{ fontWeight: 600 }}>🔒 Inicia sesión para ver precios u operar en tu panel de gestión.</span>
+            <Link to="/admin-login" className="neon-btn neon-btn-fillCyan" style={{ textDecoration: 'none' }}>Iniciar Sesión</Link>
           </div>
         )}
         
@@ -492,45 +464,39 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '18px' }}>
-          {productosFiltrados.map(prod => {
-            const precioMostrado = calcularPrecioFinalCliente(prod.precio);
-            return (
-              <div key={prod.idBaseDatos} className="neon-card" style={{ position: 'relative', opacity: prod.stock === 0 ? 0.55 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  {prod.destacado && prod.stock > 0 && (
-                    <div style={{ position: 'absolute', top: '-10px', right: '12px', background: 'var(--neon-yellow)', color: '#000', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, fontSize: '11px' }}>⭐ DESTACADO</div>
-                  )}
-                  <div style={{ height: '130px', background: 'var(--bg-input)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', border: '1px solid rgba(128,128,128,0.12)' }}>
-                    {prod.imagenUrl ? <img src={prod.imagenUrl} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} alt="prod" /> : <span style={{ fontSize: '34px', opacity: 0.4 }}>📦</span>}
-                  </div>
-                  <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.1)', color: 'var(--neon-cyan)', marginBottom: '6px' }}>{prod.categoria || 'General'}</span>
-                  <h4 style={{ margin: '6px 0 4px 0' }}>{prod.nombre}</h4>
-                  <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>{prod.descripcion}</p>
+          {productosFiltrados.map(prod => (
+            <div key={prod.idBaseDatos} className="neon-card" style={{ position: 'relative', opacity: prod.stock === 0 ? 0.55 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div>
+                {prod.destacado && prod.stock > 0 && (
+                  <div style={{ position: 'absolute', top: '-10px', right: '12px', background: 'var(--neon-yellow)', color: '#000', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, fontSize: '11px' }}>⭐ DESTACADO</div>
+                )}
+                <div style={{ height: '130px', background: 'var(--bg-input)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', border: '1px solid rgba(128,128,128,0.12)' }}>
+                  {prod.imagenUrl ? <img src={prod.imagenUrl} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} alt="prod" /> : <span style={{ fontSize: '34px', opacity: 0.4 }}>📦</span>}
                 </div>
-                <div>
-                  <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
-                    {prod.stock === 0 ? <span className="glow-text-red">● Agotado</span> : <span className="glow-text-green">● Disponible ({prod.stock})</span>}
-                  </div>
-                  {puedeVerPrecios ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '12px' }}>
-                      <div>
-                        {porcentajeDescuentoGremio > 0 && <span style={{ fontSize: '12px', textDecoration: 'line-through', color: 'var(--text-muted)', display: 'block' }}>${prod.precio?.toLocaleString()}</span>}
-                        <b className="glow-text-cyan" style={{ fontSize: '21px' }}>${precioMostrado?.toLocaleString()}</b>
-                      </div>
-                      <button onClick={() => agregarAlCarrito(prod)} disabled={prod.stock <= 0} className="neon-btn neon-btn-fillCyan">
-                        {prod.stock > 0 ? '+ Sumar' : 'Sin Stock'}
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '10px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>🔒 Precio Gremio Oculto</div>
-                  )}
-                </div>
+                <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.1)', color: 'var(--neon-cyan)', marginBottom: '6px' }}>{prod.categoria || 'General'}</span>
+                <h4 style={{ margin: '6px 0 4px 0' }}>{prod.nombre}</h4>
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>{prod.descripcion}</p>
               </div>
-            );
-          })}
+              <div>
+                <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                  {prod.stock === 0 ? <span className="glow-text-red">● Agotado</span> : <span className="glow-text-green">● Disponible ({prod.stock})</span>}
+                </div>
+                {puedeVerPrecios ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '12px' }}>
+                    <b className="glow-text-cyan" style={{ fontSize: '21px' }}>${prod.precio?.toLocaleString()}</b>
+                    <button onClick={() => agregarAlCarrito(prod)} disabled={prod.stock <= 0} className="neon-btn neon-btn-fillCyan">
+                      {prod.stock > 0 ? '+ Sumar' : 'Sin Stock'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '10px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>🔒 Precio Oculto</div>
+                )}
+              </div>
+            </div>
+          ))}
           {productosFiltrados.length === 0 && (
             <div className="neon-card" style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)' }}>
-              Aún no hay artículos publicados en esta vitrina.
+              Aún no hay artículos publicados en esta tienda.
             </div>
           )}
         </div>
@@ -553,14 +519,13 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
             <div className="neon-card" style={{ position: 'sticky', top: '20px' }}>
               <h3 className="glow-text-cyan" style={{ margin: '0 0 20px 0' }}>📝 Finalizar Pedido</h3>
               <form onSubmit={confirmarPedido} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div><label className="label-neon">Nombre / Local</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
+                <div><label className="label-neon">Nombre Completo</label><input type="text" className="neon-input" required value={formCheckout.nombre} onChange={e=>setFormCheckout({...formCheckout, nombre: e.target.value})} /></div>
                 <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={formCheckout.telefono} onChange={e=>setFormCheckout({...formCheckout, telefono: e.target.value})} /></div>
                 <div>
                   <label className="label-neon">Modalidad de Pago</label>
                   <select className="neon-select" value={formCheckout.metodoPago} onChange={e=>setFormCheckout({...formCheckout, metodoPago: e.target.value})}>
                     <option value="transferencia">Transferencia / Mercado Pago</option>
                     <option value="efectivo">Efectivo en Mostrador</option>
-                    {tiendaIdParam === 'MASTER' && tallerLogueado && <option value="cta_cte">🏢 Cargar a mi Cuenta Corriente Gremio</option>}
                   </select>
                 </div>
                 <button type="submit" disabled={procesando} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', marginTop: '10px' }}>
@@ -663,7 +628,7 @@ const Seguimiento = () => {
 };
 
 // ========================================================
-// 3. LOGIN UNIFICADO (CENTRAL + LOCALES ASOCIADOS)
+// 3. LOGIN UNIFICADO (CENTRAL + LOCALES + EMPLEADOS)
 // ========================================================
 const LoginAdmin = () => {
   const [e, setE] = useState(''); const [p, setP] = useState('');
@@ -673,10 +638,10 @@ const LoginAdmin = () => {
       <div className="neon-card" style={{ textAlign: 'center' }}>
         <h2 className="glow-text-cyan">🔐 Acceso al Sistema</h2>
         <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '20px' }}>
-          Ingresa con tu cuenta de <b>Laboratorio Central</b> o con el usuario y contraseña asignado a tu <b>Local Asociado</b>.
+          Ingresa con tu cuenta de <b>Laboratorio Central</b>, dueño de <b>Local Asociado</b> o perfil de <b>Colaborador</b>.
         </p>
         <form onSubmit={async (ev) => { ev.preventDefault(); try { await signInWithEmailAndPassword(auth, e, p); navigate('/admin-panel'); } catch (err) { alert('Usuario o contraseña incorrectos'); } }} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <input type="email" className="neon-input" placeholder="Email de Usuario / Local" value={e} onChange={ex => setE(ex.target.value)} required/>
+          <input type="email" className="neon-input" placeholder="Email de Usuario" value={e} onChange={ex => setE(ex.target.value)} required/>
           <input type="password" className="neon-input" placeholder="Contraseña" value={p} onChange={ex => setP(ex.target.value)} required/>
           <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>Ingresar a mi Panel ➔</button>
         </form>
@@ -685,9 +650,9 @@ const LoginAdmin = () => {
   );
 };
 
-// =========================================================================
-// 4. PANEL ERP MULTI-TENANT (CENTRAL WALABBA vs SITIO PRIVADO DEL LOCAL)
-// =========================================================================
+// ================================================================================
+// 4. PANEL ERP MULTI-TENANT (CON GESTIÓN DE ROLES PARA LOCALES GREMIO Y AISLAMIENTO)
+// ================================================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
   const [ordenes, setOrdenes] = useState<any[]>([]);
@@ -738,7 +703,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
-  // --- Red de Talleres Asociados B2B ---
+  // --- Red de Talleres Asociados B2B (Desde Central) ---
   const [tallerNom, setTallerNom] = useState('');
   const [tallerEncargado, setTallerEncargado] = useState('');
   const [tallerTel, setTallerTel] = useState('');
@@ -780,10 +745,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [busquedaClienteCRM, setBusquedaClienteCRM] = useState('');
   const [mensajePromoCRM, setMensajePromoCRM] = useState(CONFIG_DEFAULT.promoPlantillaCRM);
 
-  // --- Usuarios / Roles Internos ---
+  // --- Creación de Usuarios y Roles (Para Central y para Locales Gremio) ---
   const [nuevoUserEmail, setNuevoUserEmail] = useState('');
+  const [nuevoUserPassword, setNuevoUserPassword] = useState('');
   const [nuevoUserNombre, setNuevoUserNombre] = useState('');
-  const [nuevoUserRol, setNuevoUserRol] = useState<'admin' | 'tecnico' | 'vendedor'>('tecnico');
+  const [nuevoUserRol, setNuevoUserRol] = useState<string>('recepcion_ordenes');
+  const [creandoEmpleado, setCreandoEmpleado] = useState(false);
 
   const [conf, setConf] = useState<any>(CONFIG_DEFAULT);
 
@@ -813,30 +780,60 @@ const DashboardTaller = ({ user }: { user: User }) => {
   }, []);
 
   // =========================================================================
-  // DETECCIÓN MULTI-TENANT + RESCATE SUPERADMIN
+  // DETECCIÓN MULTI-TENANT Y SUB-ROLES DE EMPLEADOS DE LOCALES GREMIO
   // =========================================================================
-  const sucursalAsociada = talleresGremio.find(t => t.email?.toLowerCase() === user.email?.toLowerCase());
+  const sucursalDirecta = talleresGremio.find(t => t.email?.toLowerCase() === user.email?.toLowerCase());
+  const registroRolActual = usuariosRoles.find(u => u.email?.toLowerCase() === user.email?.toLowerCase());
+
+  // Si es empleado de un local gremio, buscamos a qué local pertenece a través de su tenantId
+  const sucursalPorEmpleado = (!sucursalDirecta && registroRolActual?.tenantId && registroRolActual.tenantId !== 'MASTER')
+    ? talleresGremio.find(t => t.id === registroRolActual.tenantId)
+    : null;
+
+  const sucursalAsociada = sucursalDirecta || sucursalPorEmpleado;
   const esSucursalExterna = Boolean(sucursalAsociada);
   const tenantId = esSucursalExterna ? sucursalAsociada.id : 'MASTER';
   const nombreNegocioActivo = esSucursalExterna ? sucursalAsociada.nombre : config.empresaNombre;
   const direccionNegocioActivo = esSucursalExterna ? `${sucursalAsociada.direccion || ''} (${sucursalAsociada.ciudad || ''})` : config.direccion;
   const whatsappNegocioActivo = esSucursalExterna ? sucursalAsociada.telefono : config.whatsapp;
 
-  const registroRolActual = usuariosRoles.find(u => u.email?.toLowerCase() === user.email?.toLowerCase());
-  const rolActual: 'admin' | 'tecnico' | 'vendedor' | 'sucursal' = esSucursalExterna 
-    ? 'sucursal' 
-    : (registroRolActual ? registroRolActual.rol : 'admin');
+  // Roles posibles: 'admin' (Dueño Central o Dueño Local Gremio), 'recepcion_ordenes' (Ingreso/Gestión Órdenes), 'vendedor_admin' (Ventas, Stock, Precios y Finanzas)
+  const rolNormalizado: 'admin' | 'recepcion_ordenes' | 'vendedor_admin' = sucursalDirecta 
+    ? 'admin' 
+    : (registroRolActual 
+        ? (registroRolActual.rol === 'tecnico' || registroRolActual.rol === 'recepcion_ordenes' 
+            ? 'recepcion_ordenes' 
+            : registroRolActual.rol === 'vendedor' || registroRolActual.rol === 'vendedor_admin'
+              ? 'vendedor_admin'
+              : 'admin') 
+        : 'admin');
+
+  // Permisos granulares según el rol activo (aplicable tanto a Locales Gremio como a Central)
+  const puedeGestionarOrdenes = rolNormalizado === 'admin' || rolNormalizado === 'recepcion_ordenes';
+  const puedeVentasStockFinanzas = rolNormalizado === 'admin' || rolNormalizado === 'vendedor_admin';
+  const esAdminDelNegocioActivo = rolNormalizado === 'admin';
+
+  // Redirigir automáticamente a la pestaña permitida si entra un empleado específico
+  useEffect(() => {
+    if (rolNormalizado === 'recepcion_ordenes' && pestaña !== 'taller' && pestaña !== 'rma') {
+      setPestaña('taller');
+    } else if (rolNormalizado === 'vendedor_admin' && pestaña === 'taller') {
+      setPestaña('pos');
+    }
+  }, [rolNormalizado, pestaña]);
 
   const restaurarSuperAdmin = async () => {
     if (registroRolActual) {
       await deleteDoc(doc(db, 'usuarios_roles', registroRolActual.id));
-      alert('👑 ¡Privilegios de SuperAdmin restaurados!');
+      alert('👑 ¡Privilegios de Administrador Total restaurados!');
     }
   };
 
+  // AISLAMIENTO ESTRICTO DE DATOS: Cada local ve únicamente sus propios artículos, finanzas, pedidos y empleados
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
   const misPedidosWeb = pedidosWeb.filter(p => (p.ownerId || 'MASTER') === tenantId);
+  const misEmpleados = usuariosRoles.filter(u => (u.tenantId || 'MASTER') === tenantId);
   const misOrdenesTaller = esSucursalExterna 
     ? ordenes.filter(o => o.tallerId === sucursalAsociada.id || o.tallerOrigen === sucursalAsociada.nombre)
     : ordenes;
@@ -954,7 +951,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const importarDatosAlInventario = async () => {
     if (excelData.length === 0) return alert('No hay datos.');
     if (!nombreProveedorExcel) return alert('Ingresa el nombre del proveedor.');
-    if (!window.confirm(`¿Importar desde "${hojaActiva}" a tu inventario privado?`)) return;
+    if (!window.confirm(`¿Importar desde "${hojaActiva}" al inventario privado de ${nombreNegocioActivo}?`)) return;
     
     let agregados = 0; let actualizados = 0; let omitidos = 0; let marcaActual = 'General';
     const fechaActualizacion = new Date().toLocaleDateString();
@@ -1021,7 +1018,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       estado: 'ingresado', 
       codigoSeguimiento: cod, 
       fechaIngreso: serverTimestamp(), 
-      historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: `Equipo recepcionado en ${origenFinal}.` }]
+      historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: `Equipo recepcionado en ${origenFinal} (${user.email}).` }]
     });
 
     if (Number(señaRecibida) > 0) {
@@ -1037,17 +1034,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
     }
 
     setCliNombre(''); setCliTel(''); setCliDni(''); setMarca(''); setModelo(''); setFalla(''); setTecnico(''); setImei(''); setContrasena(''); setCondicionVisual(''); setPresupuestoInicial(''); setCostoGremioInicial(''); setSeñaRecibida('');
-    alert(`⚡ Orden #${cod} generada. Ya está sincronizada con el Laboratorio Central.`);
+    alert(`⚡ Orden #${cod} generada correctamente.`);
   };
 
   const imputarRepuestoAOrden = async (orden: any) => {
     const busquedaRep = prompt('Escribe parte del nombre del repuesto usado (Ej: A52, Pin, Modulo):');
     if (!busquedaRep) return;
     const candidatos = misProductos.filter(p => p.stock > 0 && p.nombre.toLowerCase().includes(busquedaRep.toLowerCase()));
-    if (candidatos.length === 0) return alert('No se encontraron repuestos con stock con ese nombre.');
+    if (candidatos.length === 0) return alert('No se encontraron repuestos en tu stock con ese nombre.');
     
     const listaOpciones = candidatos.slice(0, 8).map((c, idx) => `${idx + 1}. ${c.nombre} (Stock: ${c.stock} | Costo: $${c.costoProveedor || 0})`).join('\n');
-    const eleccion = prompt(`Selecciona el número del repuesto a descontar del Pañol:\n\n${listaOpciones}`);
+    const eleccion = prompt(`Selecciona el número del repuesto a descontar de tu stock:\n\n${listaOpciones}`);
     const indexElegido = Number(eleccion) - 1;
     if (isNaN(indexElegido) || !candidatos[indexElegido]) return;
 
@@ -1056,17 +1053,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
     await updateDoc(doc(db, 'ordenes_taller', orden.id), {
       costoRepuestosUsados: Number(orden.costoRepuestosUsados || 0) + Number(repuesto.costoProveedor || 0),
       repuestosLista: arrayUnion({ nombre: repuesto.nombre, costo: Number(repuesto.costoProveedor || 0) }),
-      historial: arrayUnion({ estado: orden.estado, fecha: new Date().toLocaleString(), comentario: `Repuesto instalado en Laboratorio: ${repuesto.nombre}` })
+      historial: arrayUnion({ estado: orden.estado, fecha: new Date().toLocaleString(), comentario: `Repuesto instalado: ${repuesto.nombre}` })
     });
     alert(`🔩 Repuesto "${repuesto.nombre}" descontado del stock y vinculado a la orden #${orden.codigoSeguimiento}.`);
   };
 
   const actualizarEstado = async (id: string, nuevoEstado: string, orden: any) => {
-    const comentario = prompt(`Diagnóstico / Comentario técnico para estado '${nuevoEstado}':`) || `Actualizado por ${nombreNegocioActivo}`;
+    const comentario = prompt(`Diagnóstico / Comentario para estado '${nuevoEstado}':`) || `Actualizado por ${nombreNegocioActivo}`;
     let data: any = { estado: nuevoEstado, historial: arrayUnion({ estado: nuevoEstado, fecha: new Date().toLocaleString(), comentario }) };
     
-    if (nuevoEstado === 'reparado' && !esSucursalExterna) { 
-      if (orden.tallerOrigen && orden.tallerOrigen !== 'Mostrador Propio') {
+    if (nuevoEstado === 'reparado') { 
+      if (!esSucursalExterna && orden.tallerOrigen && orden.tallerOrigen !== 'Mostrador Propio') {
         const costoAlLocal = prompt(`Esta orden es del local "${orden.tallerOrigen}".\nIngresa tu Costo Mayorista Gremio a cobrarle al local ($):`, orden.costoGremio || '');
         if (costoAlLocal !== null) data.costoGremio = costoAlLocal;
       }
@@ -1087,7 +1084,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         }
       } else {
         const saldoRestante = Math.max(0, Number(orden.costoReparacion || 0) - Number(orden.seña || 0));
-        if (saldoRestante > 0 && window.confirm(`¿Registrar cobro del saldo restante ($${saldoRestante}) en tu Caja?`)) {
+        if (saldoRestante > 0 && window.confirm(`¿Registrar cobro del saldo restante ($${saldoRestante}) en la Caja de ${nombreNegocioActivo}?`)) {
           const metodo = prompt('Método de pago (efectivo, transferencia, mercadopago, tarjeta):', 'efectivo') || 'efectivo';
           await addDoc(collection(db, 'finanzas'), {
             ownerId: tenantId,
@@ -1294,7 +1291,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     if (faltantes.length === 0) return alert('No hay artículos con stock crítico.');
     let msg = `Hola! Necesito reponer para *${nombreNegocioActivo}*:\n\n`; 
     faltantes.forEach(p => { msg += `▪️ ${p.stock === 0 ? 5 : 3}x ${p.nombre}\n`; }); 
-    window.open(`https://wa.me/${esSucursalExterna ? config.whatsapp : ''}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const guardarTallerGremio = async (e: React.FormEvent) => {
@@ -1325,7 +1322,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       });
 
       setTallerNom(''); setTallerEncargado(''); setTallerTel(''); setTallerDireccion(''); setTallerEmail(''); setTallerPassword('');
-      alert(`🏢 ¡Local "${tallerNom}" dado de alta!\nYa puede ingresar en tu web con:\nUsuario: ${emailLimpio}\nContraseña: ${tallerPassword || '(La que ya tenía)'}`);
+      alert(`🏢 ¡Local "${tallerNom}" dado de alta!\nUsuario: ${emailLimpio}\nContraseña: ${tallerPassword || '(La que ya tenía)'}`);
     } catch (err: any) {
       alert(`Aviso al crear credenciales: ${err.message}`);
     } finally {
@@ -1466,19 +1463,52 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const equiposEnBanco = misOrdenesTaller.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
   const equiposListosSinRetirar = misOrdenesTaller.filter(o => o.estado === 'reparado').length;
 
-  // Blindaje para que el SuperAdmin no pueda bajarse el rol por accidente
+  // =========================================================================
+  // CREACIÓN DE EMPLEADOS Y ROLES (TANTO PARA CENTRAL COMO PARA LOCAL GREMIO)
+  // =========================================================================
   const agregarUsuarioRol = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoUserEmail) return;
-    if (nuevoUserEmail.trim().toLowerCase() === user.email?.toLowerCase() && nuevoUserRol !== 'admin') {
-      return alert('⚠️ No puedes bajarte el rol a tu propio correo de SuperAdmin.');
+    const emailLimpio = nuevoUserEmail.trim().toLowerCase();
+    if (emailLimpio === user.email?.toLowerCase() && nuevoUserRol !== 'admin') {
+      return alert('⚠️ No puedes bajarte el rol a tu propio correo de Administrador.');
     }
-    await addDoc(collection(db, 'usuarios_roles'), { email: nuevoUserEmail.trim().toLowerCase(), nombre: nuevoUserNombre, rol: nuevoUserRol, fecha: serverTimestamp() });
-    setNuevoUserEmail(''); setNuevoUserNombre('');
+    setCreandoEmpleado(true);
+    try {
+      if (nuevoUserPassword && nuevoUserPassword.length >= 6) {
+        const secondaryAppName = "SecondaryCreatorApp";
+        const existingApp = getApps().find(a => a.name === secondaryAppName);
+        const secondaryApp = existingApp || initializeApp(auth.app.options, secondaryAppName);
+        const secondaryAuth = getAuth(secondaryApp);
+        await createUserWithEmailAndPassword(secondaryAuth, emailLimpio, nuevoUserPassword);
+        await signOut(secondaryAuth);
+      }
+
+      await addDoc(collection(db, 'usuarios_roles'), { 
+        tenantId: tenantId, // Vincula al empleado exclusivamente con el Local Gremio o con MASTER
+        nombreNegocio: nombreNegocioActivo,
+        email: emailLimpio, 
+        nombre: nuevoUserNombre, 
+        rol: nuevoUserRol, 
+        fecha: serverTimestamp() 
+      });
+      setNuevoUserEmail(''); setNuevoUserPassword(''); setNuevoUserNombre('');
+      alert(`✅ Usuario "${nuevoUserNombre}" creado y asignado al rol seleccionado dentro de ${nombreNegocioActivo}.`);
+    } catch (err: any) {
+      alert(`Aviso al registrar usuario: ${err.message}`);
+    } finally {
+      setCreandoEmpleado(false);
+    }
   };
 
   const listaSectores = (config.sectoresTaller || CONFIG_DEFAULT.sectoresTaller).split(',').map((s:string) => s.trim());
   const urlVitrinaPropia = esSucursalExterna ? `${window.location.origin}/?tienda=${sucursalAsociada.id}` : window.location.origin;
+
+  const etiquetaRolVisual = rolNormalizado === 'recepcion_ordenes' 
+    ? 'RECEPCIÓN Y ÓRDENES' 
+    : rolNormalizado === 'vendedor_admin' 
+      ? 'VENDEDOR Y FINANZAS' 
+      : 'ADMINISTRADOR TOTAL';
 
   return (
     <div className="erp-layout">
@@ -1492,40 +1522,51 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SIDEBAR INTELIGENTE */}
+      {/* SIDEBAR INTELIGENTE ADAPTADO SEGÚN ROL Y LOCAL */}
       <aside className="erp-sidebar">
         <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(128,128,128,0.18)', marginBottom: '6px' }}>
           <div className="glow-text-cyan" style={{ fontWeight: 800, fontSize: '16px' }}>{nombreNegocioActivo}</div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Modo: <span className="neon-badge" style={{ background: esSucursalExterna ? 'rgba(88,86,214,0.15)' : 'rgba(40,205,65,0.15)', color: esSucursalExterna ? 'var(--neon-pink)' : 'var(--neon-green)' }}>
-              {esSucursalExterna ? `LOCAL GREMIO ${sucursalAsociada.nivel}` : `CENTRAL (${rolActual})`}
+            Perfil: <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.15)', color: 'var(--neon-cyan)' }}>
+              {etiquetaRolVisual}
             </span>
           </div>
         </div>
 
-        {/* BOTÓN DE RESCATE SI EL SUPERADMIN SE PUSO ROL TÉCNICO POR ERROR */}
-        {!esSucursalExterna && rolActual !== 'admin' && (
+        {/* BOTÓN DE RESCATE SI EL SUPERADMIN DE CENTRAL SE PUSO OTRO ROL POR ERROR */}
+        {!esSucursalExterna && rolNormalizado !== 'admin' && (
           <button onClick={restaurarSuperAdmin} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', marginBottom: '10px' }}>
             👑 Recuperar SuperAdmin
           </button>
         )}
 
-        <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>📊 1. Mi Resumen & Link Web</button>
-        {rolActual !== 'tecnico' && (
+        {esAdminDelNegocioActivo && (
+          <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>📊 1. Mi Resumen & Tienda</button>
+        )}
+
+        {puedeVentasStockFinanzas && (
           <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Mi Caja POS Mostrador</button>
         )}
-        <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>
-          🛠️ 3. {esSucursalExterna ? `Mis Órdenes (${equiposEnBanco})` : `Control Global Órdenes (${equiposEnBanco})`}
-        </button>
 
-        {!esSucursalExterna && rolActual === 'admin' && (
-          <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 4. Red Locales & Usuarios ({talleresGremio.length})</button>
+        {puedeGestionarOrdenes && (
+          <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>
+            🛠️ 3. {esSucursalExterna ? `Órdenes de Reparación (${equiposEnBanco})` : `Control Global Órdenes (${equiposEnBanco})`}
+          </button>
         )}
 
-        <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 5. Mi Stock & Artículos ({misProductos.length})</button>
-        <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>🔄 6. Garantías & RMA</button>
+        {!esSucursalExterna && esAdminDelNegocioActivo && (
+          <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 4. Red Locales Gremio ({talleresGremio.length})</button>
+        )}
+
+        {puedeVentasStockFinanzas && (
+          <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 5. Mi Stock & Precios ({misProductos.length})</button>
+        )}
+
+        {puedeGestionarOrdenes && (
+          <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>🔄 6. Garantías & RMA</button>
+        )}
         
-        {rolActual !== 'tecnico' && (
+        {puedeVentasStockFinanzas && (
           <>
             <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 7. Mis Pedidos Web</button>
             <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 8. Mis Clientes CRM</button>
@@ -1534,8 +1575,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </>
         )}
 
-        {!esSucursalExterna && rolActual === 'admin' && (
-          <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>⚙️ 11. Temas & Config</button>
+        {esAdminDelNegocioActivo && (
+          <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>
+            🛡️ 11. {esSucursalExterna ? 'Mi Personal & Roles' : 'Temas, Config & Roles'}
+          </button>
         )}
 
         <button onClick={() => signOut(auth)} className="neon-btn neon-btn-red" style={{ marginTop: 'auto', width: '100%' }}>🚪 Cerrar Sesión</button>
@@ -1545,9 +1588,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
       <main className="erp-main">
 
         {/* ========================================== */}
-        {/* MÓDULO 1: DASHBOARD (CENTRAL O LOCAL)      */}
+        {/* MÓDULO 1: DASHBOARD (AISLADO POR LOCAL)    */}
         {/* ========================================== */}
-        {pestaña === 'dashboard' && (
+        {pestaña === 'dashboard' && esAdminDelNegocioActivo && (
           <div>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderLeft: '4px solid var(--neon-green)' }}>
               <div>
@@ -1556,7 +1599,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   📍 {direccionNegocioActivo} | 📱 WhatsApp Activo: {whatsappNegocioActivo}
                 </div>
                 <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-                  Link de tu Vitrina Pública de Ventas: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-green" style={{ fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
+                  Link de tu Tienda Pública Exclusiva: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-green" style={{ fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
                 </span>
               </div>
               <button onClick={() => { navigator.clipboard.writeText(urlVitrinaPropia); alert('Link de tu tienda copiado al portapapeles'); }} className="neon-btn neon-btn-green">
@@ -1577,7 +1620,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </div>
               {esSucursalExterna ? (
                 <div className="neon-card neon-card-pink">
-                  <span className="label-neon">🏢 Mi Saldo con {config.empresaNombre}</span>
+                  <span className="label-neon">🏢 Saldo Cta. Cte. Laboratorio</span>
                   <h2 className="glow-text-pink" style={{ margin: '6px 0' }}>${Number(sucursalAsociada.saldoDeudor || 0).toLocaleString()}</h2>
                   <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Límite Cta. Cte.: ${Number(sucursalAsociada.limiteCredito || 0).toLocaleString()}</span>
                 </div>
@@ -1597,12 +1640,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
               <div className="neon-card">
-                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚡ Acciones Directas</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚡ Acciones Directas de {nombreNegocioActivo}</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Vender en Caja POS</button>
                   <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>➕ Crear Orden Servicio</button>
                   <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>📦 Cargar Mis Artículos</button>
-                  <Link to="/" className="neon-btn neon-btn-pink" style={{ padding: '14px', textDecoration: 'none' }}>⚡ Catálogo {config.empresaNombre}</Link>
+                  <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>🛡️ Gestionar Mi Personal</button>
                 </div>
               </div>
 
@@ -1624,7 +1667,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {/* MÓDULO 2: PUNTO DE VENTA (AISLADO X LOCAL) */}
         {/* ========================================== */}
-        {pestaña === 'pos' && (
+        {pestaña === 'pos' && puedeVentasStockFinanzas && (
           <div>
             <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 Caja POS Mostrador // {nombreNegocioActivo}</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -1635,7 +1678,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
                 <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
                   <table className="neon-table">
-                    <thead><tr><th>Gaveta</th><th>Mi Artículo</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead>
+                    <thead><tr><th>Ubicación</th><th>Mi Artículo</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead>
                     <tbody>
                       {misProductos.filter(p => p.stock > 0 && (p.nombre.toLowerCase().includes(busquedaPOS.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaPOS)))).slice(0, 20).map(p => (
                         <tr key={p.id}>
@@ -1692,13 +1735,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ================================================================= */}
-        {/* MÓDULO 3: ORDENES DE SERVICIO (SINCRONIZADO SUCURSAL <-> CENTRAL) */}
+        {/* MÓDULO 3: ORDENES DE SERVICIO (RECEPCIÓN Y GESTIÓN COMPLETA)      */}
         {/* ================================================================= */}
-        {pestaña === 'taller' && (
+        {pestaña === 'taller' && puedeGestionarOrdenes && (
           <div>
             <form onSubmit={guardarOrden} className="neon-card" style={{ marginBottom: '22px' }}>
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
-                {esSucursalExterna ? `📝 Generar Orden de Servicio en ${nombreNegocioActivo}` : '📝 Recepción Central de Laboratorio (Control Absoluto)'}
+                {esSucursalExterna ? `📝 Ingreso y Gestión de Orden de Reparación (${nombreNegocioActivo})` : '📝 Recepción Central de Laboratorio (Control Absoluto)'}
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                 <div>
@@ -1710,7 +1753,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     </select>
                   ) : (
                     <div className="neon-badge" style={{ background: 'rgba(88,86,214,0.15)', color: 'var(--neon-pink)', marginBottom: '8px', padding: '7px 12px' }}>
-                      🏢 Origen: {sucursalAsociada.nombre}
+                      🏢 Sucursal: {sucursalAsociada.nombre}
                     </div>
                   )}
                   <input type="text" className="neon-input" placeholder="Nombre del Cliente" value={cliNombre} onChange={e=>setCliNombre(e.target.value)} required style={{ marginBottom: '8px' }}/>
@@ -1763,7 +1806,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
               </div>
               <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
-                ➕ Generar Orden de Servicio
+                ➕ Generar Orden de Reparación
               </button>
             </form>
 
@@ -1794,7 +1837,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <th>Orden / Local</th>
                     <th>Cliente Final</th>
                     <th>Equipo & Falla</th>
-                    <th>Control de Estado & Precios</th>
+                    <th>Gestión de Estado & Precios</th>
                     <th style={{ textAlign: 'center' }}>Acciones</th>
                   </tr>
                 </thead>
@@ -1834,12 +1877,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                          {!esSucursalExterna && (
-                            <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Imputar repuesto de Pañol">🔩</button>
-                          )}
+                          <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Descontar repuesto de mi stock">🔩</button>
                           <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp">💬</button>
                           <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden">🖨️</button>
-                          {!esSucursalExterna && rolActual === 'admin' && (
+                          {esAdminDelNegocioActivo && (
                             <button onClick={async()=>{if(window.confirm('¿Eliminar orden?'))await deleteDoc(doc(db,'ordenes_taller',o.id))}} className="neon-btn neon-btn-red">🗑️</button>
                           )}
                         </div>
@@ -1853,18 +1894,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ==================================================================== */}
-        {/* MÓDULO 4: RED DE LOCALES ASOCIADOS + GENERADOR DE USUARIO/CONTRASEÑA */}
+        {/* MÓDULO 4: RED DE LOCALES ASOCIADOS (SOLO VISIBLE PARA CENTRAL MASTER)*/}
         {/* ==================================================================== */}
-        {pestaña === 'talleres_b2b' && !esSucursalExterna && (
+        {pestaña === 'talleres_b2b' && !esSucursalExterna && esAdminDelNegocioActivo && (
           <div>
-            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 Gestión de Locales Asociados (Creación de Usuario y Contraseña)</h2>
+            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 Gestión de Locales Asociados (Creación de Cuentas Independientes)</h2>
             <p style={{ color: 'var(--text-muted)', marginTop: '-10px', marginBottom: '20px' }}>
-              Crea las credenciales de acceso para cada local. Al iniciar sesión con ese correo y contraseña, ellos verán su propio sistema aislado (su stock, sus ventas POS, su link de tienda pública y sus órdenes sincronizadas con tu laboratorio).
+              Cada local que crees aquí tendrá su propio sistema aislado, sin acceso al stock de tu Local Central, y podrá crear sus propios roles de Recepción de Órdenes y Vendedor/Administración.
             </p>
 
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={guardarTallerGremio} className="neon-card neon-card-pink" style={{ flex: '1 1 340px', alignSelf: 'flex-start' }}>
-                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ Crear Cuenta de Local Asociado</h3>
+                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ Dar de Alta Local Gremio</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div><label className="label-neon">Nombre Comercial del Local</label><input type="text" className="neon-input" required value={tallerNom} onChange={e=>setTallerNom(e.target.value)} placeholder="Ej: TecnoCell Centro" /></div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1876,16 +1917,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <div style={{ flex: 1 }}><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" required value={tallerTel} onChange={e=>setTallerTel(e.target.value)} /></div>
                   </div>
                   <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', border: '1px dashed var(--neon-pink)' }}>
-                    <label className="label-neon" style={{ color: 'var(--neon-pink)' }}>🔐 Credenciales de Acceso al Sistema</label>
-                    <input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="Email de usuario (Ej: local1@walabba.com)" style={{ marginBottom: '8px' }} />
+                    <label className="label-neon" style={{ color: 'var(--neon-pink)' }}>🔐 Credenciales del Dueño del Local</label>
+                    <input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="Email Admin del Local" style={{ marginBottom: '8px' }} />
                     <input type="text" className="neon-input" required minLength={6} value={tallerPassword} onChange={e=>setTallerPassword(e.target.value)} placeholder="Contraseña (Mínimo 6 caracteres)" />
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label className="label-neon">Nivel Descuento B2B</label>
+                      <label className="label-neon">Categoría Gremio</label>
                       <select className="neon-select" value={tallerNivel} onChange={e=>setTallerNivel(e.target.value as any)}>
-                        <option value="Bronce">Bronce (-{config.descuentoGremioBronce}%)</option>
-                        <option value="Oro">Oro (-{config.descuentoGremioOro}%)</option>
+                        <option value="Bronce">Bronce</option>
+                        <option value="Oro">Oro</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
@@ -1894,14 +1935,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     </div>
                   </div>
                   <button type="submit" disabled={creandoCuentaLocal} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px', marginTop: '6px' }}>
-                    {creandoCuentaLocal ? 'Creando Usuario...' : '🚀 Crear Usuario y Habilitar Local'}
+                    {creandoCuentaLocal ? 'Creando Cuenta...' : '🚀 Crear Local Independiente'}
                   </button>
                 </div>
               </form>
 
               <div className="neon-card" style={{ flex: '2 1 580px', overflowX: 'auto' }}>
                 <table className="neon-table">
-                  <thead><tr><th>Local / Usuario</th><th>Tienda Propia</th><th>Equipos Activos</th><th>Saldo Cta. Cte.</th><th>Acciones</th></tr></thead>
+                  <thead><tr><th>Local / Usuario Admin</th><th>Tienda del Local</th><th>Equipos en Taller</th><th>Saldo Cta. Cte.</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {talleresGremio.map(t => {
                       const equiposDelTaller = ordenes.filter(o => (o.tallerOrigen === t.nombre || o.tallerId === t.id) && o.estado !== 'entregado').length;
@@ -1915,10 +1956,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                           </td>
                           <td>
                             <a href={linkTiendaLocal} target="_blank" rel="noreferrer" className="neon-btn" style={{ textDecoration: 'none', padding: '6px 12px' }}>
-                              🌐 Ver Tienda
+                              🌐 Abrir Vitrina
                             </a>
                           </td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold' }} className="glow-text-cyan">{equiposDelTaller} en taller</td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold' }} className="glow-text-cyan">{equiposDelTaller} activos</td>
                           <td>
                             <b className={Number(t.saldoDeudor) > 0 ? 'glow-text-red' : 'glow-text-green'} style={{ fontSize: '17px' }}>
                               ${Number(t.saldoDeudor || 0).toLocaleString()}
@@ -1941,39 +1982,37 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 5: STOCK PRIVADO (CENTRAL O LOCAL)  */}
+        {/* MÓDULO 5: STOCK PRIVADO Y PRECIOS          */}
         {/* ========================================== */}
-        {pestaña === 'catalogo' && (
+        {pestaña === 'catalogo' && puedeVentasStockFinanzas && (
           <div>
-            {rolActual !== 'tecnico' && (
-              <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap' }}>
-                  <h3 className="glow-text-cyan" style={{ margin: 0 }}>
-                    {idEditando ? '✏️ Editar Artículo' : `➕ Cargar Artículo al Stock de ${nombreNegocioActivo}`}
-                  </h3>
-                  <label style={{ fontWeight: 'bold', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={prodDestacado} onChange={e=>setProdDestacado(e.target.checked)} /> ⭐ Destacar en Mi Vitrina Web
-                  </label>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '10px' }}>
-                  <input type="text" className="neon-input" placeholder="Proveedor" value={prodProveedor} onChange={e=>setProdProveedor(e.target.value)} />
-                  <input type="text" className="neon-input" placeholder="📍 Ubicación / Estante" value={prodUbicacion} onChange={e=>setProdUbicacion(e.target.value)} />
-                  <input type="number" className="neon-input" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} />
-                  <button type="button" onClick={calcularPrecioVenta} className="neon-btn neon-btn-green">Calcular (+{config.margenGanancia}%)</button>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                  <input type="text" className="neon-input" placeholder="Nombre / Artículo" value={prodNom} onChange={e=>setProdNom(e.target.value)} required />
-                  <input type="text" className="neon-input" placeholder="Categoría" value={prodCat} onChange={e=>setProdCat(e.target.value)} required />
-                  <input type="text" className="neon-input" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e=>setProdCodigoBarras(e.target.value)} />
-                  <input type="number" className="neon-input" placeholder="Precio Venta $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required />
-                  <input type="number" className="neon-input" placeholder="Stock" value={prodStock} onChange={e=>setProdStock(e.target.value)} required />
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>{idEditando ? 'Guardar Cambios' : 'Publicar en Mi Inventario'}</button>
-                  {idEditando && <button type="button" onClick={limpiarFormularioProducto} className="neon-btn neon-btn-red">Cancelar</button>}
-                </div>
-              </form>
-            )}
+            <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <h3 className="glow-text-cyan" style={{ margin: 0 }}>
+                  {idEditando ? '✏️ Editar Artículo y Precio' : `➕ Cargar Artículo al Inventario de ${nombreNegocioActivo}`}
+                </h3>
+                <label style={{ fontWeight: 'bold', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={prodDestacado} onChange={e=>setProdDestacado(e.target.checked)} /> ⭐ Destacar en Mi Tienda Web
+                </label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                <input type="text" className="neon-input" placeholder="Proveedor" value={prodProveedor} onChange={e=>setProdProveedor(e.target.value)} />
+                <input type="text" className="neon-input" placeholder="📍 Ubicación / Gaveta" value={prodUbicacion} onChange={e=>setProdUbicacion(e.target.value)} />
+                <input type="number" className="neon-input" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} />
+                <button type="button" onClick={calcularPrecioVenta} className="neon-btn neon-btn-green">Calcular (+{config.margenGanancia}%)</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                <input type="text" className="neon-input" placeholder="Nombre / Artículo" value={prodNom} onChange={e=>setProdNom(e.target.value)} required />
+                <input type="text" className="neon-input" placeholder="Categoría" value={prodCat} onChange={e=>setProdCat(e.target.value)} required />
+                <input type="text" className="neon-input" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e=>setProdCodigoBarras(e.target.value)} />
+                <input type="number" className="neon-input" placeholder="Precio Venta $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required />
+                <input type="number" className="neon-input" placeholder="Stock" value={prodStock} onChange={e=>setProdStock(e.target.value)} required />
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>{idEditando ? 'Guardar Cambios' : 'Publicar en Mi Inventario'}</button>
+                {idEditando && <button type="button" onClick={limpiarFormularioProducto} className="neon-btn neon-btn-red">Cancelar</button>}
+              </div>
+            </form>
 
             <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <input type="text" className="neon-input" placeholder="🔍 Buscar en mi inventario..." value={busquedaInventario} onChange={e=>setBusquedaInventario(e.target.value)} style={{ flex: 1 }} />
@@ -1985,7 +2024,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <option value="critico">⚠️ Crítico (≤{config.stockCriticoAlerta})</option>
                 <option value="agotado">❌ Sin Stock (0)</option>
               </select>
-              <button onClick={pedirFaltantes} className="neon-btn neon-btn-green">📱 Pedir Faltantes por WhatsApp</button>
+              <button onClick={pedirFaltantes} className="neon-btn neon-btn-green">📱 Exportar Faltantes WhatsApp</button>
             </div>
 
             {seleccionados.length > 0 && (
@@ -2035,7 +2074,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {/* MÓDULO 6: RMA & GARANTÍAS                  */}
         {/* ========================================== */}
-        {pestaña === 'rma' && (
+        {pestaña === 'rma' && puedeGestionarOrdenes && (
           <div>
             <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>🔄 Control de RMA & Garantías</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -2083,7 +2122,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {/* MÓDULO 7: PEDIDOS WEB DE MI TIENDA         */}
         {/* ========================================== */}
-        {pestaña === 'pedidos' && (
+        {pestaña === 'pedidos' && puedeVentasStockFinanzas && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🌐 Pedidos Recibidos en la Tienda de {nombreNegocioActivo}</h2>
             {misPedidosWeb.map(pedido => (
@@ -2102,7 +2141,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '180px' }}>
                   <select className="neon-select" value={pedido.estadoPago} onChange={e=>cambiarEstadoPagoPedido(pedido, e.target.value)}>
                     <option value="pendiente">Pago Pendiente</option>
-                    <option value="cta_cte">🏢 En Cta. Cte. Gremio</option>
                     <option value="pagado">✅ Pagado (A Mi Caja)</option>
                   </select>
                   <select className="neon-select" value={pedido.estadoEnvio} onChange={e=>updateDoc(doc(db,'pedidos_ecommerce',pedido.id), {estadoEnvio: e.target.value})}>
@@ -2120,7 +2158,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {/* MÓDULO 8: CRM CLIENTES PRIVADO             */}
         {/* ========================================== */}
-        {pestaña === 'clientes' && (
+        {pestaña === 'clientes' && puedeVentasStockFinanzas && (
           <div>
             <div className="neon-card neon-card-green" style={{ marginBottom: '20px' }}>
               <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 Mis Clientes & Campañas de WhatsApp ({nombreNegocioActivo})</h3>
@@ -2151,7 +2189,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {/* MÓDULO 9: IMPORTADOR EXCEL PRIVADO         */}
         {/* ========================================== */}
-        {pestaña === 'proveedores' && (
+        {pestaña === 'proveedores' && puedeVentasStockFinanzas && (
           <div className="neon-card">
             <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 Importar Lista Excel al Stock de {nombreNegocioActivo}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
@@ -2176,9 +2214,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {/* ========================================== */}
         {/* MÓDULO 10: FINANZAS PRIVADAS POR LOCAL     */}
         {/* ========================================== */}
-        {pestaña === 'finanzas' && (
+        {pestaña === 'finanzas' && puedeVentasStockFinanzas && (
           <div>
-            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 Caja y Finanzas Privadas // {nombreNegocioActivo}</h2>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 Caja y Movimientos Financieros // {nombreNegocioActivo}</h2>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               <select className="neon-select" value={filtroTiempo} onChange={e=>setFiltroTiempo(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todo el Historial</option><option value="hoy">Hoy</option><option value="mes">Este Mes</option></select>
               <select className="neon-select" value={filtroTipoLista} onChange={e=>setFiltroTipoLista(e.target.value)} style={{ width: 'auto' }}><option value="todos">Ingresos y Egresos</option><option value="ingreso">Solo Ingresos</option><option value="egreso">Solo Egresos</option></select>
@@ -2237,72 +2275,109 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* MÓDULO 11: TEMAS VISUALES (iOS 26.1 / SISTEMA / NEÓN) & ROLES */}
-        {/* ============================================================ */}
-        {pestaña === 'configuracion' && !esSucursalExterna && (
+        {/* ========================================================================= */}
+        {/* MÓDULO 11: GESTIÓN DE USUARIOS Y ROLES (HABILITADO PARA LOCALES Y CENTRAL)*/}
+        {/* ========================================================================= */}
+        {pestaña === 'configuracion' && esAdminDelNegocioActivo && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
-                <div>
-                  <label className="label-neon">Seleccionar Tema de la Aplicación</label>
-                  <select className="neon-select" value={conf.temaVisual || 'claro'} onChange={e=>setConf({...conf, temaVisual: e.target.value})}>
-                    <option value="claro">☀️ Clásico Claro (Estilo iOS 26.1 Suave)</option>
-                    <option value="oscuro">🌙 Clásico Oscuro (Grafito Descansado)</option>
-                    <option value="sistema">🖥️ Automático (Tomar Configuración del Sistema)</option>
-                    <option value="neon">⚡ Cyberpunk Neón (Tema Original)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label-neon">Tamaño de Letra General</label>
-                  <select className="neon-select" value={conf.tamanoFuenteBase || 17} onChange={e=>setConf({...conf, tamanoFuenteBase: Number(e.target.value)})}>
-                    <option value={15}>Normal (15px)</option>
-                    <option value={17}>Grande y Cómodo (17px - Recomendado)</option>
-                    <option value={19}>Extra Grande (19px - Máxima Lectura)</option>
-                  </select>
-                </div>
-              </div>
-
-              <h3 className="glow-text-cyan" style={{ marginTop: '10px', marginBottom: 0 }}>⚙️ Parámetros Globales de la Central</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-                <div><label className="label-neon">Empresa Central</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
-                <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
-                <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={conf.whatsapp} onChange={e=>setConf({...conf, whatsapp: e.target.value})} /></div>
-                <div><label className="label-neon">Dólar Ref ($)</label><input type="number" className="neon-input" value={conf.cotizacionDolar} onChange={e=>setConf({...conf, cotizacionDolar: Number(e.target.value)})} /></div>
-                <div><label className="label-neon">Markup Público (%)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
-                <div><label className="label-neon">Desc. Gremio Bronce (%)</label><input type="number" className="neon-input" value={conf.descuentoGremioBronce} onChange={e=>setConf({...conf, descuentoGremioBronce: Number(e.target.value)})} /></div>
-                <div><label className="label-neon">Desc. Gremio Oro (%)</label><input type="number" className="neon-input" value={conf.descuentoGremioOro} onChange={e=>setConf({...conf, descuentoGremioOro: Number(e.target.value)})} /></div>
-                <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
-                <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
-              </div>
-              <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '15px' }}>💾 Guardar Tema y Parámetros</button>
-            </form>
-
+            
+            {/* CREADOR DE USUARIOS Y ROLES DEL LOCAL O CENTRAL */}
             <div className="neon-card">
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ Roles del Personal de tu Central</h3>
-              <form onSubmit={agregarUsuarioRol} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
-                <input type="text" className="neon-input" placeholder="Nombre" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} style={{ flex: 1 }} />
-                <input type="email" className="neon-input" placeholder="Email Firebase" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} style={{ flex: 1 }} />
-                <select className="neon-select" value={nuevoUserRol} onChange={e=>setNuevoUserRol(e.target.value as any)} style={{ width: 'auto' }}>
-                  <option value="tecnico">🔧 Técnico Central</option>
-                  <option value="vendedor">🛒 Vendedor Central</option>
-                  <option value="admin">👑 Admin Total</option>
-                </select>
-                <button type="submit" className="neon-btn neon-btn-fillCyan">+ Asignar Rol</button>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ Gestión de Usuarios y Roles de {nombreNegocioActivo}</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px', marginBottom: '16px' }}>
+                Crea cuentas para tu equipo con permisos específicos. Los colaboradores creados aquí solo tendrán acceso a los datos de <b>{nombreNegocioActivo}</b>.
+              </p>
+              <form onSubmit={agregarUsuarioRol} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
+                <div>
+                  <label className="label-neon">Nombre del Colaborador</label>
+                  <input type="text" className="neon-input" placeholder="Ej: Lucas (Mostrador)" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label-neon">Email de Acceso</label>
+                  <input type="email" className="neon-input" placeholder="empleado@local.com" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label-neon">Contraseña (Mín. 6 caract.)</label>
+                  <input type="text" className="neon-input" placeholder="Crear clave de ingreso" minLength={6} value={nuevoUserPassword} onChange={e=>setNuevoUserPassword(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label-neon">Rol y Permisos Asignados</label>
+                  <select className="neon-select" value={nuevoUserRol} onChange={e=>setNuevoUserRol(e.target.value)}>
+                    <option value="recepcion_ordenes">🔧 Ingreso y Gestión de Órdenes de Reparación</option>
+                    <option value="vendedor_admin">💼 Vendedor y Admin (Ventas, Artículos, Precios y Finanzas)</option>
+                    <option value="admin">👑 Administrador Total del Local</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <button type="submit" disabled={creandoEmpleado} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '13px' }}>
+                    {creandoEmpleado ? 'Creando Cuenta...' : '➕ Crear Usuario y Asignar Rol'}
+                  </button>
+                </div>
               </form>
+
               <table className="neon-table">
-                <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Acción</th></tr></thead>
+                <thead><tr><th>Colaborador</th><th>Email de Usuario</th><th>Rol y Función</th><th>Acción</th></tr></thead>
                 <tbody>
-                  {usuariosRoles.map(u => (
+                  {misEmpleados.map(u => (
                     <tr key={u.id}>
-                      <td><b>{u.nombre}</b></td><td>{u.email}</td><td>{u.rol?.toUpperCase()}</td>
-                      <td><button onClick={()=>deleteDoc(doc(db, 'usuarios_roles', u.id))} className="neon-btn neon-btn-red">Quitar</button></td>
+                      <td><b>{u.nombre}</b></td>
+                      <td>{u.email}</td>
+                      <td>
+                        <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.12)', color: 'var(--neon-cyan)' }}>
+                          {u.rol === 'recepcion_ordenes' || u.rol === 'tecnico' 
+                            ? '🔧 Ingreso y Gestión de Órdenes' 
+                            : u.rol === 'vendedor_admin' || u.rol === 'vendedor'
+                              ? '💼 Ventas, Artículos, Precios y Finanzas'
+                              : '👑 Administrador Total'}
+                        </span>
+                      </td>
+                      <td><button onClick={()=>deleteDoc(doc(db, 'usuarios_roles', u.id))} className="neon-btn neon-btn-red">Quitar Acceso</button></td>
                     </tr>
                   ))}
+                  {misEmpleados.length === 0 && (
+                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Aún no has creado perfiles adicionales para tu local.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {/* PARÁMETROS GENERALES DE LA CENTRAL (SOLO VISIBLE PARA CENTRAL MASTER) */}
+            {!esSucursalExterna && (
+              <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
+                  <div>
+                    <label className="label-neon">Seleccionar Tema de la Aplicación</label>
+                    <select className="neon-select" value={conf.temaVisual || 'claro'} onChange={e=>setConf({...conf, temaVisual: e.target.value})}>
+                      <option value="claro">☀️ Clásico Claro (Estilo iOS 26.1 Suave)</option>
+                      <option value="oscuro">🌙 Clásico Oscuro (Grafito Descansado)</option>
+                      <option value="sistema">🖥️ Automático (Tomar Configuración del Sistema)</option>
+                      <option value="neon">⚡ Cyberpunk Neón (Tema Original)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-neon">Tamaño de Letra General</label>
+                    <select className="neon-select" value={conf.tamanoFuenteBase || 17} onChange={e=>setConf({...conf, tamanoFuenteBase: Number(e.target.value)})}>
+                      <option value={15}>Normal (15px)</option>
+                      <option value={17}>Grande y Cómodo (17px - Recomendado)</option>
+                      <option value={19}>Extra Grande (19px - Máxima Lectura)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <h3 className="glow-text-cyan" style={{ marginTop: '10px', marginBottom: 0 }}>⚙️ Parámetros Globales de la Central</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                  <div><label className="label-neon">Empresa Central</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
+                  <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
+                  <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={conf.whatsapp} onChange={e=>setConf({...conf, whatsapp: e.target.value})} /></div>
+                  <div><label className="label-neon">Dólar Ref ($)</label><input type="number" className="neon-input" value={conf.cotizacionDolar} onChange={e=>setConf({...conf, cotizacionDolar: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Markup Público (%)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
+                  <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
+                </div>
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '15px' }}>💾 Guardar Tema y Parámetros</button>
+              </form>
+            )}
           </div>
         )}
 
@@ -2312,7 +2387,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
 };
 
 // ========================================================
-// 5. ENRUTADOR PRINCIPAL CON INYECCIÓN DE TEMA REACTIVO
+// 5. ENRUTADOR PRINCIPAL CON BARRA AISLADA POR LOCAL
 // ========================================================
 const RutaProtegida = ({ children, user }: { children: React.ReactNode, user: User | null }) => user ? children : <Navigate to="/admin-login" />;
 
@@ -2321,6 +2396,8 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [temaActivo, setTemaActivo] = useState<string>('claro');
   const [fontSizeActivo, setFontSizeActivo] = useState<number>(17);
+  const [talleres, setTalleres] = useState<any[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
 
   useEffect(() => { 
     const u = onAuthStateChanged(auth, u => { setUser(u); setCargando(false); }); 
@@ -2331,23 +2408,36 @@ export default function App() {
         if (d.tamanoFuenteBase) setFontSizeActivo(Number(d.tamanoFuenteBase));
       }
     });
-    return () => { u(); unsubConf(); }; 
+    const unsubT = onSnapshot(query(collection(db, 'talleres_gremio')), s => setTalleres(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubR = onSnapshot(query(collection(db, 'usuarios_roles')), s => setRoles(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return () => { u(); unsubConf(); unsubT(); unsubR(); }; 
   }, []);
+
+  // Identificar si el usuario logueado pertenece a un Local Gremio para que el botón de tienda apunte SOLO a su tienda y nunca a la Central
+  const miLocalDueño = talleres.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
+  const miRolEmpleado = roles.find(r => r.email?.toLowerCase() === user?.email?.toLowerCase());
+  const idTiendaDeEsteUsuario = miLocalDueño ? miLocalDueño.id : (miRolEmpleado?.tenantId && miRolEmpleado.tenantId !== 'MASTER' ? miRolEmpleado.tenantId : null);
 
   const cambiarTemaRapido = async (nuevoTema: string) => {
     setTemaActivo(nuevoTema);
-    if (user) {
+    if (user && !idTiendaDeEsteUsuario) {
       await setDoc(doc(db, 'configuracion', 'general'), { temaVisual: nuevoTema }, { merge: true });
     }
   };
 
-  if (cargando) return <div style={{ padding: '50px', textAlign: 'center', fontWeight: 'bold' }}>Iniciando Plataforma Multi-Local...</div>;
+  if (cargando) return <div style={{ padding: '50px', textAlign: 'center', fontWeight: 'bold' }}>Iniciando Sistema...</div>;
 
   return (
     <BrowserRouter>
       <style>{getEstilosTema(temaActivo, fontSizeActivo)}</style>
       <nav className="top-nav-bar">
-        <Link to="/" className="glow-text-cyan" style={{ textDecoration: 'none', fontWeight: 800, fontSize: '16px' }}>⚡ Catálogo Central B2B</Link>
+        <Link 
+          to={idTiendaDeEsteUsuario ? `/?tienda=${idTiendaDeEsteUsuario}` : "/"} 
+          className="glow-text-cyan" 
+          style={{ textDecoration: 'none', fontWeight: 800, fontSize: '16px' }}
+        >
+          🛍️ {idTiendaDeEsteUsuario ? 'Mi Tienda Online' : 'Tienda Oficial'}
+        </Link>
         <Link to="/seguimiento" style={{ color: 'var(--text-main)', textDecoration: 'none', fontWeight: 600, fontSize: '15px' }}>🔍 Rastrear Equipo</Link>
         
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2365,7 +2455,7 @@ export default function App() {
           </select>
 
           {!user ? (
-            <Link to="/admin-login" className="neon-btn" style={{ textDecoration: 'none' }}>🔐 Acceso Locales</Link>
+            <Link to="/admin-login" className="neon-btn" style={{ textDecoration: 'none' }}>🔐 Acceso Sistema</Link>
           ) : (
             <Link to="/admin-panel" className="neon-btn neon-btn-fillCyan" style={{ textDecoration: 'none' }}>⚙️ Mi Panel</Link>
           )}
