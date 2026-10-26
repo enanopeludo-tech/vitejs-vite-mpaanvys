@@ -362,7 +362,6 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
     return () => { unsubConfig(); unsubProd(); unsubTalleres(); unsubRoles(); };
   }, []);
 
-  // AISLAMIENTO ESTRICTO: Si el usuario logueado es un Local Gremio (o empleado de un Local Gremio), NUNCA ve el stock MASTER; ve solo su tienda.
   const tallerComoDueño = talleresGremio.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
   const rolComoEmpleado = usuariosRoles.find(u => u.email?.toLowerCase() === user?.email?.toLowerCase());
   const idLocalDelUsuario = tallerComoDueño ? tallerComoDueño.id : (rolComoEmpleado?.tenantId && rolComoEmpleado.tenantId !== 'MASTER' ? rolComoEmpleado.tenantId : null);
@@ -464,36 +463,42 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '18px' }}>
-          {productosFiltrados.map(prod => (
-            <div key={prod.idBaseDatos} className="neon-card" style={{ position: 'relative', opacity: prod.stock === 0 ? 0.55 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                {prod.destacado && prod.stock > 0 && (
-                  <div style={{ position: 'absolute', top: '-10px', right: '12px', background: 'var(--neon-yellow)', color: '#000', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, fontSize: '11px' }}>⭐ DESTACADO</div>
-                )}
-                <div style={{ height: '130px', background: 'var(--bg-input)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', border: '1px solid rgba(128,128,128,0.12)' }}>
-                  {prod.imagenUrl ? <img src={prod.imagenUrl} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} alt="prod" /> : <span style={{ fontSize: '34px', opacity: 0.4 }}>📦</span>}
-                </div>
-                <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.1)', color: 'var(--neon-cyan)', marginBottom: '6px' }}>{prod.categoria || 'General'}</span>
-                <h4 style={{ margin: '6px 0 4px 0' }}>{prod.nombre}</h4>
-                <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>{prod.descripcion}</p>
-              </div>
-              <div>
-                <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
-                  {prod.stock === 0 ? <span className="glow-text-red">● Agotado</span> : <span className="glow-text-green">● Disponible ({prod.stock})</span>}
-                </div>
-                {puedeVerPrecios ? (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '12px' }}>
-                    <b className="glow-text-cyan" style={{ fontSize: '21px' }}>${prod.precio?.toLocaleString()}</b>
-                    <button onClick={() => agregarAlCarrito(prod)} disabled={prod.stock <= 0} className="neon-btn neon-btn-fillCyan">
-                      {prod.stock > 0 ? '+ Sumar' : 'Sin Stock'}
-                    </button>
+          {productosFiltrados.map(prod => {
+            const precioEfectivo = aplicarRedondeo(prod.precio * (1 - Number(config.descuentoEfectivoPorcentaje || 0) / 100), config.redondeoPrecios);
+            return (
+              <div key={prod.idBaseDatos} className="neon-card" style={{ position: 'relative', opacity: prod.stock === 0 ? 0.55 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  {prod.destacado && prod.stock > 0 && (
+                    <div style={{ position: 'absolute', top: '-10px', right: '12px', background: 'var(--neon-yellow)', color: '#000', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, fontSize: '11px' }}>⭐ DESTACADO</div>
+                  )}
+                  <div style={{ height: '130px', background: 'var(--bg-input)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', border: '1px solid rgba(128,128,128,0.12)' }}>
+                    {prod.imagenUrl ? <img src={prod.imagenUrl} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} alt="prod" /> : <span style={{ fontSize: '34px', opacity: 0.4 }}>📦</span>}
                   </div>
-                ) : (
-                  <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '10px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>🔒 Precio Oculto</div>
-                )}
+                  <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.1)', color: 'var(--neon-cyan)', marginBottom: '6px' }}>{prod.categoria || 'General'}</span>
+                  <h4 style={{ margin: '6px 0 4px 0' }}>{prod.nombre}</h4>
+                  <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>{prod.descripcion}</p>
+                </div>
+                <div>
+                  <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                    {prod.stock === 0 ? <span className="glow-text-red">● Agotado</span> : <span className="glow-text-green">● Disponible ({prod.stock})</span>}
+                  </div>
+                  {puedeVerPrecios ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '12px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Lista: ${prod.precio?.toLocaleString()}</span>
+                        <b className="glow-text-green" style={{ fontSize: '19px' }}>Efvo: ${precioEfectivo.toLocaleString()}</b>
+                      </div>
+                      <button onClick={() => agregarAlCarrito(prod)} disabled={prod.stock <= 0} className="neon-btn neon-btn-fillCyan">
+                        {prod.stock > 0 ? '+ Sumar' : 'Sin Stock'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', paddingTop: '10px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>🔒 Precio Oculto</div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {productosFiltrados.length === 0 && (
             <div className="neon-card" style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)' }}>
               Aún no hay artículos publicados en esta tienda.
@@ -524,7 +529,7 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
                 <div>
                   <label className="label-neon">Modalidad de Pago</label>
                   <select className="neon-select" value={formCheckout.metodoPago} onChange={e=>setFormCheckout({...formCheckout, metodoPago: e.target.value})}>
-                    <option value="transferencia">Transferencia / Mercado Pago</option>
+                    <option value="transferencia">Transferencia / Mercado Pago (Precio Lista)</option>
                     <option value="efectivo">Efectivo en Mostrador</option>
                   </select>
                 </div>
@@ -546,7 +551,7 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
                 ))}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', fontSize: '19px' }}>
-                <span>TOTAL:</span><b className="glow-text-green">${totalCarrito.toLocaleString()}</b>
+                <span>TOTAL LISTA:</span><b className="glow-text-green">${totalCarrito.toLocaleString()}</b>
               </div>
               <button onClick={() => setModoCheckout(true)} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>Continuar Pedido ➔</button>
             </div>
@@ -558,7 +563,7 @@ const TiendaPublica = ({ user }: { user: User | null }) => {
 };
 
 // ========================================================
-// 2. SEGUIMIENTO PÚBLICO (SOPORTA ?codigo= DESDE QR)
+// 2. SEGUIMIENTO PÚBLICO
 // ========================================================
 const Seguimiento = () => {
   const [codigo, setCodigo] = useState('');
@@ -628,7 +633,7 @@ const Seguimiento = () => {
 };
 
 // ========================================================
-// 3. LOGIN UNIFICADO (CENTRAL + LOCALES + EMPLEADOS)
+// 3. LOGIN UNIFICADO
 // ========================================================
 const LoginAdmin = () => {
   const [e, setE] = useState(''); const [p, setP] = useState('');
@@ -651,7 +656,7 @@ const LoginAdmin = () => {
 };
 
 // ================================================================================
-// 4. PANEL ERP MULTI-TENANT (CON GESTIÓN DE ROLES PARA LOCALES GREMIO Y AISLAMIENTO)
+// 4. PANEL ERP MULTI-TENANT (CON MÓDULO DE PRESUPUESTOS Y CALCULADORA DE LISTAS)
 // ================================================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -662,6 +667,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [usuariosRoles, setUsuariosRoles] = useState<any[]>([]);
   const [talleresGremio, setTalleresGremio] = useState<any[]>([]);
   const [rmas, setRmas] = useState<any[]>([]);
+  const [presupuestos, setPresupuestos] = useState<any[]>([]);
   const [pestaña, setPestaña] = useState('dashboard'); 
 
   // --- POS Mostrador Multicaja ---
@@ -669,6 +675,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [busquedaPOS, setBusquedaPOS] = useState('');
   const [metodoPagoPOS, setMetodoPagoPOS] = useState<'efectivo' | 'transferencia' | 'tarjeta' | 'mercadopago'>('efectivo');
   const [clientePOS, setClientePOS] = useState('Consumidor Final');
+
+  // --- Nuevo Módulo Generador de Presupuestos ---
+  const [presCliente, setPresCliente] = useState('');
+  const [presTel, setPresTel] = useState('');
+  const [presEquipo, setPresEquipo] = useState('');
+  const [presValidez, setPresValidez] = useState('7');
+  const [presNotas, setPresNotas] = useState('Incluye mano de obra y garantía escrita.');
+  const [itemsPresupuesto, setItemsPresupuesto] = useState<any[]>([]);
+  const [itemManualDesc, setItemManualDesc] = useState('');
+  const [itemManualPrecio, setItemManualPrecio] = useState('');
+  const [busquedaProdPres, setBusquedaProdPres] = useState('');
 
   // --- CRM Taller & Recepción ---
   const [cliNombre, setCliNombre] = useState(''); const [cliTel, setCliTel] = useState(''); const [cliDni, setCliDni] = useState('');
@@ -686,11 +703,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [filtroOrigenTaller, setFiltroOrigenTaller] = useState('todos');
   const [busquedaTaller, setBusquedaTaller] = useState('');
 
-  // --- Catálogo e Inventario ---
+  // --- Catálogo e Inventario (Con Precio de Lista explícito) ---
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState(''); const [prodCat, setProdCat] = useState('');
   const [prodCosto, setProdCosto] = useState(''); 
-  const [prodPrecio, setProdPrecio] = useState(''); const [prodStock, setProdStock] = useState('');
+  const [prodPrecio, setProdPrecio] = useState(''); // Precio de Lista Base
+  const [prodStock, setProdStock] = useState('');
   const [prodUbicacion, setProdUbicacion] = useState(''); 
   const [prodDesc, setProdDesc] = useState(''); const [prodImg, setProdImg] = useState('');
   const [prodCodigoBarras, setProdCodigoBarras] = useState('');
@@ -703,7 +721,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
-  // --- Red de Talleres Asociados B2B (Desde Central) ---
+  // --- Red de Talleres Asociados B2B ---
   const [tallerNom, setTallerNom] = useState('');
   const [tallerEncargado, setTallerEncargado] = useState('');
   const [tallerTel, setTallerTel] = useState('');
@@ -745,7 +763,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [busquedaClienteCRM, setBusquedaClienteCRM] = useState('');
   const [mensajePromoCRM, setMensajePromoCRM] = useState(CONFIG_DEFAULT.promoPlantillaCRM);
 
-  // --- Creación de Usuarios y Roles (Para Central y para Locales Gremio) ---
+  // --- Usuarios / Roles ---
   const [nuevoUserEmail, setNuevoUserEmail] = useState('');
   const [nuevoUserPassword, setNuevoUserPassword] = useState('');
   const [nuevoUserNombre, setNuevoUserNombre] = useState('');
@@ -776,16 +794,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
     const unsubRoles = onSnapshot(query(collection(db, 'usuarios_roles')), (snap) => setUsuariosRoles(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubTalleres = onSnapshot(query(collection(db, 'talleres_gremio')), (snap) => setTalleresGremio(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubRmas = onSnapshot(query(collection(db, 'rmas_garantias')), (snap) => setRmas(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); unsubRoles(); unsubTalleres(); unsubRmas(); };
+    const unsubPres = onSnapshot(query(collection(db, 'presupuestos')), (snap) => setPresupuestos(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a:any, b:any) => b.fecha?.seconds - a.fecha?.seconds)));
+    return () => { unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); unsubFinanzas(); unsubRoles(); unsubTalleres(); unsubRmas(); unsubPres(); };
   }, []);
 
   // =========================================================================
-  // DETECCIÓN MULTI-TENANT Y SUB-ROLES DE EMPLEADOS DE LOCALES GREMIO
+  // DETECCIÓN MULTI-TENANT Y SUB-ROLES DE EMPLEADOS
   // =========================================================================
   const sucursalDirecta = talleresGremio.find(t => t.email?.toLowerCase() === user.email?.toLowerCase());
   const registroRolActual = usuariosRoles.find(u => u.email?.toLowerCase() === user.email?.toLowerCase());
 
-  // Si es empleado de un local gremio, buscamos a qué local pertenece a través de su tenantId
   const sucursalPorEmpleado = (!sucursalDirecta && registroRolActual?.tenantId && registroRolActual.tenantId !== 'MASTER')
     ? talleresGremio.find(t => t.id === registroRolActual.tenantId)
     : null;
@@ -797,7 +815,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const direccionNegocioActivo = esSucursalExterna ? `${sucursalAsociada.direccion || ''} (${sucursalAsociada.ciudad || ''})` : config.direccion;
   const whatsappNegocioActivo = esSucursalExterna ? sucursalAsociada.telefono : config.whatsapp;
 
-  // Roles posibles: 'admin' (Dueño Central o Dueño Local Gremio), 'recepcion_ordenes' (Ingreso/Gestión Órdenes), 'vendedor_admin' (Ventas, Stock, Precios y Finanzas)
   const rolNormalizado: 'admin' | 'recepcion_ordenes' | 'vendedor_admin' = sucursalDirecta 
     ? 'admin' 
     : (registroRolActual 
@@ -808,14 +825,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
               : 'admin') 
         : 'admin');
 
-  // Permisos granulares según el rol activo (aplicable tanto a Locales Gremio como a Central)
   const puedeGestionarOrdenes = rolNormalizado === 'admin' || rolNormalizado === 'recepcion_ordenes';
   const puedeVentasStockFinanzas = rolNormalizado === 'admin' || rolNormalizado === 'vendedor_admin';
   const esAdminDelNegocioActivo = rolNormalizado === 'admin';
 
-  // Redirigir automáticamente a la pestaña permitida si entra un empleado específico
   useEffect(() => {
-    if (rolNormalizado === 'recepcion_ordenes' && pestaña !== 'taller' && pestaña !== 'rma') {
+    if (rolNormalizado === 'recepcion_ordenes' && pestaña !== 'taller' && pestaña !== 'rma' && pestaña !== 'presupuestos') {
       setPestaña('taller');
     } else if (rolNormalizado === 'vendedor_admin' && pestaña === 'taller') {
       setPestaña('pos');
@@ -829,11 +844,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
     }
   };
 
-  // AISLAMIENTO ESTRICTO DE DATOS: Cada local ve únicamente sus propios artículos, finanzas, pedidos y empleados
+  // AISLAMIENTO DE DATOS POR LOCAL
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
   const misPedidosWeb = pedidosWeb.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misEmpleados = usuariosRoles.filter(u => (u.tenantId || 'MASTER') === tenantId);
+  const misPresupuestos = presupuestos.filter(pr => (pr.ownerId || 'MASTER') === tenantId);
   const misOrdenesTaller = esSucursalExterna 
     ? ordenes.filter(o => o.tallerId === sucursalAsociada.id || o.tallerOrigen === sucursalAsociada.nombre)
     : ordenes;
@@ -904,6 +920,162 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (e) {
       alert('Error al procesar venta POS.');
     }
+  };
+
+  // =========================================================================
+  // FUNCIONES DEL NUEVO MÓDULO DE PRESUPUESTOS Y COTIZACIONES
+  // =========================================================================
+  const agregarProductoAPresupuesto = (p: any) => {
+    const existe = itemsPresupuesto.find(i => i.nombre === p.nombre);
+    if (existe) {
+      setItemsPresupuesto(itemsPresupuesto.map(i => i.nombre === p.nombre ? { ...i, cantidad: i.cantidad + 1 } : i));
+    } else {
+      setItemsPresupuesto([...itemsPresupuesto, { idProd: p.id, nombre: p.nombre, cantidad: 1, precio: Number(p.precio) }]);
+    }
+  };
+
+  const agregarItemManualPresupuesto = () => {
+    if (!itemManualDesc || !itemManualPrecio) return alert('Completa descripción y precio del servicio/repuesto.');
+    setItemsPresupuesto([...itemsPresupuesto, { idProd: null, nombre: itemManualDesc, cantidad: 1, precio: Number(itemManualPrecio) }]);
+    setItemManualDesc('');
+    setItemManualPrecio('');
+  };
+
+  const totalListaPresupuesto = itemsPresupuesto.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
+  const totalEfectivoPresupuesto = aplicarRedondeo(totalListaPresupuesto * (1 - Number(config.descuentoEfectivoPorcentaje || 0) / 100), config.redondeoPrecios);
+  const totalTarjetaPresupuesto = aplicarRedondeo(totalListaPresupuesto * (1 + Number(config.recargoTarjetaPorcentaje || 0) / 100), config.redondeoPrecios);
+
+  const guardarPresupuesto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (itemsPresupuesto.length === 0) return alert('Agrega al menos un artículo o mano de obra al presupuesto.');
+    const numPres = Math.random().toString(36).substring(2, 7).toUpperCase();
+    await addDoc(collection(db, 'presupuestos'), {
+      ownerId: tenantId,
+      numero: numPres,
+      cliente: presCliente,
+      telefono: presTel,
+      equipo: presEquipo,
+      validezDias: Number(presValidez) || 7,
+      notas: presNotas,
+      items: itemsPresupuesto,
+      totalLista: totalListaPresupuesto,
+      totalEfectivo: totalEfectivoPresupuesto,
+      totalTarjeta: totalTarjetaPresupuesto,
+      estado: 'pendiente',
+      fecha: serverTimestamp(),
+      fechaTexto: new Date().toLocaleDateString()
+    });
+    setPresCliente(''); setPresTel(''); setPresEquipo(''); setItemsPresupuesto([]);
+    alert(`📄 Presupuesto #${numPres} generado y guardado.`);
+  };
+
+  const enviarPresupuestoWhatsApp = (pr: any) => {
+    let msg = `Hola *${pr.cliente}*, te enviamos el presupuesto *#${pr.numero}* de *${nombreNegocioActivo}*:\n`;
+    if (pr.equipo) msg += `📱 *Equipo / Ref:* ${pr.equipo}\n`;
+    msg += `\n📋 *DETALLE DE COTIZACIÓN:*\n`;
+    pr.items?.forEach((it: any) => {
+      msg += `▪️ ${it.cantidad}x ${it.nombre}: $${(it.precio * it.cantidad).toLocaleString()}\n`;
+    });
+    msg += `\n💰 *VALORES SEGÚN MEDIO DE PAGO:*\n`;
+    msg += `💵 *Efectivo (-${config.descuentoEfectivoPorcentaje}%):* $${pr.totalEfectivo?.toLocaleString()}\n`;
+    msg += `🏦 *Precio de Lista (Transf./MP):* $${pr.totalLista?.toLocaleString()}\n`;
+    msg += `💳 *Tarjeta (+${config.recargoTarjetaPorcentaje}%):* $${pr.totalTarjeta?.toLocaleString()}\n`;
+    msg += `\n⏳ *Validez del presupuesto:* ${pr.validezDias} días.\n📝 ${pr.notas || ''}`;
+    window.open(`https://wa.me/549${(pr.telefono || '').replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  const imprimirPresupuestoPDF = (pr: any) => {
+    const v = window.open('', '_blank');
+    if (!v) return;
+    v.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Presupuesto #${pr.numero} - ${nombreNegocioActivo}</title>
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; max-width: 780px; margin: 0 auto; padding: 30px; }
+            .header { display: flex; justify-content: space-between; border-bottom: 3px solid #007aff; padding-bottom: 15px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            th { background: #f2f2f7; padding: 10px; text-align: left; border-bottom: 2px solid #ccc; font-size: 13px; }
+            td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }
+            .totales { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 20px; }
+            .box-tot { border: 1px solid #ccc; border-radius: 10px; padding: 12px; text-align: center; background: #fafafa; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 style="margin:0; color:#007aff;">${nombreNegocioActivo}</h1>
+              <div style="font-size:13px; color:#555;">📍 ${direccionNegocioActivo} | 📱 WhatsApp: ${whatsappNegocioActivo}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:12px; font-weight:bold; color:#555;">PRESUPUESTO OFICIAL</div>
+              <div style="font-size:24px; font-weight:900;">#${pr.numero}</div>
+              <div style="font-size:12px;">Fecha: ${pr.fechaTexto} (Válido por ${pr.validezDias} días)</div>
+            </div>
+          </div>
+          <div style="background:#f8f9fa; padding:12px 16px; border-radius:8px; margin-bottom:15px;">
+            <b>Cliente:</b> ${pr.cliente} | <b>Teléfono:</b> ${pr.telefono || '-'} | <b>Equipo / Referencia:</b> ${pr.equipo || 'Varios'}
+          </div>
+          <table>
+            <thead><tr><th>Cant.</th><th>Descripción de Repuesto / Mano de Obra</th><th style="text-align:right;">Unitario (Lista)</th><th style="text-align:right;">Subtotal</th></tr></thead>
+            <tbody>
+              ${pr.items?.map((it: any) => `
+                <tr>
+                  <td><b>${it.cantidad}</b></td>
+                  <td>${it.nombre}</td>
+                  <td style="text-align:right;">$${it.precio?.toLocaleString()}</td>
+                  <td style="text-align:right; font-weight:bold;">$${(it.precio * it.cantidad).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="totales">
+            <div class="box-tot" style="border-color:#28cd41; background:#f0fff4;">
+              <div style="font-size:11px; font-weight:bold; color:#198754;">PAGO EN EFECTIVO (-${config.descuentoEfectivoPorcentaje}%)</div>
+              <div style="font-size:22px; font-weight:900; color:#198754; margin-top:4px;">$${pr.totalEfectivo?.toLocaleString()}</div>
+            </div>
+            <div class="box-tot" style="border-color:#007aff;">
+              <div style="font-size:11px; font-weight:bold; color:#007aff;">PRECIO DE LISTA (TRANSF. / MP)</div>
+              <div style="font-size:22px; font-weight:900; color:#007aff; margin-top:4px;">$${pr.totalLista?.toLocaleString()}</div>
+            </div>
+            <div class="box-tot">
+              <div style="font-size:11px; font-weight:bold; color:#666;">TARJETA / CUOTAS (+${config.recargoTarjetaPorcentaje}%)</div>
+              <div style="font-size:22px; font-weight:900; color:#333; margin-top:4px;">$${pr.totalTarjeta?.toLocaleString()}</div>
+            </div>
+          </div>
+          <p style="margin-top:25px; font-size:12px; color:#555; border-top:1px dashed #ccc; padding-top:10px;">
+            <b>Observaciones:</b> ${pr.notas || 'Precios sujetos a disponibilidad de stock.'}
+          </p>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    v.document.close();
+  };
+
+  const convertirPresupuestoEnOrden = async (pr: any) => {
+    if (!window.confirm(`¿Convertir el presupuesto #${pr.numero} de ${pr.cliente} en una Orden de Taller activa?`)) return;
+    const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const resumenTrabajos = pr.items?.map((i: any) => `${i.cantidad}x ${i.nombre}`).join(' + ');
+    await addDoc(collection(db, 'ordenes_taller'), {
+      idTiendaOrigen: user.uid,
+      tallerId: tenantId,
+      tallerOrigen: esSucursalExterna ? sucursalAsociada.nombre : 'Mostrador Propio',
+      cliente: { nombre: pr.cliente, telefono: pr.telefono || '', dni: '' },
+      equipo: { marca: pr.equipo || 'Equipo', modelo: '', imei: '', contrasena: '', condicionVisual: 'Según Presupuesto #' + pr.numero, checklist: [] },
+      fallaDeclarada: resumenTrabajos,
+      tecnicoAsignado: '',
+      costoReparacion: pr.totalLista?.toString() || '',
+      seña: 0,
+      estado: 'ingresado',
+      codigoSeguimiento: cod,
+      fechaIngreso: serverTimestamp(),
+      historial: [{ estado: 'ingresado', fecha: new Date().toLocaleString(), comentario: `Creado desde Presupuesto Aprobado #${pr.numero}` }]
+    });
+    await updateDoc(doc(db, 'presupuestos', pr.id), { estado: 'aprobado' });
+    alert(`✅ Convertido en Orden de Taller #${cod}.`);
+    setPestaña('taller');
   };
 
   // --- Funciones Proveedores Excel ---
@@ -991,7 +1163,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } catch (e: any) { alert(`Error: ${e.message}`); } finally { setExcelCargando(false); setExcelData([]); }
   };
 
-  // --- Funciones Taller Centralizado + Sucursales ---
+  // --- Funciones Taller ---
   const toggleItemChecklist = (item: string) => {
     setChecklist(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
   };
@@ -1463,9 +1635,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const equiposEnBanco = misOrdenesTaller.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
   const equiposListosSinRetirar = misOrdenesTaller.filter(o => o.estado === 'reparado').length;
 
-  // =========================================================================
-  // CREACIÓN DE EMPLEADOS Y ROLES (TANTO PARA CENTRAL COMO PARA LOCAL GREMIO)
-  // =========================================================================
   const agregarUsuarioRol = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoUserEmail) return;
@@ -1485,7 +1654,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       }
 
       await addDoc(collection(db, 'usuarios_roles'), { 
-        tenantId: tenantId, // Vincula al empleado exclusivamente con el Local Gremio o con MASTER
+        tenantId: tenantId,
         nombreNegocio: nombreNegocioActivo,
         email: emailLimpio, 
         nombre: nuevoUserNombre, 
@@ -1510,6 +1679,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
       ? 'VENDEDOR Y FINANZAS' 
       : 'ADMINISTRADOR TOTAL';
 
+  // Vista previa en vivo de los 3 precios mientras cargas un producto
+  const precioListaPreview = Number(prodPrecio) || 0;
+  const precioEfectivoPreview = aplicarRedondeo(precioListaPreview * (1 - Number(config.descuentoEfectivoPorcentaje || 0) / 100), config.redondeoPrecios);
+  const precioTarjetaPreview = aplicarRedondeo(precioListaPreview * (1 + Number(config.recargoTarjetaPorcentaje || 0) / 100), config.redondeoPrecios);
+
   return (
     <div className="erp-layout">
       {escaneandoPara && (
@@ -1522,7 +1696,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SIDEBAR INTELIGENTE ADAPTADO SEGÚN ROL Y LOCAL */}
+      {/* SIDEBAR INTELIGENTE */}
       <aside className="erp-sidebar">
         <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(128,128,128,0.18)', marginBottom: '6px' }}>
           <div className="glow-text-cyan" style={{ fontWeight: 800, fontSize: '16px' }}>{nombreNegocioActivo}</div>
@@ -1533,7 +1707,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         </div>
 
-        {/* BOTÓN DE RESCATE SI EL SUPERADMIN DE CENTRAL SE PUSO OTRO ROL POR ERROR */}
         {!esSucursalExterna && rolNormalizado !== 'admin' && (
           <button onClick={restaurarSuperAdmin} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', marginBottom: '10px' }}>
             👑 Recuperar SuperAdmin
@@ -1548,36 +1721,40 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Mi Caja POS Mostrador</button>
         )}
 
+        <button onClick={() => setPestaña('presupuestos')} className={`neon-btn side-btn ${pestaña === 'presupuestos' ? 'active' : ''}`}>
+          📄 3. Presupuestos ({misPresupuestos.length})
+        </button>
+
         {puedeGestionarOrdenes && (
           <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>
-            🛠️ 3. {esSucursalExterna ? `Órdenes de Reparación (${equiposEnBanco})` : `Control Global Órdenes (${equiposEnBanco})`}
+            🛠️ 4. {esSucursalExterna ? `Órdenes Reparación (${equiposEnBanco})` : `Control Órdenes (${equiposEnBanco})`}
           </button>
         )}
 
         {!esSucursalExterna && esAdminDelNegocioActivo && (
-          <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 4. Red Locales Gremio ({talleresGremio.length})</button>
+          <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 5. Red Locales Gremio ({talleresGremio.length})</button>
         )}
 
         {puedeVentasStockFinanzas && (
-          <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 5. Mi Stock & Precios ({misProductos.length})</button>
+          <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 6. Mi Stock & Precios ({misProductos.length})</button>
         )}
 
         {puedeGestionarOrdenes && (
-          <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>🔄 6. Garantías & RMA</button>
+          <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>🔄 7. Garantías & RMA</button>
         )}
         
         {puedeVentasStockFinanzas && (
           <>
-            <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 7. Mis Pedidos Web</button>
-            <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 8. Mis Clientes CRM</button>
-            <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 9. Importar mi Excel</button>
-            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 10. Mi Caja & Finanzas</button>
+            <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 8. Mis Pedidos Web</button>
+            <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 9. Mis Clientes CRM</button>
+            <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 10. Importar mi Excel</button>
+            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 11. Mi Caja & Finanzas</button>
           </>
         )}
 
         {esAdminDelNegocioActivo && (
           <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>
-            🛡️ 11. {esSucursalExterna ? 'Mi Personal & Roles' : 'Temas, Config & Roles'}
+            🛡️ 12. {esSucursalExterna ? 'Mi Personal & Roles' : 'Temas, Config & Roles'}
           </button>
         )}
 
@@ -1588,7 +1765,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       <main className="erp-main">
 
         {/* ========================================== */}
-        {/* MÓDULO 1: DASHBOARD (AISLADO POR LOCAL)    */}
+        {/* MÓDULO 1: DASHBOARD                        */}
         {/* ========================================== */}
         {pestaña === 'dashboard' && esAdminDelNegocioActivo && (
           <div>
@@ -1632,7 +1809,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
               )}
               <div className="neon-card neon-card-yellow">
-                <span className="label-neon">📦 Mi Stock Valorizado</span>
+                <span className="label-neon">📦 Mi Stock Valorizado (Lista)</span>
                 <h2 className="glow-text-yellow" style={{ margin: '6px 0' }}>${capitalVentaPanol.toLocaleString()}</h2>
                 <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Costo base: ${capitalCostoPanol.toLocaleString()}</span>
               </div>
@@ -1643,9 +1820,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚡ Acciones Directas de {nombreNegocioActivo}</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Vender en Caja POS</button>
-                  <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>➕ Crear Orden Servicio</button>
-                  <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>📦 Cargar Mis Artículos</button>
-                  <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>🛡️ Gestionar Mi Personal</button>
+                  <button onClick={() => setPestaña('presupuestos')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>📄 Crear Presupuesto</button>
+                  <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>🛠️ Ingresar Equipo</button>
+                  <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>📦 Cargar Precios Lista</button>
                 </div>
               </div>
 
@@ -1665,7 +1842,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 2: PUNTO DE VENTA (AISLADO X LOCAL) */}
+        {/* MÓDULO 2: PUNTO DE VENTA (POS)             */}
         {/* ========================================== */}
         {pestaña === 'pos' && puedeVentasStockFinanzas && (
           <div>
@@ -1678,7 +1855,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
                 <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
                   <table className="neon-table">
-                    <thead><tr><th>Ubicación</th><th>Mi Artículo</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead>
+                    <thead><tr><th>Ubicación</th><th>Mi Artículo</th><th>Stock</th><th>Precio de Lista</th><th>Acción</th></tr></thead>
                     <tbody>
                       {misProductos.filter(p => p.stock > 0 && (p.nombre.toLowerCase().includes(busquedaPOS.toLowerCase()) || (p.codigoBarras && p.codigoBarras.includes(busquedaPOS)))).slice(0, 20).map(p => (
                         <tr key={p.id}>
@@ -1703,7 +1880,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '15px', borderTop: '1px solid rgba(128,128,128,0.15)' }}>
                   {carritoPOS.map(item => (
                     <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(128,128,128,0.1)' }}>
-                      <div><b>{item.cantidad}x</b> {item.nombre}<br/><small className="glow-text-cyan">${(item.precio * item.cantidad).toLocaleString()}</small></div>
+                      <div><b>{item.cantidad}x</b> {item.nombre}<br/><small className="glow-text-cyan">Lista: ${(item.precio * item.cantidad).toLocaleString()}</small></div>
                       <button onClick={() => setCarritoPOS(carritoPOS.filter(i => i.id !== item.id))} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>✕</button>
                     </div>
                   ))}
@@ -1711,18 +1888,21 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
-                  <label className="label-neon">Medio de Pago</label>
+                  <label className="label-neon">Medio de Pago (Calcula sobre Precio Lista)</label>
                   <select className="neon-select" value={metodoPagoPOS} onChange={e=>setMetodoPagoPOS(e.target.value as any)}>
-                    <option value="efectivo">💵 Efectivo (-{config.descuentoEfectivoPorcentaje}% Desc.)</option>
-                    <option value="transferencia">🏦 Transferencia (Precio Lista)</option>
-                    <option value="mercadopago">📱 Mercado Pago (Precio Lista)</option>
-                    <option value="tarjeta">💳 Tarjeta / Cuotas (+{config.recargoTarjetaPorcentaje}% Recargo)</option>
+                    <option value="efectivo">💵 Efectivo (-{config.descuentoEfectivoPorcentaje}% sobre Precio Lista)</option>
+                    <option value="transferencia">🏦 Transferencia (Precio de Lista Exacto)</option>
+                    <option value="mercadopago">📱 Mercado Pago (Precio de Lista Exacto)</option>
+                    <option value="tarjeta">💳 Tarjeta / Cuotas (+{config.recargoTarjetaPorcentaje}% sobre Precio Lista)</option>
                   </select>
                 </div>
 
                 <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '22px', fontWeight: 'bold' }}>
-                    <span>TOTAL:</span><span className="glow-text-green">${totalFinalPOS.toLocaleString()}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: 'var(--text-muted)' }}>
+                    <span>Subtotal Precio de Lista:</span><span>${subtotalPOS.toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '22px', fontWeight: 'bold', marginTop: '6px' }}>
+                    <span>A COBRAR:</span><span className="glow-text-green">${totalFinalPOS.toLocaleString()}</span>
                   </div>
                 </div>
 
@@ -1734,8 +1914,140 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
+        {/* ========================================================================= */}
+        {/* MÓDULO 3: NUEVO GENERADOR DE PRESUPUESTOS Y COTIZACIONES (PDF + WHATSAPP) */}
+        {/* ========================================================================= */}
+        {pestaña === 'presupuestos' && (
+          <div>
+            <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>📄 Generador de Presupuestos y Cotizaciones // {nombreNegocioActivo}</h2>
+            <p style={{ color: 'var(--text-muted)', marginTop: '-8px', marginBottom: '20px' }}>
+              Arma cotizaciones combinando artículos de tu stock y mano de obra sin descontar inventario. El sistema calcula automáticamente el precio en Efectivo, Precio de Lista y Tarjeta.
+            </p>
+
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
+              {/* Selector de Ítems para el Presupuesto */}
+              <div className="neon-card" style={{ flex: '1 1 420px' }}>
+                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>1. Agregar Repuestos o Mano de Obra</h3>
+                
+                <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', marginBottom: '16px' }}>
+                  <label className="label-neon">🛠️ Agregar Mano de Obra / Servicio o Repuesto Manual</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input type="text" className="neon-input" placeholder="Ej: Cambio de Módulo + Hidrogel" value={itemManualDesc} onChange={e=>setItemManualDesc(e.target.value)} style={{ flex: 2 }} />
+                    <input type="number" className="neon-input" placeholder="Precio Lista $" value={itemManualPrecio} onChange={e=>setItemManualPrecio(e.target.value)} style={{ flex: 1 }} />
+                    <button type="button" onClick={agregarItemManualPresupuesto} className="neon-btn neon-btn-fillCyan">+ Añadir</button>
+                  </div>
+                </div>
+
+                <label className="label-neon">📦 O Seleccionar Artículo desde Mi Stock</label>
+                <input type="text" className="neon-input" placeholder="🔍 Buscar artículo en mi inventario..." value={busquedaProdPres} onChange={e=>setBusquedaProdPres(e.target.value)} style={{ marginBottom: '10px' }} />
+                <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                  <table className="neon-table">
+                    <thead><tr><th>Artículo</th><th>Precio Lista</th><th>Sumar</th></tr></thead>
+                    <tbody>
+                      {misProductos.filter(p => p.nombre.toLowerCase().includes(busquedaProdPres.toLowerCase())).slice(0, 12).map(p => (
+                        <tr key={p.id}>
+                          <td><b>{p.nombre}</b> <small style={{ color: 'var(--text-muted)' }}>(Stock: {p.stock})</small></td>
+                          <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
+                          <td><button type="button" onClick={() => agregarProductoAPresupuesto(p)} className="neon-btn">+ Cotizar</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Resumen del Presupuesto a Guardar */}
+              <form onSubmit={guardarPresupuesto} className="neon-card neon-card-green" style={{ flex: '1 1 420px' }}>
+                <h3 className="glow-text-green" style={{ marginTop: 0 }}>2. Datos del Cliente y Totales</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                  <div><label className="label-neon">Nombre del Cliente</label><input type="text" className="neon-input" required value={presCliente} onChange={e=>setPresCliente(e.target.value)} placeholder="Ej: Juan Pérez" /></div>
+                  <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={presTel} onChange={e=>setPresTel(e.target.value)} placeholder="2262..." /></div>
+                  <div><label className="label-neon">Equipo / Modelo</label><input type="text" className="neon-input" value={presEquipo} onChange={e=>setPresEquipo(e.target.value)} placeholder="Ej: Moto G84 5G" /></div>
+                  <div><label className="label-neon">Validez (Días)</label><input type="number" className="neon-input" value={presValidez} onChange={e=>setPresValidez(e.target.value)} /></div>
+                </div>
+
+                <div style={{ maxHeight: '160px', overflowY: 'auto', marginBottom: '12px', borderTop: '1px solid rgba(128,128,128,0.15)' }}>
+                  {itemsPresupuesto.map((it, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(128,128,128,0.1)' }}>
+                      <div><b>{it.cantidad}x</b> {it.nombre}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <b className="glow-text-cyan">${(it.precio * it.cantidad).toLocaleString()}</b>
+                        <button type="button" onClick={() => setItemsPresupuesto(itemsPresupuesto.filter((_, i) => i !== idx))} className="neon-btn neon-btn-red" style={{ padding: '3px 8px' }}>✕</button>
+                      </div>
+                    </div>
+                  ))}
+                  {itemsPresupuesto.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>Aún no agregaste ítems al presupuesto.</p>}
+                </div>
+
+                {/* Desglose Automático de las 3 Listas */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', marginBottom: '12px', textAlign: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>💵 EFECTIVO (-{config.descuentoEfectivoPorcentaje}%)</span>
+                    <b className="glow-text-green" style={{ fontSize: '18px' }}>${totalEfectivoPresupuesto.toLocaleString()}</b>
+                  </div>
+                  <div style={{ borderLeft: '1px solid rgba(128,128,128,0.2)', borderRight: '1px solid rgba(128,128,128,0.2)' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>📋 PRECIO DE LISTA</span>
+                    <b className="glow-text-cyan" style={{ fontSize: '18px' }}>${totalListaPresupuesto.toLocaleString()}</b>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>💳 TARJETA (+{config.recargoTarjetaPorcentaje}%)</span>
+                    <b className="glow-text-pink" style={{ fontSize: '18px' }}>${totalTarjetaPresupuesto.toLocaleString()}</b>
+                  </div>
+                </div>
+
+                <input type="text" className="neon-input" value={presNotas} onChange={e=>setPresNotas(e.target.value)} placeholder="Notas al pie..." style={{ marginBottom: '12px' }} />
+
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
+                  💾 Guardar Presupuesto Oficial
+                </button>
+              </form>
+            </div>
+
+            {/* Historial de Presupuestos Emitidos */}
+            <div className="neon-card" style={{ overflowX: 'auto' }}>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>📋 Historial de Presupuestos Emitidos</h3>
+              <table className="neon-table">
+                <thead>
+                  <tr>
+                    <th>N° / Fecha</th>
+                    <th>Cliente & Equipo</th>
+                    <th>Detalle Cotizado</th>
+                    <th>Efectivo</th>
+                    <th>Precio Lista</th>
+                    <th>Tarjeta</th>
+                    <th style={{ textAlign: 'center' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {misPresupuestos.map(pr => (
+                    <tr key={pr.id}>
+                      <td><b className="glow-text-cyan">#{pr.numero}</b><br/><small style={{ color: 'var(--text-muted)' }}>{pr.fechaTexto}</small></td>
+                      <td><b>{pr.cliente}</b><br/><small style={{ color: 'var(--text-muted)' }}>{pr.equipo || '-'} | 📱 {pr.telefono}</small></td>
+                      <td style={{ fontSize: '13px' }}>{pr.items?.map((i: any) => `${i.cantidad}x ${i.nombre}`).join(', ')}</td>
+                      <td className="glow-text-green" style={{ fontWeight: 'bold' }}>${pr.totalEfectivo?.toLocaleString()}</td>
+                      <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${pr.totalLista?.toLocaleString()}</td>
+                      <td className="glow-text-pink" style={{ fontWeight: 'bold' }}>${pr.totalTarjeta?.toLocaleString()}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                          <button onClick={() => enviarPresupuestoWhatsApp(pr)} className="neon-btn neon-btn-green" title="Enviar por WhatsApp">💬 WhatsApp</button>
+                          <button onClick={() => imprimirPresupuestoPDF(pr)} className="neon-btn" title="Imprimir Hoja de Presupuesto">🖨️ PDF</button>
+                          <button onClick={() => convertirPresupuestoEnOrden(pr)} className="neon-btn neon-btn-purple" title="Transformar en Orden de Reparación">🛠️ Hacer Orden</button>
+                          <button onClick={() => deleteDoc(doc(db, 'presupuestos', pr.id))} className="neon-btn neon-btn-red">🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {misPresupuestos.length === 0 && (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hay presupuestos guardados todavía.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* ================================================================= */}
-        {/* MÓDULO 3: ORDENES DE SERVICIO (RECEPCIÓN Y GESTIÓN COMPLETA)      */}
+        {/* MÓDULO 4: ORDENES DE SERVICIO                                     */}
         {/* ================================================================= */}
         {pestaña === 'taller' && puedeGestionarOrdenes && (
           <div>
@@ -1894,15 +2206,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ==================================================================== */}
-        {/* MÓDULO 4: RED DE LOCALES ASOCIADOS (SOLO VISIBLE PARA CENTRAL MASTER)*/}
+        {/* MÓDULO 5: RED DE LOCALES ASOCIADOS (SOLO CENTRAL MASTER)             */}
         {/* ==================================================================== */}
         {pestaña === 'talleres_b2b' && !esSucursalExterna && esAdminDelNegocioActivo && (
           <div>
             <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 Gestión de Locales Asociados (Creación de Cuentas Independientes)</h2>
-            <p style={{ color: 'var(--text-muted)', marginTop: '-10px', marginBottom: '20px' }}>
-              Cada local que crees aquí tendrá su propio sistema aislado, sin acceso al stock de tu Local Central, y podrá crear sus propios roles de Recepción de Órdenes y Vendedor/Administración.
-            </p>
-
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={guardarTallerGremio} className="neon-card neon-card-pink" style={{ flex: '1 1 340px', alignSelf: 'flex-start' }}>
                 <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ Dar de Alta Local Gremio</h3>
@@ -1981,35 +2289,67 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* MÓDULO 5: STOCK PRIVADO Y PRECIOS          */}
-        {/* ========================================== */}
+        {/* ========================================================================= */}
+        {/* MÓDULO 6: STOCK Y CARGA EXPLICITA DEL "PRECIO DE LISTA" + VISTA DE LISTAS */}
+        {/* ========================================================================= */}
         {pestaña === 'catalogo' && puedeVentasStockFinanzas && (
           <div>
             <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <h3 className="glow-text-cyan" style={{ margin: 0 }}>
-                  {idEditando ? '✏️ Editar Artículo y Precio' : `➕ Cargar Artículo al Inventario de ${nombreNegocioActivo}`}
+                  {idEditando ? '✏️ Editar Artículo y Precio de Lista' : `➕ Cargar Artículo y Precio de Lista (${nombreNegocioActivo})`}
                 </h3>
                 <label style={{ fontWeight: 'bold', cursor: 'pointer' }}>
                   <input type="checkbox" checked={prodDestacado} onChange={e=>setProdDestacado(e.target.checked)} /> ⭐ Destacar en Mi Tienda Web
                 </label>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+                <div>
+                  <label className="label-neon">1. Costo de Compra ($)</label>
+                  <input type="number" className="neon-input" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button type="button" onClick={calcularPrecioVenta} className="neon-btn neon-btn-green" style={{ width: '100%', height: '45px' }}>
+                    ⚡ Autocalcular Lista (+{config.margenGanancia}%)
+                  </button>
+                </div>
+                <div>
+                  <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>2. PRECIO DE LISTA BASE ($) *</label>
+                  <input type="number" className="neon-input" placeholder="Precio de Lista $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required style={{ borderColor: 'var(--neon-cyan)', fontWeight: 'bold' }} />
+                </div>
+                <div>
+                  <label className="label-neon">3. Stock Disponible *</label>
+                  <input type="number" className="neon-input" placeholder="Unidades" value={prodStock} onChange={e=>setProdStock(e.target.value)} required />
+                </div>
+              </div>
+
+              {/* Simulador Visual en Vivo de las 3 Listas */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', background: 'var(--bg-input)', padding: '12px 16px', borderRadius: '14px', marginBottom: '14px', border: '1px solid rgba(0,122,255,0.2)' }}>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>💵 PRECIO EFECTIVO (-{config.descuentoEfectivoPorcentaje}%):</span>
+                  <b className="glow-text-green" style={{ fontSize: '18px' }}>${precioEfectivoPreview.toLocaleString()}</b>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>📋 PRECIO DE LISTA (BASE):</span>
+                  <b className="glow-text-cyan" style={{ fontSize: '18px' }}>${precioListaPreview.toLocaleString()}</b>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>💳 PRECIO TARJETA (+{config.recargoTarjetaPorcentaje}%):</span>
+                  <b className="glow-text-pink" style={{ fontSize: '18px' }}>${precioTarjetaPreview.toLocaleString()}</b>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                <input type="text" className="neon-input" placeholder="Nombre / Modelo del Artículo *" value={prodNom} onChange={e=>setProdNom(e.target.value)} required />
+                <input type="text" className="neon-input" placeholder="Categoría *" value={prodCat} onChange={e=>setProdCat(e.target.value)} required />
+                <input type="text" className="neon-input" placeholder="📍 Gaveta / Estante" value={prodUbicacion} onChange={e=>setProdUbicacion(e.target.value)} />
                 <input type="text" className="neon-input" placeholder="Proveedor" value={prodProveedor} onChange={e=>setProdProveedor(e.target.value)} />
-                <input type="text" className="neon-input" placeholder="📍 Ubicación / Gaveta" value={prodUbicacion} onChange={e=>setProdUbicacion(e.target.value)} />
-                <input type="number" className="neon-input" placeholder="Costo $" value={prodCosto} onChange={e=>setProdCosto(e.target.value)} />
-                <button type="button" onClick={calcularPrecioVenta} className="neon-btn neon-btn-green">Calcular (+{config.margenGanancia}%)</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                <input type="text" className="neon-input" placeholder="Nombre / Artículo" value={prodNom} onChange={e=>setProdNom(e.target.value)} required />
-                <input type="text" className="neon-input" placeholder="Categoría" value={prodCat} onChange={e=>setProdCat(e.target.value)} required />
                 <input type="text" className="neon-input" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e=>setProdCodigoBarras(e.target.value)} />
-                <input type="number" className="neon-input" placeholder="Precio Venta $" value={prodPrecio} onChange={e=>setProdPrecio(e.target.value)} required />
-                <input type="number" className="neon-input" placeholder="Stock" value={prodStock} onChange={e=>setProdStock(e.target.value)} required />
               </div>
+
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>{idEditando ? 'Guardar Cambios' : 'Publicar en Mi Inventario'}</button>
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>{idEditando ? 'Guardar Cambios de Precio/Artículo' : 'Publicar en Mi Inventario'}</button>
                 {idEditando && <button type="button" onClick={limpiarFormularioProducto} className="neon-btn neon-btn-red">Cancelar</button>}
               </div>
             </form>
@@ -2042,29 +2382,34 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     <th>Ubicación</th>
                     <th>Artículo</th>
                     <th>Costo</th>
-                    <th>Precio Venta</th>
+                    <th>Precio de Lista</th>
+                    <th>Efectivo (-{config.descuentoEfectivoPorcentaje}%)</th>
                     <th>Stock</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inventarioFiltrado.map(p => (
-                    <tr key={p.id}>
-                      <td><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
-                      <td><span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>📍 {p.ubicacion || 'S/U'}</span></td>
-                      <td><b>{p.nombre}</b><br/><small style={{ color: 'var(--text-muted)' }}>{p.categoria} {p.proveedor && `| ${p.proveedor}`}</small></td>
-                      <td style={{ color: 'var(--text-muted)' }}>${p.costoProveedor?.toLocaleString() || 0}</td>
-                      <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <button onClick={() => actualizarStock(p.id, p.stock - 1)} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>-</button>
-                          <b className={p.stock <= config.stockCriticoAlerta ? 'glow-text-red' : 'glow-text-green'}>{p.stock}</b>
-                          <button onClick={() => actualizarStock(p.id, p.stock + 1)} className="neon-btn neon-btn-green" style={{ padding: '4px 10px' }}>+</button>
-                        </div>
-                      </td>
-                      <td><button onClick={() => cargarProductoParaEdicion(p)} className="neon-btn">✏️</button></td>
-                    </tr>
-                  ))}
+                  {inventarioFiltrado.map(p => {
+                    const efvo = aplicarRedondeo((p.precio || 0) * (1 - Number(config.descuentoEfectivoPorcentaje || 0) / 100), config.redondeoPrecios);
+                    return (
+                      <tr key={p.id}>
+                        <td><input type="checkbox" checked={seleccionados.includes(p.id)} onChange={() => toggleSeleccion(p.id)} /></td>
+                        <td><span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>📍 {p.ubicacion || 'S/U'}</span></td>
+                        <td><b>{p.nombre}</b><br/><small style={{ color: 'var(--text-muted)' }}>{p.categoria} {p.proveedor && `| ${p.proveedor}`}</small></td>
+                        <td style={{ color: 'var(--text-muted)' }}>${p.costoProveedor?.toLocaleString() || 0}</td>
+                        <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
+                        <td className="glow-text-green" style={{ fontWeight: 'bold' }}>${efvo.toLocaleString()}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button onClick={() => actualizarStock(p.id, p.stock - 1)} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>-</button>
+                            <b className={p.stock <= config.stockCriticoAlerta ? 'glow-text-red' : 'glow-text-green'}>{p.stock}</b>
+                            <button onClick={() => actualizarStock(p.id, p.stock + 1)} className="neon-btn neon-btn-green" style={{ padding: '4px 10px' }}>+</button>
+                          </div>
+                        </td>
+                        <td><button onClick={() => cargarProductoParaEdicion(p)} className="neon-btn">✏️</button></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -2072,7 +2417,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 6: RMA & GARANTÍAS                  */}
+        {/* MÓDULO 7: RMA & GARANTÍAS                  */}
         {/* ========================================== */}
         {pestaña === 'rma' && puedeGestionarOrdenes && (
           <div>
@@ -2120,7 +2465,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 7: PEDIDOS WEB DE MI TIENDA         */}
+        {/* MÓDULO 8: PEDIDOS WEB DE MI TIENDA         */}
         {/* ========================================== */}
         {pestaña === 'pedidos' && puedeVentasStockFinanzas && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -2156,7 +2501,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 8: CRM CLIENTES PRIVADO             */}
+        {/* MÓDULO 9: CRM CLIENTES PRIVADO             */}
         {/* ========================================== */}
         {pestaña === 'clientes' && puedeVentasStockFinanzas && (
           <div>
@@ -2187,11 +2532,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 9: IMPORTADOR EXCEL PRIVADO         */}
+        {/* MÓDULO 10: IMPORTADOR EXCEL PRIVADO        */}
         {/* ========================================== */}
         {pestaña === 'proveedores' && puedeVentasStockFinanzas && (
           <div className="neon-card">
             <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 Importar Lista Excel al Stock de {nombreNegocioActivo}</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px' }}>
+              El sistema tomará la columna de Costo de tu Excel, le sumará el <b>{config.margenGanancia}% de ganancia</b> y lo guardará automáticamente como el <b>Precio de Lista</b> de cada artículo.
+            </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
               <div><label className="label-neon">Proveedor</label><input type="text" className="neon-input" value={nombreProveedorExcel} onChange={e=>setNombreProveedorExcel(e.target.value)} /></div>
               <div><label className="label-neon">Moneda</label><select className="neon-select" value={monedaListaExcel} onChange={e=>setMonedaListaExcel(e.target.value as any)}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (x ${config.cotizacionDolar})</option></select></div>
@@ -2205,14 +2553,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <div><label className="label-neon">Col. Costo</label><select className="neon-select" value={colCosto} onChange={e=>setColCosto(Number(e.target.value))}>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
                   <div><label className="label-neon">Col. Marca</label><select className="neon-select" value={colMarca} onChange={e=>setColMarca(Number(e.target.value))}><option value={-1}>No Aplica</option>{[0,1,2,3,4].map(i=><option key={i} value={i}>Columna {String.fromCharCode(65+i)}</option>)}</select></div>
                 </div>
-                <button onClick={importarDatosAlInventario} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>🚀 Sincronizar con Mi Inventario</button>
+                <button onClick={importarDatosAlInventario} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>🚀 Sincronizar Precios de Lista con Mi Inventario</button>
               </div>
             )}
           </div>
         )}
 
         {/* ========================================== */}
-        {/* MÓDULO 10: FINANZAS PRIVADAS POR LOCAL     */}
+        {/* MÓDULO 11: FINANZAS PRIVADAS POR LOCAL     */}
         {/* ========================================== */}
         {pestaña === 'finanzas' && puedeVentasStockFinanzas && (
           <div>
@@ -2276,12 +2624,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================================================= */}
-        {/* MÓDULO 11: GESTIÓN DE USUARIOS Y ROLES (HABILITADO PARA LOCALES Y CENTRAL)*/}
+        {/* MÓDULO 12: GESTIÓN DE USUARIOS Y ROLES + CONFIG DE LISTAS                 */}
         {/* ========================================================================= */}
         {pestaña === 'configuracion' && esAdminDelNegocioActivo && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             
-            {/* CREADOR DE USUARIOS Y ROLES DEL LOCAL O CENTRAL */}
             <div className="neon-card">
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ Gestión de Usuarios y Roles de {nombreNegocioActivo}</h3>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px', marginBottom: '16px' }}>
@@ -2341,7 +2688,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </table>
             </div>
 
-            {/* PARÁMETROS GENERALES DE LA CENTRAL (SOLO VISIBLE PARA CENTRAL MASTER) */}
             {!esSucursalExterna && (
               <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
@@ -2365,13 +2711,15 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                <h3 className="glow-text-cyan" style={{ marginTop: '10px', marginBottom: 0 }}>⚙️ Parámetros Globales de la Central</h3>
+                <h3 className="glow-text-cyan" style={{ marginTop: '10px', marginBottom: 0 }}>⚙️ Parámetros de Precios de Lista, Descuentos y Recargos</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                   <div><label className="label-neon">Empresa Central</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
                   <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
                   <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={conf.whatsapp} onChange={e=>setConf({...conf, whatsapp: e.target.value})} /></div>
                   <div><label className="label-neon">Dólar Ref ($)</label><input type="number" className="neon-input" value={conf.cotizacionDolar} onChange={e=>setConf({...conf, cotizacionDolar: Number(e.target.value)})} /></div>
-                  <div><label className="label-neon">Markup Público (%)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Markup sobre Costo (% para Precio Lista)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Descuento Efectivo sobre Lista (%)</label><input type="number" className="neon-input" value={conf.descuentoEfectivoPorcentaje} onChange={e=>setConf({...conf, descuentoEfectivoPorcentaje: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Recargo Tarjeta sobre Lista (%)</label><input type="number" className="neon-input" value={conf.recargoTarjetaPorcentaje} onChange={e=>setConf({...conf, recargoTarjetaPorcentaje: Number(e.target.value)})} /></div>
                   <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
                   <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
                 </div>
@@ -2387,7 +2735,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
 };
 
 // ========================================================
-// 5. ENRUTADOR PRINCIPAL CON BARRA AISLADA POR LOCAL
+// 5. ENRUTADOR PRINCIPAL
 // ========================================================
 const RutaProtegida = ({ children, user }: { children: React.ReactNode, user: User | null }) => user ? children : <Navigate to="/admin-login" />;
 
@@ -2413,7 +2761,6 @@ export default function App() {
     return () => { u(); unsubConf(); unsubT(); unsubR(); }; 
   }, []);
 
-  // Identificar si el usuario logueado pertenece a un Local Gremio para que el botón de tienda apunte SOLO a su tienda y nunca a la Central
   const miLocalDueño = talleres.find(t => t.email?.toLowerCase() === user?.email?.toLowerCase());
   const miRolEmpleado = roles.find(r => r.email?.toLowerCase() === user?.email?.toLowerCase());
   const idTiendaDeEsteUsuario = miLocalDueño ? miLocalDueño.id : (miRolEmpleado?.tenantId && miRolEmpleado.tenantId !== 'MASTER' ? miRolEmpleado.tenantId : null);
