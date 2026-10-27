@@ -11,6 +11,26 @@ import {
 import { auth, db } from './firebase'; 
 import { CONFIG_DEFAULT, CHECKLIST_ITEMS, aplicarRedondeo, getEstilosTema, imprimirFacturaARCA } from './estilosTema';
 
+const PERMISOS_DEFAULT_POR_ROL: Record<string, string[]> = {
+  recepcion_ordenes: ['presupuestos', 'taller', 'rma'],
+  vendedor_admin: ['pos', 'presupuestos', 'catalogo', 'pedidos', 'clientes', 'proveedores', 'finanzas'],
+  admin: ['dashboard', 'pos', 'presupuestos', 'taller', 'talleres_b2b', 'catalogo', 'rma', 'pedidos', 'clientes', 'proveedores', 'finanzas', 'configuracion']
+};
+
+const LISTA_MODULOS_PERMISOS = [
+  { id: 'dashboard', label: '📊 Resumen & Tienda' },
+  { id: 'pos', label: '🛒 Caja POS & ARCA' },
+  { id: 'presupuestos', label: '📄 Presupuestos' },
+  { id: 'taller', label: '🛠️ Órdenes de Taller' },
+  { id: 'catalogo', label: '📦 Stock y Precios' },
+  { id: 'rma', label: '🔄 Garantías & RMA' },
+  { id: 'pedidos', label: '🌐 Pedidos Web' },
+  { id: 'clientes', label: '👥 Clientes CRM' },
+  { id: 'proveedores', label: '🚚 Importar Excel' },
+  { id: 'finanzas', label: '💰 Caja y Finanzas' },
+  { id: 'configuracion', label: '🛡️ Usuarios y Config' }
+];
+
 // ========================================================
 // 1. VITRINA COMERCIAL MULTI-TIENDA (AISLADA POR LOCAL)
 // ========================================================
@@ -337,7 +357,7 @@ const LoginAdmin = () => {
 };
 
 // ================================================================================
-// 4. PANEL ERP MULTI-TENANT (CON FACTURACIÓN ARCA, PRESUPUESTOS Y LISTAS)
+// 4. PANEL ERP MULTI-TENANT (CON GESTIÓN AVANZADA DE USUARIOS, EDICIÓN Y PERMISOS)
 // ================================================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -405,7 +425,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
-  // --- Red de Talleres Asociados B2B ---
+  // --- Red de Talleres Asociados B2B (Con Edición y Reutilización de Email) ---
+  const [idTallerEditando, setIdTallerEditando] = useState<string | null>(null);
   const [tallerNom, setTallerNom] = useState('');
   const [tallerEncargado, setTallerEncargado] = useState('');
   const [tallerTel, setTallerTel] = useState('');
@@ -447,15 +468,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [busquedaClienteCRM, setBusquedaClienteCRM] = useState('');
   const [mensajePromoCRM, setMensajePromoCRM] = useState(CONFIG_DEFAULT.promoPlantillaCRM);
 
-  // --- Usuarios / Roles ---
+  // --- Usuarios / Roles Avanzados (Con Edición y Permisos por Módulo) ---
+  const [idUsuarioEditando, setIdUsuarioEditando] = useState<string | null>(null);
   const [nuevoUserEmail, setNuevoUserEmail] = useState('');
   const [nuevoUserPassword, setNuevoUserPassword] = useState('');
   const [nuevoUserNombre, setNuevoUserNombre] = useState('');
   const [nuevoUserRol, setNuevoUserRol] = useState<string>('recepcion_ordenes');
+  const [permisosSeleccionados, setPermisosSeleccionados] = useState<string[]>(PERMISOS_DEFAULT_POR_ROL['recepcion_ordenes']);
   const [creandoEmpleado, setCreandoEmpleado] = useState(false);
 
   const [conf, setConf] = useState<any>(CONFIG_DEFAULT);
-  // Datos fiscales propios para Locales Gremio
   const [fiscalesLocal, setFiscalesLocal] = useState<any>({
     razonSocial: '', cuit: '', condicionIva: 'Responsable Monotributo', puntoVentaArca: '00001', ingresosBrutos: '', inicioActividades: '01/01/2023'
   });
@@ -500,7 +522,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const direccionNegocioActivo = esSucursalExterna ? `${sucursalAsociada.direccion || ''} (${sucursalAsociada.ciudad || ''})` : config.direccion;
   const whatsappNegocioActivo = esSucursalExterna ? sucursalAsociada.telefono : config.whatsapp;
 
-  // Cargar datos fiscales propios del local gremio si existen
   useEffect(() => {
     if (sucursalAsociada) {
       setFiscalesLocal({
@@ -514,7 +535,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     }
   }, [sucursalAsociada]);
 
-  // Objeto fiscal activo (de Central o del Local Asociado) para usar al imprimir Facturas ARCA
   const datosFiscalesActivos = esSucursalExterna ? {
     empresaNombre: sucursalAsociada.nombre,
     razonSocial: fiscalesLocal.razonSocial || sucursalAsociada.nombre,
@@ -526,27 +546,37 @@ const DashboardTaller = ({ user }: { user: User }) => {
     direccion: direccionNegocioActivo
   } : config;
 
-  const rolNormalizado: 'admin' | 'recepcion_ordenes' | 'vendedor_admin' = sucursalDirecta 
+  const rolNormalizado: 'admin' | 'recepcion_ordenes' | 'vendedor_admin' | 'personalizado' = sucursalDirecta 
     ? 'admin' 
     : (registroRolActual 
         ? (registroRolActual.rol === 'tecnico' || registroRolActual.rol === 'recepcion_ordenes' 
             ? 'recepcion_ordenes' 
             : registroRolActual.rol === 'vendedor' || registroRolActual.rol === 'vendedor_admin'
               ? 'vendedor_admin'
-              : 'admin') 
+              : registroRolActual.rol === 'personalizado'
+                ? 'personalizado'
+                : 'admin') 
         : 'admin');
 
-  const puedeGestionarOrdenes = rolNormalizado === 'admin' || rolNormalizado === 'recepcion_ordenes';
-  const puedeVentasStockFinanzas = rolNormalizado === 'admin' || rolNormalizado === 'vendedor_admin';
-  const esAdminDelNegocioActivo = rolNormalizado === 'admin';
-
-  useEffect(() => {
-    if (rolNormalizado === 'recepcion_ordenes' && pestaña !== 'taller' && pestaña !== 'rma' && pestaña !== 'presupuestos') {
-      setPestaña('taller');
-    } else if (rolNormalizado === 'vendedor_admin' && pestaña === 'taller') {
-      setPestaña('pos');
+  // Función que verifica si el usuario logueado tiene permiso sobre un módulo específico
+  const tienePermisoModulo = (moduloId: string) => {
+    if (sucursalDirecta || !registroRolActual || rolNormalizado === 'admin') return true;
+    if (Array.isArray(registroRolActual.permisos) && registroRolActual.permisos.length > 0) {
+      return registroRolActual.permisos.includes(moduloId);
     }
-  }, [rolNormalizado, pestaña]);
+    const fallback = PERMISOS_DEFAULT_POR_ROL[rolNormalizado] || [];
+    return fallback.includes(moduloId);
+  };
+
+  const esAdminDelNegocioActivo = rolNormalizado === 'admin' || tienePermisoModulo('configuracion');
+
+  // Redirigir automáticamente a la primera pestaña permitida si no tiene acceso a la actual
+  useEffect(() => {
+    if (!tienePermisoModulo(pestaña)) {
+      const primeraPermitida = LISTA_MODULOS_PERMISOS.find(m => tienePermisoModulo(m.id))?.id || 'presupuestos';
+      setPestaña(primeraPermitida);
+    }
+  }, [rolNormalizado, registroRolActual]);
 
   const restaurarSuperAdmin = async () => {
     if (registroRolActual) {
@@ -581,9 +611,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
-  // =========================================================================
-  // GENERADOR DE CAE Y NUMERACIÓN CORRELATIVA ARCA
-  // =========================================================================
+  // --- Generador CAE ARCA ---
   const generarDatosFacturaARCA = (tipoCmp: string, cuitReceptor: string, razonReceptor: string, condIvaReceptor: string, caeManual?: string) => {
     const ptoVta = String(datosFiscalesActivos.puntoVentaArca || "00001").padStart(5, "0");
     const facturasPreviasDelTipo = misFinanzas.filter(m => m.factura && m.factura.tipo === tipoCmp).length;
@@ -1214,37 +1242,90 @@ const DashboardTaller = ({ user }: { user: User }) => {
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  // ================================================================================
+  // ALTA, EDICIÓN Y REUTILIZACIÓN DE CORREOS PARA LOCALES ASOCIADOS (B2B)
+  // ================================================================================
+  const limpiarFormularioTaller = () => {
+    setIdTallerEditando(null); setTallerNom(''); setTallerEncargado(''); setTallerTel(''); 
+    setTallerDireccion(''); setTallerEmail(''); setTallerPassword(''); setTallerCiudad('Necochea'); 
+    setTallerNivel('Bronce'); setTallerLimiteCredito('150000');
+  };
+
+  const cargarTallerParaEdicion = (t: any) => {
+    setIdTallerEditando(t.id);
+    setTallerNom(t.nombre || '');
+    setTallerEncargado(t.encargado || '');
+    setTallerTel(t.telefono || '');
+    setTallerDireccion(t.direccion || '');
+    setTallerEmail(t.email || '');
+    setTallerPassword('');
+    setTallerCiudad(t.ciudad || 'Necochea');
+    setTallerNivel(t.nivel || 'Bronce');
+    setTallerLimiteCredito((t.limiteCredito || 150000).toString());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const guardarTallerGremio = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreandoCuentaLocal(true);
     try {
       const emailLimpio = tallerEmail.trim().toLowerCase();
+
+      // Si estamos editando un local existente
+      if (idTallerEditando) {
+        await updateDoc(doc(db, 'talleres_gremio', idTallerEditando), {
+          nombre: tallerNom,
+          encargado: tallerEncargado,
+          telefono: tallerTel,
+          direccion: tallerDireccion,
+          email: emailLimpio,
+          ciudad: tallerCiudad,
+          nivel: tallerNivel,
+          limiteCredito: Number(tallerLimiteCredito) || 0
+        });
+        limpiarFormularioTaller();
+        alert(`✅ Datos del local "${tallerNom}" actualizados correctamente.`);
+        return;
+      }
+
+      // Si es nuevo o se está reutilizando un correo que había sido borrado antes:
       if (tallerPassword && tallerPassword.length >= 6) {
         const secondaryAppName = "SecondaryCreatorApp";
         const existingApp = getApps().find(a => a.name === secondaryAppName);
         const secondaryApp = existingApp || initializeApp(auth.app.options, secondaryAppName);
         const secondaryAuth = getAuth(secondaryApp);
-        await createUserWithEmailAndPassword(secondaryAuth, emailLimpio, tallerPassword);
-        await signOut(secondaryAuth);
+        try {
+          await createUserWithEmailAndPassword(secondaryAuth, emailLimpio, tallerPassword);
+          await signOut(secondaryAuth);
+        } catch (authErr: any) {
+          // SOLUCIÓN AL BLOQUEO DE CORREO REPETIDO: Si el correo ya existe en Firebase Auth, lo reutilizamos sin tirar error
+          if (authErr.code === 'auth/email-already-in-use') {
+            console.log('Correo existente en Firebase Auth: se reutiliza la cuenta y se reactiva en la base de datos.');
+          } else {
+            throw authErr;
+          }
+        }
       }
 
-      await addDoc(collection(db, 'talleres_gremio'), {
-        nombre: tallerNom, 
-        encargado: tallerEncargado, 
-        telefono: tallerTel, 
-        direccion: tallerDireccion,
-        email: emailLimpio,
-        ciudad: tallerCiudad, 
-        nivel: tallerNivel, 
-        limiteCredito: Number(tallerLimiteCredito) || 0, 
-        saldoDeudor: 0, 
-        fechaAlta: serverTimestamp()
-      });
+      // Verificar si ya había un registro en talleres_gremio con ese email para actualizarlo en vez de duplicarlo
+      const existenteEnBd = talleresGremio.find(t => t.email?.toLowerCase() === emailLimpio);
+      if (existenteEnBd) {
+        await updateDoc(doc(db, 'talleres_gremio', existenteEnBd.id), {
+          nombre: tallerNom, encargado: tallerEncargado, telefono: tallerTel, direccion: tallerDireccion,
+          email: emailLimpio, ciudad: tallerCiudad, nivel: tallerNivel, limiteCredito: Number(tallerLimiteCredito) || 0, activo: true
+        });
+      } else {
+        await addDoc(collection(db, 'talleres_gremio'), {
+          nombre: tallerNom, encargado: tallerEncargado, telefono: tallerTel, direccion: tallerDireccion,
+          email: emailLimpio, ciudad: tallerCiudad, nivel: tallerNivel, limiteCredito: Number(tallerLimiteCredito) || 0, 
+          saldoDeudor: 0, activo: true, fechaAlta: serverTimestamp()
+        });
+      }
 
-      setTallerNom(''); setTallerEncargado(''); setTallerTel(''); setTallerDireccion(''); setTallerEmail(''); setTallerPassword('');
-      alert(`🏢 ¡Local "${tallerNom}" dado de alta!\nUsuario: ${emailLimpio}\nContraseña: ${tallerPassword || '(La que ya tenía)'}`);
+      limpiarFormularioTaller();
+      alert(`🏢 ¡Local "${tallerNom}" habilitado con éxito!\nEl correo ${emailLimpio} ya tiene acceso activo.`);
     } catch (err: any) {
-      alert(`Aviso al crear credenciales: ${err.message}`);
+      alert(`Error al procesar el local: ${err.message}`);
     } finally {
       setCreandoCuentaLocal(false);
     }
@@ -1390,40 +1471,137 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const equiposEnBanco = misOrdenesTaller.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
   const equiposListosSinRetirar = misOrdenesTaller.filter(o => o.estado === 'reparado').length;
 
-  const agregarUsuarioRol = async (e: React.FormEvent) => {
+  // ================================================================================
+  // GESTIÓN AVANZADA DE USUARIOS Y PERMISOS (EDICIÓN, CHECKBOXES Y REUTILIZACIÓN EMAIL)
+  // ================================================================================
+  const cambiarPresetRol = (rolElegido: string) => {
+    setNuevoUserRol(rolElegido);
+    if (PERMISOS_DEFAULT_POR_ROL[rolElegido]) {
+      setPermisosSeleccionados(PERMISOS_DEFAULT_POR_ROL[rolElegido]);
+    }
+  };
+
+  const togglePermisoIndividual = (idModulo: string) => {
+    setPermisosSeleccionados(prev => 
+      prev.includes(idModulo) ? prev.filter(p => p !== idModulo) : [...prev, idModulo]
+    );
+  };
+
+  const limpiarFormularioUsuario = () => {
+    setIdUsuarioEditando(null);
+    setNuevoUserNombre('');
+    setNuevoUserEmail('');
+    setNuevoUserPassword('');
+    setNuevoUserRol('recepcion_ordenes');
+    setPermisosSeleccionados(PERMISOS_DEFAULT_POR_ROL['recepcion_ordenes']);
+  };
+
+  const cargarUsuarioParaEditar = (u: any) => {
+    setIdUsuarioEditando(u.id);
+    setNuevoUserNombre(u.nombre || '');
+    setNuevoUserEmail(u.email || '');
+    setNuevoUserPassword('');
+    const rolBase = u.rol || 'recepcion_ordenes';
+    setNuevoUserRol(rolBase);
+    setPermisosSeleccionados(
+      Array.isArray(u.permisos) && u.permisos.length > 0 
+        ? u.permisos 
+        : (PERMISOS_DEFAULT_POR_ROL[rolBase] || PERMISOS_DEFAULT_POR_ROL['recepcion_ordenes'])
+    );
+  };
+
+  const guardarUsuarioRol = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoUserEmail) return;
     const emailLimpio = nuevoUserEmail.trim().toLowerCase();
     if (emailLimpio === user.email?.toLowerCase() && nuevoUserRol !== 'admin') {
       return alert('⚠️ No puedes bajarte el rol a tu propio correo de Administrador.');
     }
+    if (permisosSeleccionados.length === 0) {
+      return alert('Selecciona al menos un módulo permitido para este usuario.');
+    }
+
     setCreandoEmpleado(true);
     try {
+      // 1. MODO EDICIÓN DE USUARIO EXISTENTE
+      if (idUsuarioEditando) {
+        await updateDoc(doc(db, 'usuarios_roles', idUsuarioEditando), {
+          nombre: nuevoUserNombre,
+          email: emailLimpio,
+          rol: nuevoUserRol,
+          permisos: permisosSeleccionados,
+          activo: true
+        });
+        limpiarFormularioUsuario();
+        alert(`✅ Permisos y rol de "${nuevoUserNombre}" actualizados al instante.`);
+        return;
+      }
+
+      // 2. MODO CREACIÓN O REUTILIZACIÓN DE CORREO ELIMINADO
       if (nuevoUserPassword && nuevoUserPassword.length >= 6) {
         const secondaryAppName = "SecondaryCreatorApp";
         const existingApp = getApps().find(a => a.name === secondaryAppName);
         const secondaryApp = existingApp || initializeApp(auth.app.options, secondaryAppName);
         const secondaryAuth = getAuth(secondaryApp);
-        await createUserWithEmailAndPassword(secondaryAuth, emailLimpio, nuevoUserPassword);
-        await signOut(secondaryAuth);
+        try {
+          await createUserWithEmailAndPassword(secondaryAuth, emailLimpio, nuevoUserPassword);
+          await signOut(secondaryAuth);
+        } catch (authErr: any) {
+          // Si el correo ya existía en Firebase Auth (porque fue creado y borrado antes), NO bloqueamos: lo reutilizamos
+          if (authErr.code === 'auth/email-already-in-use') {
+            console.log('El correo ya existe en Firebase Auth; se revincula en Firestore con los nuevos permisos.');
+          } else {
+            throw authErr;
+          }
+        }
       }
 
-      await addDoc(collection(db, 'usuarios_roles'), { 
-        tenantId: tenantId,
-        nombreNegocio: nombreNegocioActivo,
-        email: emailLimpio, 
-        nombre: nuevoUserNombre, 
-        rol: nuevoUserRol, 
-        fecha: serverTimestamp() 
-      });
-      setNuevoUserEmail(''); setNuevoUserPassword(''); setNuevoUserNombre('');
-      alert(`✅ Usuario "${nuevoUserNombre}" creado y asignado al rol seleccionado dentro de ${nombreNegocioActivo}.`);
+      // Verificar si ya existe un documento con ese correo en Firestore para actualizarlo en lugar de duplicarlo
+      const docExistente = usuariosRoles.find(u => u.email?.toLowerCase() === emailLimpio);
+      if (docExistente) {
+        await updateDoc(doc(db, 'usuarios_roles', docExistente.id), {
+          tenantId: tenantId,
+          nombreNegocio: nombreNegocioActivo,
+          nombre: nuevoUserNombre,
+          email: emailLimpio,
+          rol: nuevoUserRol,
+          permisos: permisosSeleccionados,
+          activo: true
+        });
+      } else {
+        await addDoc(collection(db, 'usuarios_roles'), { 
+          tenantId: tenantId,
+          nombreNegocio: nombreNegocioActivo,
+          email: emailLimpio, 
+          nombre: nuevoUserNombre, 
+          rol: nuevoUserRol, 
+          permisos: permisosSeleccionados,
+          activo: true,
+          fecha: serverTimestamp() 
+        });
+      }
+
+      limpiarFormularioUsuario();
+      alert(`✅ Usuario "${nuevoUserNombre}" (${emailLimpio}) habilitado con éxito.`);
     } catch (err: any) {
-      alert(`Aviso al registrar usuario: ${err.message}`);
+      alert(`Error al guardar usuario: ${err.message}`);
     } finally {
       setCreandoEmpleado(false);
     }
   };
+
+  // Bloquear pantalla si el usuario o local fue suspendido por el administrador
+  if ((registroRolActual && registroRolActual.activo === false) || (sucursalAsociada && sucursalAsociada.activo === false)) {
+    return (
+      <div style={{ padding: '80px 20px', maxWidth: '500px', margin: '0 auto', textAlign: 'center' }}>
+        <div className="neon-card neon-card-pink">
+          <h2 className="glow-text-red">🚫 Acceso Suspendido</h2>
+          <p style={{ color: 'var(--text-muted)' }}>Tu cuenta ({user.email}) se encuentra temporalmente desactivada por el Administrador.</p>
+          <button onClick={() => signOut(auth)} className="neon-btn neon-btn-red" style={{ marginTop: '15px' }}>Cerrar Sesión</button>
+        </div>
+      </div>
+    );
+  }
 
   const listaSectores = (config.sectoresTaller || CONFIG_DEFAULT.sectoresTaller).split(',').map((s:string) => s.trim());
   const urlVitrinaPropia = esSucursalExterna ? `${window.location.origin}/?tienda=${sucursalAsociada.id}` : window.location.origin;
@@ -1432,7 +1610,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
     ? 'RECEPCIÓN Y ÓRDENES' 
     : rolNormalizado === 'vendedor_admin' 
       ? 'VENDEDOR Y FINANZAS' 
-      : 'ADMINISTRADOR TOTAL';
+      : rolNormalizado === 'personalizado'
+        ? 'PERMISOS A MEDIDA'
+        : 'ADMINISTRADOR TOTAL';
 
   const precioListaPreview = Number(prodPrecio) || 0;
   const precioEfectivoPreview = aplicarRedondeo(precioListaPreview * (1 - Number(config.descuentoEfectivoPorcentaje || 0) / 100), config.redondeoPrecios);
@@ -1450,7 +1630,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         </div>
       )}
 
-      {/* SIDEBAR INTELIGENTE */}
+      {/* SIDEBAR INTELIGENTE BASADO EN PERMISOS INDIVIDUALES */}
       <aside className="erp-sidebar">
         <div style={{ padding: '8px 10px 15px 10px', borderBottom: '1px solid rgba(128,128,128,0.18)', marginBottom: '6px' }}>
           <div className="glow-text-cyan" style={{ fontWeight: 800, fontSize: '16px' }}>{nombreNegocioActivo}</div>
@@ -1467,19 +1647,21 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </button>
         )}
 
-        {esAdminDelNegocioActivo && (
+        {tienePermisoModulo('dashboard') && (
           <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>📊 1. Mi Resumen & Tienda</button>
         )}
 
-        {puedeVentasStockFinanzas && (
+        {tienePermisoModulo('pos') && (
           <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Caja POS & ARCA</button>
         )}
 
-        <button onClick={() => setPestaña('presupuestos')} className={`neon-btn side-btn ${pestaña === 'presupuestos' ? 'active' : ''}`}>
-          📄 3. Presupuestos ({misPresupuestos.length})
-        </button>
+        {tienePermisoModulo('presupuestos') && (
+          <button onClick={() => setPestaña('presupuestos')} className={`neon-btn side-btn ${pestaña === 'presupuestos' ? 'active' : ''}`}>
+            📄 3. Presupuestos ({misPresupuestos.length})
+          </button>
+        )}
 
-        {puedeGestionarOrdenes && (
+        {tienePermisoModulo('taller') && (
           <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>
             🛠️ 4. {esSucursalExterna ? `Órdenes Reparación (${equiposEnBanco})` : `Control Órdenes (${equiposEnBanco})`}
           </button>
@@ -1489,26 +1671,30 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>🏢 5. Red Locales Gremio ({talleresGremio.length})</button>
         )}
 
-        {puedeVentasStockFinanzas && (
+        {tienePermisoModulo('catalogo') && (
           <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>📦 6. Mi Stock & Precios ({misProductos.length})</button>
         )}
 
-        {puedeGestionarOrdenes && (
+        {tienePermisoModulo('rma') && (
           <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>🔄 7. Garantías & RMA</button>
         )}
         
-        {puedeVentasStockFinanzas && (
-          <>
-            <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 8. Mis Pedidos Web</button>
-            <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 9. Mis Clientes CRM</button>
-            <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 10. Importar mi Excel</button>
-            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 11. Finanzas & Facturar ARCA</button>
-          </>
+        {tienePermisoModulo('pedidos') && (
+          <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 8. Mis Pedidos Web</button>
+        )}
+        {tienePermisoModulo('clientes') && (
+          <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 9. Mis Clientes CRM</button>
+        )}
+        {tienePermisoModulo('proveedores') && (
+          <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 10. Importar mi Excel</button>
+        )}
+        {tienePermisoModulo('finanzas') && (
+          <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 11. Finanzas & Facturar ARCA</button>
         )}
 
         {esAdminDelNegocioActivo && (
           <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>
-            🛡️ 12. {esSucursalExterna ? 'Datos ARCA & Roles' : 'ARCA, Temas & Roles'}
+            🛡️ 12. {esSucursalExterna ? 'Datos ARCA & Usuarios' : 'ARCA, Temas & Usuarios'}
           </button>
         )}
 
@@ -1519,7 +1705,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       <main className="erp-main">
 
         {/* MÓDULO 1: DASHBOARD */}
-        {pestaña === 'dashboard' && esAdminDelNegocioActivo && (
+        {pestaña === 'dashboard' && tienePermisoModulo('dashboard') && (
           <div>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderLeft: '4px solid var(--neon-green)' }}>
               <div>
@@ -1574,7 +1760,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Caja POS & Facturar ARCA</button>
                   <button onClick={() => setPestaña('presupuestos')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>📄 Crear Presupuesto</button>
                   <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>🛠️ Ingresar Equipo</button>
-                  <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>🏛️ Configurar ARCA / Roles</button>
+                  <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>🛡️ Gestionar Usuarios/ARCA</button>
                 </div>
               </div>
 
@@ -1593,10 +1779,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* MÓDULO 2: PUNTO DE VENTA (POS) + EMISIÓN DIRECTA EN ARCA     */}
-        {/* ============================================================ */}
-        {pestaña === 'pos' && puedeVentasStockFinanzas && (
+        {/* MÓDULO 2: PUNTO DE VENTA (POS) + ARCA */}
+        {pestaña === 'pos' && tienePermisoModulo('pos') && (
           <div>
             <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 Caja POS Mostrador & Facturación ARCA // {nombreNegocioActivo}</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -1625,8 +1809,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
               <div className="neon-card neon-card-green" style={{ flex: '1 1 340px' }}>
                 <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 Ticket / Factura Electrónica ARCA</h3>
-                
-                {/* Selector de Comprobante ARCA en Mostrador */}
                 <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', marginBottom: '12px', border: '1px solid rgba(0,122,255,0.2)' }}>
                   <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>🏛️ Comprobante Fiscal ARCA (Pto. Vta: {datosFiscalesActivos.puntoVentaArca})</label>
                   <select className="neon-select" value={tipoFacturaPOS} onChange={e=>setTipoFacturaPOS(e.target.value as any)} style={{ marginBottom: '8px', fontWeight: 'bold' }}>
@@ -1686,8 +1868,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* MÓDULO 3: GENERADOR DE PRESUPUESTOS Y COTIZACIONES */}
-        {pestaña === 'presupuestos' && (
+        {/* MÓDULO 3: GENERADOR DE PRESUPUESTOS */}
+        {pestaña === 'presupuestos' && tienePermisoModulo('presupuestos') && (
           <div>
             <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>📄 Generador de Presupuestos y Cotizaciones // {nombreNegocioActivo}</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
@@ -1808,7 +1990,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* MÓDULO 4: ORDENES DE SERVICIO */}
-        {pestaña === 'taller' && puedeGestionarOrdenes && (
+        {pestaña === 'taller' && tienePermisoModulo('taller') && (
           <div>
             <form onSubmit={guardarOrden} className="neon-card" style={{ marginBottom: '22px' }}>
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
@@ -1964,13 +2146,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* MÓDULO 5: RED DE LOCALES ASOCIADOS */}
+        {/* ==================================================================== */}
+        {/* MÓDULO 5: RED DE LOCALES ASOCIADOS (CON EDICIÓN Y REUTILIZACIÓN EMAIL)*/}
+        {/* ==================================================================== */}
         {pestaña === 'talleres_b2b' && !esSucursalExterna && esAdminDelNegocioActivo && (
           <div>
-            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 Gestión de Locales Asociados (Creación de Cuentas Independientes)</h2>
+            <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🏢 Gestión de Locales Asociados (Alta, Edición y Reutilización de Correos)</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <form onSubmit={guardarTallerGremio} className="neon-card neon-card-pink" style={{ flex: '1 1 340px', alignSelf: 'flex-start' }}>
-                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>➕ Dar de Alta Local Gremio</h3>
+                <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
+                  {idTallerEditando ? '✏️ Editando Local Asociado' : '➕ Dar de Alta Local Gremio'}
+                </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div><label className="label-neon">Nombre Comercial del Local</label><input type="text" className="neon-input" required value={tallerNom} onChange={e=>setTallerNom(e.target.value)} placeholder="Ej: TecnoCell Centro" /></div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1984,7 +2170,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', border: '1px dashed var(--neon-pink)' }}>
                     <label className="label-neon" style={{ color: 'var(--neon-pink)' }}>🔐 Credenciales del Dueño del Local</label>
                     <input type="email" className="neon-input" required value={tallerEmail} onChange={e=>setTallerEmail(e.target.value)} placeholder="Email Admin del Local" style={{ marginBottom: '8px' }} />
-                    <input type="text" className="neon-input" required minLength={6} value={tallerPassword} onChange={e=>setTallerPassword(e.target.value)} placeholder="Contraseña (Mínimo 6 caracteres)" />
+                    {!idTallerEditando && (
+                      <input type="text" className="neon-input" minLength={6} value={tallerPassword} onChange={e=>setTallerPassword(e.target.value)} placeholder="Contraseña (Si el correo ya existía, dejar vacío o poner la misma)" />
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
@@ -1999,41 +2187,53 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <input type="number" className="neon-input" value={tallerLimiteCredito} onChange={e=>setTallerLimiteCredito(e.target.value)} />
                     </div>
                   </div>
-                  <button type="submit" disabled={creandoCuentaLocal} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px', marginTop: '6px' }}>
-                    {creandoCuentaLocal ? 'Creando Cuenta...' : '🚀 Crear Local Independiente'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <button type="submit" disabled={creandoCuentaLocal} className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '14px' }}>
+                      {creandoCuentaLocal ? 'Guardando...' : idTallerEditando ? '💾 Guardar Cambios' : '🚀 Crear / Reactivar Local'}
+                    </button>
+                    {idTallerEditando && (
+                      <button type="button" onClick={limpiarFormularioTaller} className="neon-btn neon-btn-red">Cancelar</button>
+                    )}
+                  </div>
                 </div>
               </form>
 
               <div className="neon-card" style={{ flex: '2 1 580px', overflowX: 'auto' }}>
                 <table className="neon-table">
-                  <thead><tr><th>Local / Usuario Admin</th><th>Tienda del Local</th><th>Equipos en Taller</th><th>Saldo Cta. Cte.</th><th>Acciones</th></tr></thead>
+                  <thead><tr><th>Local / Usuario Admin</th><th>Estado</th><th>Equipos</th><th>Saldo Cta. Cte.</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {talleresGremio.map(t => {
                       const equiposDelTaller = ordenes.filter(o => (o.tallerOrigen === t.nombre || o.tallerId === t.id) && o.estado !== 'entregado').length;
                       const linkTiendaLocal = `${window.location.origin}/?tienda=${t.id}`;
+                      const estaActivo = t.activo !== false;
                       return (
-                        <tr key={t.id}>
+                        <tr key={t.id} style={{ opacity: estaActivo ? 1 : 0.55 }}>
                           <td>
                             <b>{t.nombre}</b> ({t.ciudad || 'Local'})<br/>
                             <small className="glow-text-cyan">👤 {t.email}</small><br/>
                             <small style={{ color: 'var(--text-muted)' }}>📍 {t.direccion} | 📱 {t.telefono}</small>
                           </td>
                           <td>
-                            <a href={linkTiendaLocal} target="_blank" rel="noreferrer" className="neon-btn" style={{ textDecoration: 'none', padding: '6px 12px' }}>
-                              🌐 Abrir Vitrina
-                            </a>
+                            <button 
+                              onClick={() => updateDoc(doc(db, 'talleres_gremio', t.id), { activo: !estaActivo })}
+                              className={`neon-btn ${estaActivo ? 'neon-btn-green' : 'neon-btn-red'}`}
+                              style={{ padding: '5px 10px', fontSize: '12px' }}
+                            >
+                              {estaActivo ? '🟢 Activo' : '🔴 Suspendido'}
+                            </button>
                           </td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold' }} className="glow-text-cyan">{equiposDelTaller} activos</td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold' }} className="glow-text-cyan">{equiposDelTaller}</td>
                           <td>
                             <b className={Number(t.saldoDeudor) > 0 ? 'glow-text-red' : 'glow-text-green'} style={{ fontSize: '17px' }}>
                               ${Number(t.saldoDeudor || 0).toLocaleString()}
                             </b>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              <button onClick={() => cargarTallerParaEdicion(t)} className="neon-btn" title="Editar Local">✏️ Editar</button>
                               <button onClick={() => registrarPagoCtaCteTaller(t)} className="neon-btn neon-btn-green">💵 Cobrar</button>
-                              <button onClick={()=>deleteDoc(doc(db,'talleres_gremio',t.id))} className="neon-btn neon-btn-red">🗑️</button>
+                              <a href={linkTiendaLocal} target="_blank" rel="noreferrer" className="neon-btn" style={{ textDecoration: 'none' }}>🌐</a>
+                              <button onClick={() => { if(window.confirm('¿Eliminar local? Podrás volver a usar su mismo correo cuando quieras.')) deleteDoc(doc(db,'talleres_gremio',t.id)); }} className="neon-btn neon-btn-red">🗑️</button>
                             </div>
                           </td>
                         </tr>
@@ -2047,7 +2247,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* MÓDULO 6: STOCK Y CARGA DEL PRECIO DE LISTA */}
-        {pestaña === 'catalogo' && puedeVentasStockFinanzas && (
+        {pestaña === 'catalogo' && tienePermisoModulo('catalogo') && (
           <div>
             <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -2171,7 +2371,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* MÓDULO 7: RMA & GARANTÍAS */}
-        {pestaña === 'rma' && puedeGestionarOrdenes && (
+        {pestaña === 'rma' && tienePermisoModulo('rma') && (
           <div>
             <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>🔄 Control de RMA & Garantías</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -2217,7 +2417,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* MÓDULO 8: PEDIDOS WEB DE MI TIENDA */}
-        {pestaña === 'pedidos' && puedeVentasStockFinanzas && (
+        {pestaña === 'pedidos' && tienePermisoModulo('pedidos') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <h2 className="glow-text-pink" style={{ marginTop: 0 }}>🌐 Pedidos Recibidos en la Tienda de {nombreNegocioActivo}</h2>
             {misPedidosWeb.map(pedido => (
@@ -2251,7 +2451,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* MÓDULO 9: CRM CLIENTES PRIVADO */}
-        {pestaña === 'clientes' && puedeVentasStockFinanzas && (
+        {pestaña === 'clientes' && tienePermisoModulo('clientes') && (
           <div>
             <div className="neon-card neon-card-green" style={{ marginBottom: '20px' }}>
               <h3 className="glow-text-green" style={{ marginTop: 0 }}>📣 Mis Clientes & Campañas de WhatsApp ({nombreNegocioActivo})</h3>
@@ -2280,7 +2480,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* MÓDULO 10: IMPORTADOR EXCEL PRIVADO */}
-        {pestaña === 'proveedores' && puedeVentasStockFinanzas && (
+        {pestaña === 'proveedores' && tienePermisoModulo('proveedores') && (
           <div className="neon-card">
             <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 Importar Lista Excel al Stock de {nombreNegocioActivo}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
@@ -2302,10 +2502,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* MÓDULO 11: FINANZAS + EMISIÓN E IMPRESIÓN DE FACTURAS ARCA CON QR         */}
-        {/* ========================================================================= */}
-        {pestaña === 'finanzas' && puedeVentasStockFinanzas && (
+        {/* MÓDULO 11: FINANZAS + FACTURACIÓN ARCA CON QR */}
+        {pestaña === 'finanzas' && tienePermisoModulo('finanzas') && (
           <div>
             <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 Caja, Movimientos y Facturación ARCA // {nombreNegocioActivo}</h2>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2375,7 +2573,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                                   ) : <span style={{ color: 'var(--text-muted)' }}>Movimiento directo sin desglose de artículos.</span>}
                                 </div>
 
-                                {/* PANEL EMISOR DE FACTURA ELECTRÓNICA ARCA */}
                                 <div style={{ flex: '1 1 320px', background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.25)' }}>
                                   <h4 className="glow-text-green" style={{ margin: '0 0 10px 0' }}>🏛️ Facturación Electrónica ARCA (ex AFIP)</h4>
                                   {m.factura ? (
@@ -2437,21 +2634,131 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {/* ========================================================================= */}
-        {/* MÓDULO 12: DATOS FISCALES ARCA + TEMAS + ROLES DE PERSONAL                */}
+        {/* MÓDULO 12: GESTIÓN AVANZADA DE USUARIOS Y PERMISOS + DATOS ARCA           */}
         {/* ========================================================================= */}
         {pestaña === 'configuracion' && esAdminDelNegocioActivo && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             
-            {/* 1. CONFIGURACIÓN FISCAL ARCA PARA LOCALES ASOCIADOS */}
+            {/* 1. CENTRO DE CONTROL DE USUARIOS, EDICIÓN Y PERMISOS POR MÓDULO */}
+            <div className="neon-card">
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
+                {idUsuarioEditando ? '✏️ Editando Usuario y Permisos' : `🛡️ Gestión de Usuarios, Roles y Permisos de ${nombreNegocioActivo}`}
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px', marginBottom: '16px' }}>
+                Puedes crear nuevos usuarios, <b>reutilizar correos que hayas eliminado antes</b> sin bloqueo, o tocar <b>✏️ Editar</b> en la tabla para agregar o quitar módulos a un usuario existente.
+              </p>
+
+              <form onSubmit={guardarUsuarioRol} style={{ background: 'var(--bg-input)', padding: '18px', borderRadius: '16px', marginBottom: '20px', border: idUsuarioEditando ? '2px solid var(--neon-cyan)' : '1px solid rgba(128,128,128,0.15)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '15px' }}>
+                  <div>
+                    <label className="label-neon">Nombre del Colaborador</label>
+                    <input type="text" className="neon-input" placeholder="Ej: Lucas (Mostrador)" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Email de Acceso (Reutilizable)</label>
+                    <input type="email" className="neon-input" placeholder="empleado@local.com" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} />
+                  </div>
+                  {!idUsuarioEditando && (
+                    <div>
+                      <label className="label-neon">Contraseña (Si es correo nuevo)</label>
+                      <input type="text" className="neon-input" placeholder="Mín. 6 caract. (Opcional si ya existía)" minLength={6} value={nuevoUserPassword} onChange={e=>setNuevoUserPassword(e.target.value)} />
+                    </div>
+                  )}
+                  <div>
+                    <label className="label-neon">Plantilla Rápida de Rol</label>
+                    <select className="neon-select" value={nuevoUserRol} onChange={e=>cambiarPresetRol(e.target.value)}>
+                      <option value="recepcion_ordenes">🔧 Recepción y Gestión de Órdenes</option>
+                      <option value="vendedor_admin">💼 Vendedor y Admin (POS, Stock y Finanzas)</option>
+                      <option value="admin">👑 Administrador Total</option>
+                      <option value="personalizado">🎛️ Permisos Personalizados a Medida</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* MATRIZ DE CHECKBOXES PARA AGREGAR O QUITAR MÓDULOS ESPECÍFICOS */}
+                <div style={{ padding: '12px 15px', borderRadius: '12px', background: 'var(--bg-card)', border: '1px solid rgba(128,128,128,0.15)', marginBottom: '15px' }}>
+                  <span className="label-neon" style={{ color: 'var(--neon-cyan)', marginBottom: '8px' }}>
+                    🎛️ Módulos Habilitados para este Usuario (Tilda o destilda para dar o quitar acceso):
+                  </span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(195px, 1fr))', gap: '8px', marginTop: '8px' }}>
+                    {LISTA_MODULOS_PERMISOS.map(mod => (
+                      <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', fontSize: '14px', fontWeight: permisosSeleccionados.includes(mod.id) ? 700 : 400, color: permisosSeleccionados.includes(mod.id) ? 'var(--neon-cyan)' : 'var(--text-muted)' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={permisosSeleccionados.includes(mod.id)} 
+                          onChange={() => togglePermisoIndividual(mod.id)} 
+                        />
+                        {mod.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button type="submit" disabled={creandoEmpleado} className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>
+                    {creandoEmpleado ? 'Guardando...' : idUsuarioEditando ? '💾 Guardar Cambios de Rol y Permisos' : '➕ Habilitar Usuario / Reutilizar Correo'}
+                  </button>
+                  {idUsuarioEditando && (
+                    <button type="button" onClick={limpiarFormularioUsuario} className="neon-btn neon-btn-red">Cancelar Edición</button>
+                  )}
+                </div>
+              </form>
+
+              <table className="neon-table">
+                <thead>
+                  <tr>
+                    <th>Colaborador</th>
+                    <th>Email</th>
+                    <th>Estado</th>
+                    <th>Rol / Módulos Activos</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {misEmpleados.map(u => {
+                    const estaActivo = u.activo !== false;
+                    const cantModulos = Array.isArray(u.permisos) ? u.permisos.length : (PERMISOS_DEFAULT_POR_ROL[u.rol]?.length || 0);
+                    return (
+                      <tr key={u.id} style={{ opacity: estaActivo ? 1 : 0.55 }}>
+                        <td><b>{u.nombre}</b></td>
+                        <td>{u.email}</td>
+                        <td>
+                          <button 
+                            onClick={() => updateDoc(doc(db, 'usuarios_roles', u.id), { activo: !estaActivo })}
+                            className={`neon-btn ${estaActivo ? 'neon-btn-green' : 'neon-btn-red'}`}
+                            style={{ padding: '4px 10px', fontSize: '12px' }}
+                          >
+                            {estaActivo ? '🟢 Activo' : '🔴 Suspendido'}
+                          </button>
+                        </td>
+                        <td>
+                          <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.12)', color: 'var(--neon-cyan)' }}>
+                            {u.rol?.toUpperCase()} ({cantModulos} módulos)
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => cargarUsuarioParaEditar(u)} className="neon-btn">✏️ Editar Rol / Permisos</button>
+                            <button onClick={() => { if(window.confirm(`¿Quitar a ${u.nombre}? Podrás volver a registrar el correo ${u.email} cuando quieras.`)) deleteDoc(doc(db, 'usuarios_roles', u.id)); }} className="neon-btn neon-btn-red">🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {misEmpleados.length === 0 && (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Aún no has creado perfiles adicionales para tu local.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 2. CONFIGURACIÓN FISCAL ARCA PARA LOCALES ASOCIADOS */}
             {esSucursalExterna && (
               <form onSubmit={guardarFiscalesLocalGremio} className="neon-card neon-card-green">
                 <h3 className="glow-text-green" style={{ marginTop: 0 }}>🏛️ Datos Fiscales ARCA (ex AFIP) de {nombreNegocioActivo}</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px', marginBottom: '16px' }}>
-                  Configura los datos fiscales de tu local para que todas las facturas electrónicas A, B o C salgan emitidas con tu propio CUIT, Punto de Venta y Código QR oficial de ARCA.
-                </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '16px' }}>
                   <div><label className="label-neon">Razón Social / Titular</label><input type="text" className="neon-input" value={fiscalesLocal.razonSocial} onChange={e=>setFiscalesLocal({...fiscalesLocal, razonSocial: e.target.value})} required /></div>
-                  <div><label className="label-neon">CUIT Emisor (Con o sin guiones)</label><input type="text" className="neon-input" value={fiscalesLocal.cuit} onChange={e=>setFiscalesLocal({...fiscalesLocal, cuit: e.target.value})} placeholder="20-XXXXXXXX-X" required /></div>
+                  <div><label className="label-neon">CUIT Emisor</label><input type="text" className="neon-input" value={fiscalesLocal.cuit} onChange={e=>setFiscalesLocal({...fiscalesLocal, cuit: e.target.value})} placeholder="20-XXXXXXXX-X" required /></div>
                   <div>
                     <label className="label-neon">Condición frente al IVA</label>
                     <select className="neon-select" value={fiscalesLocal.condicionIva} onChange={e=>setFiscalesLocal({...fiscalesLocal, condicionIva: e.target.value})}>
@@ -2468,11 +2775,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </form>
             )}
 
-            {/* 2. CONFIGURACIÓN FISCAL ARCA Y PARÁMETROS PARA CENTRAL MASTER */}
+            {/* 3. CONFIGURACIÓN FISCAL ARCA Y PARÁMETROS PARA CENTRAL MASTER */}
             {!esSucursalExterna && (
               <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
-                {/* BLOQUE ARCA CENTRAL */}
                 <div style={{ background: 'var(--bg-input)', padding: '18px', borderRadius: '16px', border: '1px solid rgba(40,205,65,0.3)' }}>
                   <h3 className="glow-text-green" style={{ marginTop: 0 }}>🏛️ Configuración Fiscal y Facturación Electrónica ARCA (ex AFIP)</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
@@ -2511,7 +2816,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE APARIENCIA Y TEMAS */}
                 <h3 className="glow-text-cyan" style={{ margin: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
                   <div>
@@ -2533,7 +2837,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE COMERCIAL */}
                 <h3 className="glow-text-cyan" style={{ margin: 0 }}>⚙️ Parámetros Comerciales, Precios de Lista y Laboratorio</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                   <div><label className="label-neon">Nombre Fantasía</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
@@ -2549,63 +2852,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '15px' }}>💾 Guardar Configuración Fiscal ARCA, Tema y Parámetros</button>
               </form>
             )}
-
-            {/* 3. GESTIÓN DE USUARIOS Y ROLES */}
-            <div className="neon-card">
-              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ Gestión de Usuarios y Roles de {nombreNegocioActivo}</h3>
-              <form onSubmit={agregarUsuarioRol} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
-                <div>
-                  <label className="label-neon">Nombre del Colaborador</label>
-                  <input type="text" className="neon-input" placeholder="Ej: Lucas (Mostrador)" required value={nuevoUserNombre} onChange={e=>setNuevoUserNombre(e.target.value)} />
-                </div>
-                <div>
-                  <label className="label-neon">Email de Acceso</label>
-                  <input type="email" className="neon-input" placeholder="empleado@local.com" required value={nuevoUserEmail} onChange={e=>setNuevoUserEmail(e.target.value)} />
-                </div>
-                <div>
-                  <label className="label-neon">Contraseña (Mín. 6 caract.)</label>
-                  <input type="text" className="neon-input" placeholder="Crear clave de ingreso" minLength={6} value={nuevoUserPassword} onChange={e=>setNuevoUserPassword(e.target.value)} />
-                </div>
-                <div>
-                  <label className="label-neon">Rol y Permisos Asignados</label>
-                  <select className="neon-select" value={nuevoUserRol} onChange={e=>setNuevoUserRol(e.target.value)}>
-                    <option value="recepcion_ordenes">🔧 Ingreso y Gestión de Órdenes de Reparación</option>
-                    <option value="vendedor_admin">💼 Vendedor y Admin (Ventas, Artículos, Precios y Finanzas)</option>
-                    <option value="admin">👑 Administrador Total del Local</option>
-                  </select>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <button type="submit" disabled={creandoEmpleado} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '13px' }}>
-                    {creandoEmpleado ? 'Creando Cuenta...' : '➕ Crear Usuario y Asignar Rol'}
-                  </button>
-                </div>
-              </form>
-
-              <table className="neon-table">
-                <thead><tr><th>Colaborador</th><th>Email de Usuario</th><th>Rol y Función</th><th>Acción</th></tr></thead>
-                <tbody>
-                  {misEmpleados.map(u => (
-                    <tr key={u.id}>
-                      <td><b>{u.nombre}</b></td>
-                      <td>{u.email}</td>
-                      <td>
-                        <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.12)', color: 'var(--neon-cyan)' }}>
-                          {u.rol === 'recepcion_ordenes' || u.rol === 'tecnico' 
-                            ? '🔧 Ingreso y Gestión de Órdenes' 
-                            : u.rol === 'vendedor_admin' || u.rol === 'vendedor'
-                              ? '💼 Ventas, Artículos, Precios y Finanzas'
-                              : '👑 Administrador Total'}
-                        </span>
-                      </td>
-                      <td><button onClick={()=>deleteDoc(doc(db, 'usuarios_roles', u.id))} className="neon-btn neon-btn-red">Quitar Acceso</button></td>
-                    </tr>
-                  ))}
-                  {misEmpleados.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Aún no has creado perfiles adicionales para tu local.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
 
           </div>
         )}
@@ -2698,3 +2944,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
+// --- FIN DEL ARCHIVO APP.TSX ---
