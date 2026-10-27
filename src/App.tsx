@@ -440,7 +440,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     setTipoFacturaPOS('SIN_FACTURA');
   };
 
-  // --- Funciones Locales y Usuarios (Con Reutilización de Correo) ---
+  // --- Funciones Locales y Usuarios ---
   const guardarTallerGremio = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreandoCuentaLocal(true);
@@ -835,14 +835,24 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 style={{ marginBottom: '8px' }} 
               />
               {tipoFacturaPOS !== 'SIN_FACTURA' && (
-                <input 
-                  type="text" 
-                  className="neon-input" 
-                  placeholder="CUIT / DNI" 
-                  value={cuitPOS} 
-                  onChange={e => setCuitPOS(e.target.value)} 
-                  style={{ marginBottom: '8px' }} 
-                />
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input 
+                    type="text" 
+                    className="neon-input" 
+                    placeholder="CUIT / DNI" 
+                    value={cuitPOS} 
+                    onChange={e => setCuitPOS(e.target.value)} 
+                  />
+                  <select 
+                    className="neon-select" 
+                    value={condicionIvaPOS} 
+                    onChange={e => setCondicionIvaPOS(e.target.value)}
+                  >
+                    <option value="Consumidor Final">Cons. Final</option>
+                    <option value="Responsable Monotributo">Monotributo</option>
+                    <option value="IVA Responsable Inscripto">Resp. Inscripto</option>
+                  </select>
+                </div>
               )}
               <select 
                 className="neon-select" 
@@ -942,11 +952,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
               🏢 Alta, Edición y Reutilización de Correos de Locales Asociados
             </h3>
-            <form onSubmit={guardarTallerGremio} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+            <form onSubmit={guardarTallerGremio} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '20px' }}>
               <input type="text" className="neon-input" placeholder="Nombre del Local *" required value={tallerNom} onChange={e => setTallerNom(e.target.value)} />
               <input type="text" className="neon-input" placeholder="Encargado" value={tallerEncargado} onChange={e => setTallerEncargado(e.target.value)} />
+              <input type="text" className="neon-input" placeholder="Ciudad" value={tallerCiudad} onChange={e => setTallerCiudad(e.target.value)} />
               <input type="text" className="neon-input" placeholder="Dirección" value={tallerDireccion} onChange={e => setTallerDireccion(e.target.value)} />
               <input type="text" className="neon-input" placeholder="WhatsApp" value={tallerTel} onChange={e => setTallerTel(e.target.value)} />
+              <select className="neon-select" value={tallerNivel} onChange={e => setTallerNivel(e.target.value as any)}>
+                <option value="Bronce">Nivel Bronce</option>
+                <option value="Oro">Nivel Oro</option>
+              </select>
+              <input type="number" className="neon-input" placeholder="Límite Cta Cte $" value={tallerLimiteCredito} onChange={e => setTallerLimiteCredito(e.target.value)} />
               <input type="email" className="neon-input" placeholder="Email Admin *" required value={tallerEmail} onChange={e => setTallerEmail(e.target.value)} />
               {!idTallerEditando && (
                 <input type="text" className="neon-input" placeholder="Contraseña" value={tallerPassword} onChange={e => setTallerPassword(e.target.value)} />
@@ -968,7 +984,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <tbody>
                 {talleresGremio.map(t => (
                   <tr key={t.id}>
-                    <td><b>{t.nombre}</b></td>
+                    <td><b>{t.nombre}</b> ({t.ciudad || 'Local'})</td>
                     <td>{t.email}</td>
                     <td>
                       <button 
@@ -986,6 +1002,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                           setIdTallerEditando(t.id); 
                           setTallerNom(t.nombre); 
                           setTallerEmail(t.email); 
+                          setTallerCiudad(t.ciudad || 'Necochea');
                           setTallerDireccion(t.direccion || ''); 
                           setTallerTel(t.telefono || ''); 
                         }} 
@@ -1032,6 +1049,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </select>
               <input type="text" className="neon-input" placeholder="Concepto..." required value={finConcepto} onChange={e => setFinConcepto(e.target.value)} style={{ flex: 2 }} />
               <input type="number" className="neon-input" placeholder="Monto $" required value={finMonto} onChange={e => setFinMonto(e.target.value)} style={{ flex: 1 }} />
+              <select className="neon-select" value={finMetodo} onChange={e => setFinMetodo(e.target.value)} style={{ width: 'auto' }}>
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="mercadopago">Mercado Pago</option>
+                <option value="tarjeta">Tarjeta</option>
+              </select>
               <button type="submit" className="neon-btn neon-btn-fillCyan">
                 + Registrar
               </button>
@@ -1048,6 +1071,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <thead>
                 <tr>
                   <th>Concepto</th>
+                  <th>Medio</th>
                   <th>Monto</th>
                   <th>Factura Electrónica ARCA</th>
                 </tr>
@@ -1056,6 +1080,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 {movimientosFiltrados.map(m => (
                   <tr key={m.id}>
                     <td><b>{m.concepto}</b></td>
+                    <td style={{ textTransform: 'uppercase' }}>{m.metodoPago}</td>
                     <td className={m.tipo === 'ingreso' ? 'glow-text-green' : 'glow-text-red'}>
                       {m.tipo === 'ingreso' ? '+' : '-'}${m.monto?.toLocaleString()}
                     </td>

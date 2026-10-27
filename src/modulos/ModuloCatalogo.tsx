@@ -19,7 +19,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   config,
   setEscaneandoPara
 }) => {
-  // Estados alta/edición de artículo
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState('');
   const [prodCat, setProdCat] = useState('');
@@ -33,13 +32,11 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const [prodProveedor, setProdProveedor] = useState('');
   const [prodUrlOrigen, setProdUrlOrigen] = useState('');
   const [prodDestacado, setProdDestacado] = useState(false);
-  const [esDeProveedor, setEsDeProveedor] = useState(false); // false = Artículo Mío (se ve en Tienda Oficial)
+  const [esDeProveedor, setEsDeProveedor] = useState(false);
 
-  // Estados Importador por URL Externa
   const [urlExternaInput, setUrlExternaInput] = useState('');
   const [extrayendoUrl, setExtrayendoUrl] = useState(false);
 
-  // Estados Ajuste de Inflación
   const [inflacionPorcentaje, setInflacionPorcentaje] = useState('10');
   const [inflacionCategoria, setInflacionCategoria] = useState('Todas');
   const [inflacionOrigen, setInflacionOrigen] = useState<'todos' | 'propios' | 'proveedores'>('todos');
@@ -47,21 +44,17 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const [inflacionPrecioMax, setInflacionPrecioMax] = useState('');
   const [aplicandoInflacion, setAplicandoInflacion] = useState(false);
 
-  // Filtros de tabla
   const [busquedaInventario, setBusquedaInventario] = useState('');
   const [filtroCategoriaInv, setFiltroCategoriaInv] = useState('Todas');
   const [filtroOrigenInv, setFiltroOrigenInv] = useState<'todos' | 'propios' | 'proveedores'>('todos');
-  const [seleccionados, setSeleccionados] = useState<string[]>([]);
 
   const categoriasUnicas = ['Todas', ...Array.from(new Set(misProductos.map(p => p.categoria || 'General')))];
 
-  // --- 1. FUNCIÓN PARA TRAER DATOS DESDE OTRA PÁGINA POR URL ---
   const extraerDatosDesdeUrl = async () => {
     if (!urlExternaInput) return alert('Pega una URL o término de búsqueda para traer los datos.');
     setExtrayendoUrl(true);
     try {
       setProdUrlOrigen(urlExternaInput);
-      // Si es una búsqueda sobre API JSON o URL web, usamos proxy CORS público para leer metadatos OpenGraph / JSON
       if (urlExternaInput.startsWith('http')) {
         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(urlExternaInput)}`;
         const resp = await fetch(proxyUrl);
@@ -85,7 +78,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         }
         alert('✅ Datos extraídos de la URL. Verifica el Precio de Lista y presiona Publicar.');
       } else {
-        // Búsqueda rápida utilizando la URL base configurada en Parámetros
         const baseApi = config.urlsProveedoresVinculados || 'https://api.mercadolibre.com/sites/MLA/search?q=';
         const resp = await fetch(`${baseApi}${encodeURIComponent(urlExternaInput)}`);
         const json = await resp.json();
@@ -109,7 +101,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     }
   };
 
-  // --- 2. FUNCIÓN DE AJUSTE DE INFLACIÓN (POR CATEGORÍA O RANGO DE PRECIOS) ---
   const ejecutarAjusteInflacion = async () => {
     const porc = Number(inflacionPorcentaje);
     if (isNaN(porc) || porc === 0) return alert('Ingresa un porcentaje válido (Ej: 15 para subir 15%, o -10 para bajar 10%).');
@@ -123,7 +114,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
       return true;
     });
 
-    if (articulosAfectados.length === 0) return alert('Ningún artículo coincide con los filtros de categoría/rango seleccionados.');
+    if (articulosAfectados.length === 0) return alert('Ningún artículo coincide con los filtros seleccionados.');
     if (!window.confirm(`📈 AJUSTE DE INFLACIÓN:\nSe actualizarán ${articulosAfectados.length} artículos aplicando un ${porc > 0 ? `+${porc}%` : `${porc}%`}.\n¿Confirmar actualización masiva?`)) return;
 
     setAplicandoInflacion(true);
@@ -157,7 +148,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     }
   };
 
-  // --- 3. GUARDAR / EDITAR ARTÍCULO ---
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     const dataProducto = { 
@@ -216,7 +206,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
 
   return (
     <div>
-      {/* BLOQUE 1: VINCULADOR POR URL EXTERNA + ALTA DE ARTÍCULO */}
       <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 className="glow-text-cyan" style={{ margin: 0 }}>
@@ -232,14 +221,15 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
           </div>
         </div>
 
-        {/* Barra para traer artículo desde otra página por URL */}
         <div style={{ background: 'var(--bg-input)', padding: '12px 15px', borderRadius: '14px', marginBottom: '14px', border: '1px dashed var(--neon-cyan)' }}>
-          <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>🌐 Traer Artículo desde otra Página Web / URL Vinculada (Extrae título, descripción y precio):</label>
+          <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>
+            🌐 Traer Artículo desde otra Página Web / URL Vinculada (Extrae título, descripción y precio):
+          </label>
           <div style={{ display: 'flex', gap: '8px' }}>
             <input 
               type="text" 
               className="neon-input" 
-              placeholder="Pega aquí la URL del producto (https://...) o escribe el modelo para buscar en el catálogo externo..." 
+              placeholder="Pega aquí la URL del producto (https://...) o escribe el modelo para buscar..." 
               value={urlExternaInput} 
               onChange={e => setUrlExternaInput(e.target.value)} 
             />
@@ -255,7 +245,17 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
             <input type="number" className="neon-input" placeholder="Costo $" value={prodCosto} onChange={e => setProdCosto(e.target.value)} />
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button type="button" onClick={() => { if(prodCosto) setProdPrecio(aplicarRedondeo(Number(prodCosto)*(1+Number(config.margenGanancia)/100), config.redondeoPrecios).toString()); }} className="neon-btn neon-btn-green" style={{ width: '100%', height: '45px' }}>
+            <button 
+              type="button" 
+              onClick={() => { 
+                if (prodCosto) {
+                  const calc = aplicarRedondeo(Number(prodCosto) * (1 + Number(config.margenGanancia) / 100), config.redondeoPrecios);
+                  setProdPrecio(calc.toString()); 
+                }
+              }} 
+              className="neon-btn neon-btn-green" 
+              style={{ width: '100%', height: '45px' }}
+            >
               ⚡ Calcular Lista (+{config.margenGanancia}%)
             </button>
           </div>
@@ -270,9 +270,18 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', background: 'var(--bg-input)', padding: '10px 15px', borderRadius: '14px', marginBottom: '12px' }}>
-          <div><small style={{ color: 'var(--text-muted)' }}>💵 Efectivo (-{config.descuentoEfectivoPorcentaje}%): </small><b className="glow-text-green">${precioEfectivoPreview.toLocaleString()}</b></div>
-          <div><small style={{ color: 'var(--text-muted)' }}>📋 Lista Base: </small><b className="glow-text-cyan">${precioListaPreview.toLocaleString()}</b></div>
-          <div><small style={{ color: 'var(--text-muted)' }}>💳 Tarjeta (+{config.recargoTarjetaPorcentaje}%): </small><b className="glow-text-pink">${precioTarjetaPreview.toLocaleString()}</b></div>
+          <div>
+            <small style={{ color: 'var(--text-muted)' }}>💵 Efectivo (-{config.descuentoEfectivoPorcentaje}%): </small>
+            <b className="glow-text-green">${precioEfectivoPreview.toLocaleString()}</b>
+          </div>
+          <div>
+            <small style={{ color: 'var(--text-muted)' }}>📋 Lista Base: </small>
+            <b className="glow-text-cyan">${precioListaPreview.toLocaleString()}</b>
+          </div>
+          <div>
+            <small style={{ color: 'var(--text-muted)' }}>💳 Tarjeta (+{config.recargoTarjetaPorcentaje}%): </small>
+            <b className="glow-text-pink">${precioTarjetaPreview.toLocaleString()}</b>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
@@ -295,13 +304,19 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
           <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>
             {idEditando ? '💾 Guardar Cambios' : '➕ Publicar Artículo'}
           </button>
-          {idEditando && <button type="button" onClick={limpiarFormulario} className="neon-btn neon-btn-red">Cancelar</button>}
+          {idEditando && (
+            <button type="button" onClick={limpiarFormulario} className="neon-btn neon-btn-red">
+              Cancelar
+            </button>
+          )}
         </div>
       </form>
 
-      {/* BLOQUE 2: HERRAMIENTA DE AJUSTE DE INFLACIÓN POR CATEGORÍA O RANGO DE ARTÍCULOS */}
+      {/* BLOQUE 2: HERRAMIENTA DE AJUSTE DE INFLACIÓN */}
       <div className="neon-card neon-card-yellow" style={{ marginBottom: '20px' }}>
-        <h3 className="glow-text-yellow" style={{ marginTop: 0 }}>📈 Ajuste de Inflación (Por Categoría o Rango de Precios)</h3>
+        <h3 className="glow-text-yellow" style={{ marginTop: 0 }}>
+          📈 Ajuste de Inflación (Por Categoría o Rango de Precios)
+        </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', alignItems: 'flex-end' }}>
           <div>
             <label className="label-neon">Ajuste Porcentual (%)</label>
@@ -335,7 +350,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
       </div>
 
-      {/* BLOQUE 3: BUSCADOR Y TABLA SEPARANDO ARTÍCULOS PROPIOS VS PROVEEDORES */}
+      {/* BLOQUE 3: TABLA DE INVENTARIO */}
       <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input type="text" className="neon-input" placeholder="🔍 Buscar por nombre, código o ubicación..." value={busquedaInventario} onChange={e => setBusquedaInventario(e.target.value)} style={{ flex: 1 }} />
         <select className="neon-select" value={filtroOrigenInv} onChange={e => setFiltroOrigenInv(e.target.value as any)} style={{ width: 'auto' }}>
@@ -372,10 +387,21 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
                       {p.esDeProveedor ? '🚚 Proveedor' : '🛍️ Tienda Oficial'}
                     </span>
                   </td>
-                  <td><span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>📍 {p.ubicacion || 'S/U'}</span></td>
                   <td>
-                    <b>{p.nombre}</b><br/>
-                    <small style={{ color: 'var(--text-muted)' }}>{p.categoria} {p.urlProveedor && <a href={p.urlProveedor} target="_blank" rel="noreferrer" style={{ color: 'var(--neon-cyan)', marginLeft: '6px' }}>🔗 Ver URL</a>}</small>
+                    <span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>
+                      📍 {p.ubicacion || 'S/U'}
+                    </span>
+                  </td>
+                  <td>
+                    <b>{p.nombre}</b><br />
+                    <small style={{ color: 'var(--text-muted)' }}>
+                      {p.categoria}
+                      {p.urlProveedor && (
+                        <a href={p.urlProveedor} target="_blank" rel="noreferrer" style={{ color: 'var(--neon-cyan)', marginLeft: '6px' }}>
+                          🔗 Ver URL
+                        </a>
+                      )}
+                    </small>
                   </td>
                   <td style={{ color: 'var(--text-muted)' }}>${p.costoProveedor?.toLocaleString() || 0}</td>
                   <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
@@ -387,7 +413,9 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
                       <button onClick={() => updateDoc(doc(db, 'productos', p.id), { stock: p.stock + 1 })} className="neon-btn neon-btn-green" style={{ padding: '3px 9px' }}>+</button>
                     </div>
                   </td>
-                  <td><button onClick={() => cargarParaEdicion(p)} className="neon-btn">✏️</button></td>
+                  <td>
+                    <button onClick={() => cargarParaEdicion(p)} className="neon-btn">✏️</button>
+                  </td>
                 </tr>
               );
             })}
