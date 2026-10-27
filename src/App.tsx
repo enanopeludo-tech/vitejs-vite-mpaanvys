@@ -9,7 +9,7 @@ import {
   doc, updateDoc, deleteDoc, arrayUnion, setDoc, writeBatch 
 } from 'firebase/firestore';
 import { auth, db } from './firebase'; 
-import { CONFIG_DEFAULT, CHECKLIST_ITEMS, aplicarRedondeo, getEstilosTema } from './estilosTema';
+import { CONFIG_DEFAULT, CHECKLIST_ITEMS, aplicarRedondeo, getEstilosTema, imprimirFacturaARCA } from './estilosTema';
 
 // ========================================================
 // 1. VITRINA COMERCIAL MULTI-TIENDA (AISLADA POR LOCAL)
@@ -337,7 +337,7 @@ const LoginAdmin = () => {
 };
 
 // ================================================================================
-// 4. PANEL ERP MULTI-TENANT (CON MÓDULO DE PRESUPUESTOS Y CALCULADORA DE LISTAS)
+// 4. PANEL ERP MULTI-TENANT (CON FACTURACIÓN ARCA, PRESUPUESTOS Y LISTAS)
 // ================================================================================
 const DashboardTaller = ({ user }: { user: User }) => {
   const [config, setConfig] = useState<any>(CONFIG_DEFAULT);
@@ -351,13 +351,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [presupuestos, setPresupuestos] = useState<any[]>([]);
   const [pestaña, setPestaña] = useState('dashboard'); 
 
-  // --- POS Mostrador Multicaja ---
+  // --- POS Mostrador Multicaja + Facturación ARCA Directa ---
   const [carritoPOS, setCarritoPOS] = useState<any[]>([]);
   const [busquedaPOS, setBusquedaPOS] = useState('');
   const [metodoPagoPOS, setMetodoPagoPOS] = useState<'efectivo' | 'transferencia' | 'tarjeta' | 'mercadopago'>('efectivo');
   const [clientePOS, setClientePOS] = useState('Consumidor Final');
+  const [cuitPOS, setCuitPOS] = useState('');
+  const [condicionIvaPOS, setCondicionIvaPOS] = useState('Consumidor Final');
+  const [tipoFacturaPOS, setTipoFacturaPOS] = useState<'SIN_FACTURA' | 'C' | 'B' | 'A'>('SIN_FACTURA');
 
-  // --- Nuevo Módulo Generador de Presupuestos ---
+  // --- Módulo Generador de Presupuestos ---
   const [presCliente, setPresCliente] = useState('');
   const [presTel, setPresTel] = useState('');
   const [presEquipo, setPresEquipo] = useState('');
@@ -384,11 +387,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [filtroOrigenTaller, setFiltroOrigenTaller] = useState('todos');
   const [busquedaTaller, setBusquedaTaller] = useState('');
 
-  // --- Catálogo e Inventario (Con Precio de Lista explícito) ---
+  // --- Catálogo e Inventario ---
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState(''); const [prodCat, setProdCat] = useState('');
   const [prodCosto, setProdCosto] = useState(''); 
-  const [prodPrecio, setProdPrecio] = useState(''); // Precio de Lista Base
+  const [prodPrecio, setProdPrecio] = useState('');
   const [prodStock, setProdStock] = useState('');
   const [prodUbicacion, setProdUbicacion] = useState(''); 
   const [prodDesc, setProdDesc] = useState(''); const [prodImg, setProdImg] = useState('');
@@ -452,6 +455,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [creandoEmpleado, setCreandoEmpleado] = useState(false);
 
   const [conf, setConf] = useState<any>(CONFIG_DEFAULT);
+  // Datos fiscales propios para Locales Gremio
+  const [fiscalesLocal, setFiscalesLocal] = useState<any>({
+    razonSocial: '', cuit: '', condicionIva: 'Responsable Monotributo', puntoVentaArca: '00001', ingresosBrutos: '', inicioActividades: '01/01/2023'
+  });
 
   useEffect(() => {
     if (!(window as any).XLSX) {
@@ -492,6 +499,32 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const nombreNegocioActivo = esSucursalExterna ? sucursalAsociada.nombre : config.empresaNombre;
   const direccionNegocioActivo = esSucursalExterna ? `${sucursalAsociada.direccion || ''} (${sucursalAsociada.ciudad || ''})` : config.direccion;
   const whatsappNegocioActivo = esSucursalExterna ? sucursalAsociada.telefono : config.whatsapp;
+
+  // Cargar datos fiscales propios del local gremio si existen
+  useEffect(() => {
+    if (sucursalAsociada) {
+      setFiscalesLocal({
+        razonSocial: sucursalAsociada.razonSocial || sucursalAsociada.encargado || sucursalAsociada.nombre,
+        cuit: sucursalAsociada.cuit || '',
+        condicionIva: sucursalAsociada.condicionIva || 'Responsable Monotributo',
+        puntoVentaArca: sucursalAsociada.puntoVentaArca || '00001',
+        ingresosBrutos: sucursalAsociada.ingresosBrutos || '',
+        inicioActividades: sucursalAsociada.inicioActividades || '01/01/2023'
+      });
+    }
+  }, [sucursalAsociada]);
+
+  // Objeto fiscal activo (de Central o del Local Asociado) para usar al imprimir Facturas ARCA
+  const datosFiscalesActivos = esSucursalExterna ? {
+    empresaNombre: sucursalAsociada.nombre,
+    razonSocial: fiscalesLocal.razonSocial || sucursalAsociada.nombre,
+    cuit: fiscalesLocal.cuit || '00-00000000-0',
+    condicionIva: fiscalesLocal.condicionIva || 'Responsable Monotributo',
+    puntoVentaArca: fiscalesLocal.puntoVentaArca || '00001',
+    ingresosBrutos: fiscalesLocal.ingresosBrutos || fiscalesLocal.cuit,
+    inicioActividades: fiscalesLocal.inicioActividades || '01/01/2023',
+    direccion: direccionNegocioActivo
+  } : config;
 
   const rolNormalizado: 'admin' | 'recepcion_ordenes' | 'vendedor_admin' = sucursalDirecta 
     ? 'admin' 
@@ -548,6 +581,30 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return () => { if ((window as any).__scanner) { try { (window as any).__scanner.clear(); } catch(e){} } };
   }, [escaneandoPara]);
 
+  // =========================================================================
+  // GENERADOR DE CAE Y NUMERACIÓN CORRELATIVA ARCA
+  // =========================================================================
+  const generarDatosFacturaARCA = (tipoCmp: string, cuitReceptor: string, razonReceptor: string, condIvaReceptor: string, caeManual?: string) => {
+    const ptoVta = String(datosFiscalesActivos.puntoVentaArca || "00001").padStart(5, "0");
+    const facturasPreviasDelTipo = misFinanzas.filter(m => m.factura && m.factura.tipo === tipoCmp).length;
+    const proximoNumero = String(facturasPreviasDelTipo + 1).padStart(8, "0");
+    const caeGenerado = caeManual || ("74" + Math.floor(100000000000 + Math.random() * 900000000000).toString());
+    const vto = new Date();
+    vto.setDate(vto.getDate() + 10);
+
+    return {
+      tipo: tipoCmp,
+      puntoVenta: ptoVta,
+      numero: `${ptoVta}-${proximoNumero}`,
+      cuit: cuitReceptor || "00-00000000-0",
+      razonSocialReceptor: razonReceptor || "Consumidor Final",
+      condicionIvaReceptor: condIvaReceptor || "Consumidor Final",
+      cae: caeGenerado,
+      vtoCae: vto.toLocaleDateString(),
+      fechaEmision: new Date().toLocaleDateString()
+    };
+  };
+
   // --- Funciones POS Mostrador ---
   const agregarAlPOS = (p: any) => {
     if (p.stock <= 0) return alert('Sin stock disponible.');
@@ -580,7 +637,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
           });
         }
       }
-      await addDoc(collection(db, 'finanzas'), {
+
+      const facturaArcaObj = tipoFacturaPOS !== 'SIN_FACTURA'
+        ? generarDatosFacturaARCA(tipoFacturaPOS, cuitPOS, clientePOS, condicionIvaPOS)
+        : null;
+
+      const itemsVenta = carritoPOS.map(i => ({ nombre: i.nombre, cantidad: i.cantidad, precio: i.precio }));
+
+      const docRef = await addDoc(collection(db, 'finanzas'), {
         ownerId: tenantId,
         tipo: 'ingreso',
         concepto: `Venta POS Mostrador (${clientePOS}) - ${carritoPOS.length} ítems`,
@@ -589,11 +653,20 @@ const DashboardTaller = ({ user }: { user: User }) => {
         metodoPago: metodoPagoPOS,
         fecha: serverTimestamp(),
         usuario: user.email,
-        items: carritoPOS.map(i => ({ nombre: i.nombre, cantidad: i.cantidad, precio: i.precio }))
+        items: itemsVenta,
+        factura: facturaArcaObj
       });
+
+      if (facturaArcaObj) {
+        imprimirFacturaARCA({ id: docRef.id, monto: totalFinalPOS, metodoPago: metodoPagoPOS, items: itemsVenta, factura: facturaArcaObj }, datosFiscalesActivos);
+      } else {
+        alert(`⚡ Cobro de $${totalFinalPOS.toLocaleString()} registrado en tu Caja.`);
+      }
+
       setCarritoPOS([]);
       setClientePOS('Consumidor Final');
-      alert(`⚡ Cobro de $${totalFinalPOS.toLocaleString()} registrado en tu Caja y descontado de tu stock.`);
+      setCuitPOS('');
+      setTipoFacturaPOS('SIN_FACTURA');
     } catch (e) {
       alert('Error al procesar venta POS.');
     }
@@ -1266,7 +1339,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const guardarConfiguracion = async (e: React.FormEvent) => { 
     e.preventDefault(); 
     await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); 
-    alert('⚡ Parámetros y Tema Visual guardados.'); 
+    alert('⚡ Datos Fiscales ARCA, Tema y Parámetros guardados.'); 
+  };
+
+  const guardarFiscalesLocalGremio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sucursalAsociada) return;
+    await updateDoc(doc(db, 'talleres_gremio', sucursalAsociada.id), fiscalesLocal);
+    alert('✅ Datos Fiscales ARCA de tu local actualizados correctamente.');
   };
 
   const clientesConsolidados = React.useMemo(() => {
@@ -1392,7 +1472,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {puedeVentasStockFinanzas && (
-          <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Mi Caja POS Mostrador</button>
+          <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>🛒 2. Caja POS & ARCA</button>
         )}
 
         <button onClick={() => setPestaña('presupuestos')} className={`neon-btn side-btn ${pestaña === 'presupuestos' ? 'active' : ''}`}>
@@ -1422,13 +1502,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
             <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>🌐 8. Mis Pedidos Web</button>
             <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>👥 9. Mis Clientes CRM</button>
             <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>🚚 10. Importar mi Excel</button>
-            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 11. Mi Caja & Finanzas</button>
+            <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>💰 11. Finanzas & Facturar ARCA</button>
           </>
         )}
 
         {esAdminDelNegocioActivo && (
           <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>
-            🛡️ 12. {esSucursalExterna ? 'Mi Personal & Roles' : 'Temas, Config & Roles'}
+            🛡️ 12. {esSucursalExterna ? 'Datos ARCA & Roles' : 'ARCA, Temas & Roles'}
           </button>
         )}
 
@@ -1445,7 +1525,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <div>
                 <h2 className="glow-text-cyan" style={{ margin: 0 }}>📊 Panel de Control // {nombreNegocioActivo}</h2>
                 <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  📍 {direccionNegocioActivo} | 📱 WhatsApp Activo: {whatsappNegocioActivo}
+                  📍 {direccionNegocioActivo} | 📱 WhatsApp: {whatsappNegocioActivo} | 🏛️ CUIT ARCA: <b>{datosFiscalesActivos.cuit}</b> (Pto. Vta: {datosFiscalesActivos.puntoVentaArca})
                 </div>
                 <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
                   Link de tu Tienda Pública Exclusiva: <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-green" style={{ fontWeight: 'bold' }}>{urlVitrinaPropia}</a>
@@ -1491,10 +1571,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <div className="neon-card">
                 <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>⚡ Acciones Directas de {nombreNegocioActivo}</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Vender en Caja POS</button>
+                  <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green" style={{ padding: '14px' }}>🛒 Caja POS & Facturar ARCA</button>
                   <button onClick={() => setPestaña('presupuestos')} className="neon-btn neon-btn-fillCyan" style={{ padding: '14px' }}>📄 Crear Presupuesto</button>
                   <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-purple" style={{ padding: '14px' }}>🛠️ Ingresar Equipo</button>
-                  <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>📦 Cargar Precios Lista</button>
+                  <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-pink" style={{ padding: '14px' }}>🏛️ Configurar ARCA / Roles</button>
                 </div>
               </div>
 
@@ -1513,10 +1593,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* MÓDULO 2: PUNTO DE VENTA (POS) */}
+        {/* ============================================================ */}
+        {/* MÓDULO 2: PUNTO DE VENTA (POS) + EMISIÓN DIRECTA EN ARCA     */}
+        {/* ============================================================ */}
         {pestaña === 'pos' && puedeVentasStockFinanzas && (
           <div>
-            <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 Caja POS Mostrador // {nombreNegocioActivo}</h2>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>🛒 Caja POS Mostrador & Facturación ARCA // {nombreNegocioActivo}</h2>
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div className="neon-card" style={{ flex: '2 1 500px' }}>
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
@@ -1541,20 +1623,40 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
               </div>
 
-              <div className="neon-card neon-card-green" style={{ flex: '1 1 320px' }}>
-                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 Ticket de Venta Local</h3>
-                <div style={{ marginBottom: '10px' }}>
-                  <label className="label-neon">Cliente</label>
-                  <input type="text" className="neon-input" value={clientePOS} onChange={e=>setClientePOS(e.target.value)} />
+              <div className="neon-card neon-card-green" style={{ flex: '1 1 340px' }}>
+                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🧾 Ticket / Factura Electrónica ARCA</h3>
+                
+                {/* Selector de Comprobante ARCA en Mostrador */}
+                <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', marginBottom: '12px', border: '1px solid rgba(0,122,255,0.2)' }}>
+                  <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>🏛️ Comprobante Fiscal ARCA (Pto. Vta: {datosFiscalesActivos.puntoVentaArca})</label>
+                  <select className="neon-select" value={tipoFacturaPOS} onChange={e=>setTipoFacturaPOS(e.target.value as any)} style={{ marginBottom: '8px', fontWeight: 'bold' }}>
+                    <option value="SIN_FACTURA">🧾 Solo Ticket Interno (Sin Facturar en ARCA)</option>
+                    <option value="C">🏛️ Emitir Factura C Electrónica ARCA</option>
+                    <option value="B">🏛️ Emitir Factura B Electrónica ARCA</option>
+                    <option value="A">🏛️ Emitir Factura A Electrónica ARCA</option>
+                  </select>
+                  <input type="text" className="neon-input" placeholder="Nombre / Razón Social Receptor" value={clientePOS} onChange={e=>setClientePOS(e.target.value)} style={{ marginBottom: '8px' }} />
+                  {tipoFacturaPOS !== 'SIN_FACTURA' && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input type="text" className="neon-input" placeholder="CUIT o DNI Receptor" value={cuitPOS} onChange={e=>setCuitPOS(e.target.value)} />
+                      <select className="neon-select" value={condicionIvaPOS} onChange={e=>setCondicionIvaPOS(e.target.value)}>
+                        <option value="Consumidor Final">Cons. Final</option>
+                        <option value="Responsable Monotributo">Monotributo</option>
+                        <option value="IVA Responsable Inscripto">Resp. Inscripto</option>
+                        <option value="IVA Sujeto Exento">Exento</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
-                <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '15px', borderTop: '1px solid rgba(128,128,128,0.15)' }}>
+
+                <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '12px', borderTop: '1px solid rgba(128,128,128,0.15)' }}>
                   {carritoPOS.map(item => (
                     <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(128,128,128,0.1)' }}>
                       <div><b>{item.cantidad}x</b> {item.nombre}<br/><small className="glow-text-cyan">Lista: ${(item.precio * item.cantidad).toLocaleString()}</small></div>
                       <button onClick={() => setCarritoPOS(carritoPOS.filter(i => i.id !== item.id))} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>✕</button>
                     </div>
                   ))}
-                  {carritoPOS.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>Selecciona artículos de tu stock a la izquierda.</p>}
+                  {carritoPOS.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>Selecciona artículos a la izquierda.</p>}
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
@@ -1577,7 +1679,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
 
                 <button onClick={cobrarVentaPOS} disabled={carritoPOS.length === 0} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
-                  ✅ Cobrar en Mi Caja
+                  {tipoFacturaPOS === 'SIN_FACTURA' ? '✅ Cobrar en Mi Caja' : `🏛️ Cobrar y Emitir Factura ${tipoFacturaPOS} ARCA`}
                 </button>
               </div>
             </div>
@@ -1588,14 +1690,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {pestaña === 'presupuestos' && (
           <div>
             <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>📄 Generador de Presupuestos y Cotizaciones // {nombreNegocioActivo}</h2>
-            <p style={{ color: 'var(--text-muted)', marginTop: '-8px', marginBottom: '20px' }}>
-              Arma cotizaciones combinando artículos de tu stock y mano de obra sin descontar inventario. El sistema calcula automáticamente el precio en Efectivo, Precio de Lista y Tarjeta.
-            </p>
-
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
               <div className="neon-card" style={{ flex: '1 1 420px' }}>
                 <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>1. Agregar Repuestos o Mano de Obra</h3>
-                
                 <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', marginBottom: '16px' }}>
                   <label className="label-neon">🛠️ Agregar Mano de Obra / Servicio o Repuesto Manual</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1949,7 +2046,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* MÓDULO 6: STOCK Y CARGA EXPLICITA DEL PRECIO DE LISTA */}
+        {/* MÓDULO 6: STOCK Y CARGA DEL PRECIO DE LISTA */}
         {pestaña === 'catalogo' && puedeVentasStockFinanzas && (
           <div>
             <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
@@ -2186,9 +2283,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
         {pestaña === 'proveedores' && puedeVentasStockFinanzas && (
           <div className="neon-card">
             <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🚚 Importar Lista Excel al Stock de {nombreNegocioActivo}</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px' }}>
-              El sistema tomará la columna de Costo de tu Excel, le sumará el <b>{config.margenGanancia}% de ganancia</b> y lo guardará automáticamente como el <b>Precio de Lista</b> de cada artículo.
-            </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
               <div><label className="label-neon">Proveedor</label><input type="text" className="neon-input" value={nombreProveedorExcel} onChange={e=>setNombreProveedorExcel(e.target.value)} /></div>
               <div><label className="label-neon">Moneda</label><select className="neon-select" value={monedaListaExcel} onChange={e=>setMonedaListaExcel(e.target.value as any)}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (x ${config.cotizacionDolar})</option></select></div>
@@ -2208,10 +2302,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* MÓDULO 11: FINANZAS PRIVADAS POR LOCAL */}
+        {/* ========================================================================= */}
+        {/* MÓDULO 11: FINANZAS + EMISIÓN E IMPRESIÓN DE FACTURAS ARCA CON QR         */}
+        {/* ========================================================================= */}
         {pestaña === 'finanzas' && puedeVentasStockFinanzas && (
           <div>
-            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 Caja y Movimientos Financieros // {nombreNegocioActivo}</h2>
+            <h2 className="glow-text-green" style={{ marginTop: 0 }}>💰 Caja, Movimientos y Facturación ARCA // {nombreNegocioActivo}</h2>
             <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               <select className="neon-select" value={filtroTiempo} onChange={e=>setFiltroTiempo(e.target.value)} style={{ width: 'auto' }}><option value="todos">Todo el Historial</option><option value="hoy">Hoy</option><option value="mes">Este Mes</option></select>
               <select className="neon-select" value={filtroTipoLista} onChange={e=>setFiltroTipoLista(e.target.value)} style={{ width: 'auto' }}><option value="todos">Ingresos y Egresos</option><option value="ingreso">Solo Ingresos</option><option value="egreso">Solo Egresos</option></select>
@@ -2236,28 +2332,98 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </div>
               </form>
 
-              <div className="neon-card" style={{ flex: '2 1 600px', overflowX: 'auto' }}>
+              <div className="neon-card" style={{ flex: '2 1 620px', overflowX: 'auto' }}>
                 <table className="neon-table">
-                  <thead><tr><th>Fecha</th><th>Concepto</th><th>Medio</th><th style={{ textAlign: 'right' }}>Monto</th><th>Borrar</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Concepto (Click ▶ para Facturar en ARCA)</th><th>Medio</th><th style={{ textAlign: 'right' }}>Monto</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {movimientosFiltrados.map(m => (
                       <React.Fragment key={m.id}>
                         <tr>
                           <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{m.fecha ? new Date(m.fecha.seconds * 1000).toLocaleString() : 'Reciente'}</td>
                           <td>
-                            {m.items?.length > 0 && (
+                            {m.tipo === 'ingreso' && (
                               <button onClick={() => setExpandidoId(expandidoId === m.id ? null : m.id)} className="neon-btn" style={{ padding: '4px 10px', marginRight: '6px' }}>{expandidoId === m.id ? '▼' : '▶'}</button>
                             )}
                             <b>{m.concepto}</b>
+                            {m.factura && (
+                              <span className="neon-badge" style={{ marginLeft: '8px', background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)' }}>
+                                🏛️ FAC {m.factura.tipo} #{m.factura.numero}
+                              </span>
+                            )}
                           </td>
                           <td className="glow-text-cyan" style={{ textTransform: 'uppercase' }}>{m.metodoPago}</td>
                           <td style={{ textAlign: 'right', fontWeight: 'bold' }} className={m.tipo === 'ingreso' ? 'glow-text-green' : 'glow-text-red'}>{m.tipo === 'ingreso' ? '+' : '-'}${m.monto?.toLocaleString()}</td>
-                          <td><button onClick={async()=>{if(window.confirm('¿Borrar?'))await deleteDoc(doc(db,'finanzas',m.id))}} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>🗑️</button></td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '5px' }}>
+                              {m.factura && (
+                                <button onClick={() => imprimirFacturaARCA(m, datosFiscalesActivos)} className="neon-btn neon-btn-fillCyan" style={{ padding: '4px 10px' }} title="Imprimir Factura ARCA con QR">🖨️ ARCA</button>
+                              )}
+                              <button onClick={async()=>{if(window.confirm('¿Borrar?'))await deleteDoc(doc(db,'finanzas',m.id))}} className="neon-btn neon-btn-red" style={{ padding: '4px 10px' }}>🗑️</button>
+                            </div>
+                          </td>
                         </tr>
                         {expandidoId === m.id && (
                           <tr style={{ background: 'rgba(0, 122, 255, 0.04)' }}>
-                            <td colSpan={5} style={{ padding: '12px' }}>
-                              <b>Ítems:</b> {m.items?.map((it:any)=>`${it.cantidad}x ${it.nombre} ($${it.precio})`).join(' | ')}
+                            <td colSpan={5} style={{ padding: '16px' }}>
+                              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: '1 1 240px', background: 'var(--bg-input)', padding: '14px', borderRadius: '14px' }}>
+                                  <h4 className="glow-text-cyan" style={{ margin: '0 0 8px 0' }}>📦 Detalle de Ítems de la Operación</h4>
+                                  {m.items?.length > 0 ? (
+                                    <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                                      {m.items.map((it:any, idx:number)=><li key={idx}><b>{it.cantidad}x</b> {it.nombre} (${it.precio})</li>)}
+                                    </ul>
+                                  ) : <span style={{ color: 'var(--text-muted)' }}>Movimiento directo sin desglose de artículos.</span>}
+                                </div>
+
+                                {/* PANEL EMISOR DE FACTURA ELECTRÓNICA ARCA */}
+                                <div style={{ flex: '1 1 320px', background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.25)' }}>
+                                  <h4 className="glow-text-green" style={{ margin: '0 0 10px 0' }}>🏛️ Facturación Electrónica ARCA (ex AFIP)</h4>
+                                  {m.factura ? (
+                                    <div style={{ fontSize: '14px', lineHeight: '1.6' }}>
+                                      <div><b>Comprobante:</b> Factura {m.factura.tipo} N° {m.factura.numero}</div>
+                                      <div><b>Receptor:</b> {m.factura.razonSocialReceptor} ({m.factura.cuit}) - {m.factura.condicionIvaReceptor}</div>
+                                      <div><b>CAE Autorizado:</b> <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{m.factura.cae}</span> (Vto: {m.factura.vtoCae})</div>
+                                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                                        <button onClick={() => imprimirFacturaARCA(m, datosFiscalesActivos)} className="neon-btn neon-btn-fillCyan">🖨️ Imprimir Factura ARCA (QR)</button>
+                                        <button onClick={() => updateDoc(doc(db, 'finanzas', m.id), { factura: null })} className="neon-btn neon-btn-red">Anular Vínculo</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      <div style={{ display: 'flex', gap: '8px' }}>
+                                        <select id={`arca-tipo-${m.id}`} className="neon-select" style={{ width: '110px', fontWeight: 'bold' }}>
+                                          <option value="C">Factura C</option>
+                                          <option value="B">Factura B</option>
+                                          <option value="A">Factura A</option>
+                                        </select>
+                                        <select id={`arca-iva-${m.id}`} className="neon-select" style={{ flex: 1 }}>
+                                          <option value="Consumidor Final">Consumidor Final</option>
+                                          <option value="Responsable Monotributo">Monotributo</option>
+                                          <option value="IVA Responsable Inscripto">Resp. Inscripto</option>
+                                          <option value="IVA Sujeto Exento">IVA Exento</option>
+                                        </select>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input id={`arca-cuit-${m.id}`} type="text" className="neon-input" placeholder="CUIT o DNI Receptor" style={{ flex: 1 }} />
+                                        <input id={`arca-nombre-${m.id}`} type="text" className="neon-input" placeholder="Nombre / Razón Social" defaultValue="Consumidor Final" style={{ flex: 1 }} />
+                                      </div>
+                                      <input id={`arca-cae-${m.id}`} type="text" className="neon-input" placeholder="CAE Manual (Opcional - Dejar vacío para autogenerar CAE)" />
+                                      <button onClick={async () => {
+                                        const tipo = (document.getElementById(`arca-tipo-${m.id}`) as HTMLSelectElement).value;
+                                        const condIva = (document.getElementById(`arca-iva-${m.id}`) as HTMLSelectElement).value;
+                                        const cuitRec = (document.getElementById(`arca-cuit-${m.id}`) as HTMLInputElement).value;
+                                        const nomRec = (document.getElementById(`arca-nombre-${m.id}`) as HTMLInputElement).value;
+                                        const caeMan = (document.getElementById(`arca-cae-${m.id}`) as HTMLInputElement).value;
+                                        const nuevaFac = generarDatosFacturaARCA(tipo, cuitRec, nomRec, condIva, caeMan);
+                                        await updateDoc(doc(db, 'finanzas', m.id), { factura: nuevaFac });
+                                        imprimirFacturaARCA({ ...m, factura: nuevaFac }, datosFiscalesActivos);
+                                      }} className="neon-btn neon-btn-fillCyan" style={{ width: '100%' }}>
+                                        ⚡ Emitir Comprobante ARCA y Abrir PDF con QR
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -2270,9 +2436,121 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* MÓDULO 12: GESTIÓN DE USUARIOS Y ROLES + CONFIG DE LISTAS */}
+        {/* ========================================================================= */}
+        {/* MÓDULO 12: DATOS FISCALES ARCA + TEMAS + ROLES DE PERSONAL                */}
+        {/* ========================================================================= */}
         {pestaña === 'configuracion' && esAdminDelNegocioActivo && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            
+            {/* 1. CONFIGURACIÓN FISCAL ARCA PARA LOCALES ASOCIADOS */}
+            {esSucursalExterna && (
+              <form onSubmit={guardarFiscalesLocalGremio} className="neon-card neon-card-green">
+                <h3 className="glow-text-green" style={{ marginTop: 0 }}>🏛️ Datos Fiscales ARCA (ex AFIP) de {nombreNegocioActivo}</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-6px', marginBottom: '16px' }}>
+                  Configura los datos fiscales de tu local para que todas las facturas electrónicas A, B o C salgan emitidas con tu propio CUIT, Punto de Venta y Código QR oficial de ARCA.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+                  <div><label className="label-neon">Razón Social / Titular</label><input type="text" className="neon-input" value={fiscalesLocal.razonSocial} onChange={e=>setFiscalesLocal({...fiscalesLocal, razonSocial: e.target.value})} required /></div>
+                  <div><label className="label-neon">CUIT Emisor (Con o sin guiones)</label><input type="text" className="neon-input" value={fiscalesLocal.cuit} onChange={e=>setFiscalesLocal({...fiscalesLocal, cuit: e.target.value})} placeholder="20-XXXXXXXX-X" required /></div>
+                  <div>
+                    <label className="label-neon">Condición frente al IVA</label>
+                    <select className="neon-select" value={fiscalesLocal.condicionIva} onChange={e=>setFiscalesLocal({...fiscalesLocal, condicionIva: e.target.value})}>
+                      <option value="Responsable Monotributo">Responsable Monotributo (Emite Fac C)</option>
+                      <option value="IVA Responsable Inscripto">IVA Responsable Inscripto (Emite Fac A y B)</option>
+                      <option value="IVA Sujeto Exento">IVA Sujeto Exento</option>
+                    </select>
+                  </div>
+                  <div><label className="label-neon">Punto de Venta ARCA (5 dígitos)</label><input type="text" className="neon-input" value={fiscalesLocal.puntoVentaArca} onChange={e=>setFiscalesLocal({...fiscalesLocal, puntoVentaArca: e.target.value})} placeholder="00001" required /></div>
+                  <div><label className="label-neon">N° Ingresos Brutos (IIBB)</label><input type="text" className="neon-input" value={fiscalesLocal.ingresosBrutos} onChange={e=>setFiscalesLocal({...fiscalesLocal, ingresosBrutos: e.target.value})} /></div>
+                  <div><label className="label-neon">Inicio de Actividades</label><input type="text" className="neon-input" value={fiscalesLocal.inicioActividades} onChange={e=>setFiscalesLocal({...fiscalesLocal, inicioActividades: e.target.value})} placeholder="01/01/2023" /></div>
+                </div>
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>💾 Guardar Mis Datos Fiscales ARCA</button>
+              </form>
+            )}
+
+            {/* 2. CONFIGURACIÓN FISCAL ARCA Y PARÁMETROS PARA CENTRAL MASTER */}
+            {!esSucursalExterna && (
+              <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* BLOQUE ARCA CENTRAL */}
+                <div style={{ background: 'var(--bg-input)', padding: '18px', borderRadius: '16px', border: '1px solid rgba(40,205,65,0.3)' }}>
+                  <h3 className="glow-text-green" style={{ marginTop: 0 }}>🏛️ Configuración Fiscal y Facturación Electrónica ARCA (ex AFIP)</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                    <div><label className="label-neon">Razón Social Titular</label><input type="text" className="neon-input" value={conf.razonSocial || ''} onChange={e=>setConf({...conf, razonSocial: e.target.value})} placeholder="JOSE LUIS SENA" /></div>
+                    <div><label className="label-neon">CUIT Emisor ARCA</label><input type="text" className="neon-input" value={conf.cuit || ''} onChange={e=>setConf({...conf, cuit: e.target.value})} placeholder="20-XXXXXXXX-X" /></div>
+                    <div>
+                      <label className="label-neon">Condición frente al IVA</label>
+                      <select className="neon-select" value={conf.condicionIva || 'Responsable Monotributo'} onChange={e=>setConf({...conf, condicionIva: e.target.value})}>
+                        <option value="Responsable Monotributo">Responsable Monotributo (Factura C)</option>
+                        <option value="IVA Responsable Inscripto">IVA Responsable Inscripto (Factura A / B)</option>
+                        <option value="IVA Sujeto Exento">IVA Sujeto Exento</option>
+                      </select>
+                    </div>
+                    <div><label className="label-neon">Punto de Venta ARCA (Ej: 00001)</label><input type="text" className="neon-input" value={conf.puntoVentaArca || '00001'} onChange={e=>setConf({...conf, puntoVentaArca: e.target.value})} /></div>
+                    <div><label className="label-neon">Ingresos Brutos (IIBB / ARBA)</label><input type="text" className="neon-input" value={conf.ingresosBrutos || ''} onChange={e=>setConf({...conf, ingresosBrutos: e.target.value})} /></div>
+                    <div><label className="label-neon">Fecha Inicio Actividades</label><input type="text" className="neon-input" value={conf.inicioActividades || ''} onChange={e=>setConf({...conf, inicioActividades: e.target.value})} placeholder="01/03/2020" /></div>
+                    <div>
+                      <label className="label-neon">Entorno WebService ARCA (WSFEv1)</label>
+                      <select className="neon-select" value={conf.modoArca || 'homologacion'} onChange={e=>setConf({...conf, modoArca: e.target.value})}>
+                        <option value="homologacion">🧪 Homologación / Testing (Emisión CAE Simulado)</option>
+                        <option value="produccion">🏛️ Producción (Certificado Digital WSFEv1)</option>
+                        <option value="manual">✍️ Talonario / CAE Manual</option>
+                      </select>
+                    </div>
+                    <div><label className="label-neon">Alias computador fiscal WSASS</label><input type="text" className="neon-input" value={conf.arcaAliasWsfe || ''} onChange={e=>setConf({...conf, arcaAliasWsfe: e.target.value})} /></div>
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label className="label-neon">Certificado Digital ARCA (.CRT PEM)</label>
+                        <textarea className="neon-textarea" rows={2} placeholder="-----BEGIN CERTIFICATE----- ..." value={conf.arcaCertCrt || ''} onChange={e=>setConf({...conf, arcaCertCrt: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="label-neon">Clave Privada ARCA (.KEY PEM)</label>
+                        <textarea className="neon-textarea" rows={2} placeholder="-----BEGIN PRIVATE KEY----- ..." value={conf.arcaPrivateKey || ''} onChange={e=>setConf({...conf, arcaPrivateKey: e.target.value})} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BLOQUE APARIENCIA Y TEMAS */}
+                <h3 className="glow-text-cyan" style={{ margin: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
+                  <div>
+                    <label className="label-neon">Seleccionar Tema de la Aplicación</label>
+                    <select className="neon-select" value={conf.temaVisual || 'claro'} onChange={e=>setConf({...conf, temaVisual: e.target.value})}>
+                      <option value="claro">☀️ Clásico Claro (Estilo iOS 26.1 Suave)</option>
+                      <option value="oscuro">🌙 Clásico Oscuro (Grafito Descansado)</option>
+                      <option value="sistema">🖥️ Automático (Tomar Configuración del Sistema)</option>
+                      <option value="neon">⚡ Cyberpunk Neón (Tema Original)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-neon">Tamaño de Letra General</label>
+                    <select className="neon-select" value={conf.tamanoFuenteBase || 17} onChange={e=>setConf({...conf, tamanoFuenteBase: Number(e.target.value)})}>
+                      <option value={15}>Normal (15px)</option>
+                      <option value={17}>Grande y Cómodo (17px - Recomendado)</option>
+                      <option value={19}>Extra Grande (19px - Máxima Lectura)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* BLOQUE COMERCIAL */}
+                <h3 className="glow-text-cyan" style={{ margin: 0 }}>⚙️ Parámetros Comerciales, Precios de Lista y Laboratorio</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                  <div><label className="label-neon">Nombre Fantasía</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
+                  <div><label className="label-neon">Dirección Comercial</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
+                  <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={conf.whatsapp} onChange={e=>setConf({...conf, whatsapp: e.target.value})} /></div>
+                  <div><label className="label-neon">Dólar Ref ($)</label><input type="number" className="neon-input" value={conf.cotizacionDolar} onChange={e=>setConf({...conf, cotizacionDolar: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Markup sobre Costo (% Precio Lista)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Descuento Efectivo sobre Lista (%)</label><input type="number" className="neon-input" value={conf.descuentoEfectivoPorcentaje} onChange={e=>setConf({...conf, descuentoEfectivoPorcentaje: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Recargo Tarjeta sobre Lista (%)</label><input type="number" className="neon-input" value={conf.recargoTarjetaPorcentaje} onChange={e=>setConf({...conf, recargoTarjetaPorcentaje: Number(e.target.value)})} /></div>
+                  <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
+                  <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
+                </div>
+                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '15px' }}>💾 Guardar Configuración Fiscal ARCA, Tema y Parámetros</button>
+              </form>
+            )}
+
+            {/* 3. GESTIÓN DE USUARIOS Y ROLES */}
             <div className="neon-card">
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🛡️ Gestión de Usuarios y Roles de {nombreNegocioActivo}</h3>
               <form onSubmit={agregarUsuarioRol} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
@@ -2329,44 +2607,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </table>
             </div>
 
-            {!esSucursalExterna && (
-              <form onSubmit={guardarConfiguracion} className="neon-card" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>🎨 Apariencia Visual, Tipografía y Botones (Estilo iOS 26.1)</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', background: 'var(--bg-input)', padding: '16px', borderRadius: '16px' }}>
-                  <div>
-                    <label className="label-neon">Seleccionar Tema de la Aplicación</label>
-                    <select className="neon-select" value={conf.temaVisual || 'claro'} onChange={e=>setConf({...conf, temaVisual: e.target.value})}>
-                      <option value="claro">☀️ Clásico Claro (Estilo iOS 26.1 Suave)</option>
-                      <option value="oscuro">🌙 Clásico Oscuro (Grafito Descansado)</option>
-                      <option value="sistema">🖥️ Automático (Tomar Configuración del Sistema)</option>
-                      <option value="neon">⚡ Cyberpunk Neón (Tema Original)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label-neon">Tamaño de Letra General</label>
-                    <select className="neon-select" value={conf.tamanoFuenteBase || 17} onChange={e=>setConf({...conf, tamanoFuenteBase: Number(e.target.value)})}>
-                      <option value={15}>Normal (15px)</option>
-                      <option value={17}>Grande y Cómodo (17px - Recomendado)</option>
-                      <option value={19}>Extra Grande (19px - Máxima Lectura)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <h3 className="glow-text-cyan" style={{ marginTop: '10px', marginBottom: 0 }}>⚙️ Parámetros de Precios de Lista, Descuentos y Recargos</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-                  <div><label className="label-neon">Empresa Central</label><input type="text" className="neon-input" value={conf.empresaNombre} onChange={e=>setConf({...conf, empresaNombre: e.target.value})} /></div>
-                  <div><label className="label-neon">Dirección</label><input type="text" className="neon-input" value={conf.direccion} onChange={e=>setConf({...conf, direccion: e.target.value})} /></div>
-                  <div><label className="label-neon">WhatsApp</label><input type="text" className="neon-input" value={conf.whatsapp} onChange={e=>setConf({...conf, whatsapp: e.target.value})} /></div>
-                  <div><label className="label-neon">Dólar Ref ($)</label><input type="number" className="neon-input" value={conf.cotizacionDolar} onChange={e=>setConf({...conf, cotizacionDolar: Number(e.target.value)})} /></div>
-                  <div><label className="label-neon">Markup sobre Costo (% para Precio Lista)</label><input type="number" className="neon-input" value={conf.margenGanancia} onChange={e=>setConf({...conf, margenGanancia: Number(e.target.value)})} /></div>
-                  <div><label className="label-neon">Descuento Efectivo sobre Lista (%)</label><input type="number" className="neon-input" value={conf.descuentoEfectivoPorcentaje} onChange={e=>setConf({...conf, descuentoEfectivoPorcentaje: Number(e.target.value)})} /></div>
-                  <div><label className="label-neon">Recargo Tarjeta sobre Lista (%)</label><input type="number" className="neon-input" value={conf.recargoTarjetaPorcentaje} onChange={e=>setConf({...conf, recargoTarjetaPorcentaje: Number(e.target.value)})} /></div>
-                  <div><label className="label-neon">Alias / CBU</label><input type="text" className="neon-input" value={conf.aliasTransferencia} onChange={e=>setConf({...conf, aliasTransferencia: e.target.value})} /></div>
-                  <div style={{ gridColumn: '1 / -1' }}><label className="label-neon">Sectores de Laboratorio</label><input type="text" className="neon-input" value={conf.sectoresTaller} onChange={e=>setConf({...conf, sectoresTaller: e.target.value})} /></div>
-                </div>
-                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ padding: '15px' }}>💾 Guardar Tema y Parámetros</button>
-              </form>
-            )}
           </div>
         )}
 
