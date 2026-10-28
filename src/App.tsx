@@ -304,7 +304,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
     };
   }, []);
 
-  // --- FUNCIÓN PARA CONSULTAR EL DÓLAR EN LA WEB Y GUARDARLO EN CONFIGURACIÓN ---
   const sincronizarDolarAhora = async (tipoElegido?: string, mostrarAlerta: boolean = true) => {
     setSincronizandoDolar(true);
     try {
@@ -385,6 +384,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
+  // Stock exclusivo del Local (Accesorios) para la Caja POS Mostrador
+  const misAccesoriosLocalPOS = misProductos.filter(p => !p.esDeProveedor && p.descripcion !== 'Importado de lista');
+
   const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
   const misPedidosWeb = pedidosWeb.filter(p => (p.ownerId || 'MASTER') === tenantId);
   const misEmpleados = usuariosRoles.filter(u => (u.tenantId || 'MASTER') === tenantId);
@@ -683,7 +685,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
         {tienePermisoModulo('pos') && (
           <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>
-            🛒 2. Caja POS & ARCA
+            🛒 2. Caja POS (Accesorios)
           </button>
         )}
         {tienePermisoModulo('presupuestos') && (
@@ -703,7 +705,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
         {tienePermisoModulo('catalogo') && (
           <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>
-            📦 6. Stock, Inflación y URL
+            📦 6. Stock Local y Proveedores
           </button>
         )}
         {tienePermisoModulo('rma') && (
@@ -816,13 +818,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
+        {/* CAJA POS MOSTRADOR: SOLO MUESTRA ACCESORIOS DEL LOCAL (NO MEZCLA PROVEEDORES DE TALLER) */}
         {pestaña === 'pos' && (
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div className="neon-card" style={{ flex: '2 1 480px' }}>
+              <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
+                🛍️ Venta Mostrador — Stock Exclusivo del Local ({misAccesoriosLocalPOS.length} accesorios)
+              </h3>
               <input 
                 type="text" 
                 className="neon-input" 
-                placeholder="🔍 Buscar artículo en mi stock..." 
+                placeholder="🔍 Buscar accesorio o producto del local..." 
                 value={busquedaPOS} 
                 onChange={e => setBusquedaPOS(e.target.value)} 
                 style={{ marginBottom: '12px' }} 
@@ -830,14 +836,14 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <table className="neon-table">
                 <thead>
                   <tr>
-                    <th>Artículo</th>
+                    <th>Accesorio / Artículo Local</th>
                     <th>Stock</th>
                     <th>Lista</th>
                     <th>Acción</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {misProductos
+                  {misAccesoriosLocalPOS
                     .filter(p => p.stock > 0 && p.nombre.toLowerCase().includes(busquedaPOS.toLowerCase()))
                     .slice(0, 15)
                     .map(p => (
@@ -1156,9 +1162,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* MÓDULO 11: CONFIGURACIÓN DE DÓLAR WEB, FLETES, ESCALAS USD Y USUARIOS     */}
-        {/* ========================================================================= */}
         {pestaña === 'configuracion' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
             {!esSucursalExterna && (
@@ -1170,7 +1173,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 }} 
                 style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
               >
-                {/* 1. BLOQUE DÓLAR GLOBAL (WEB AUTOMÁTICO + MANUAL EDITABLE) */}
                 <div className="neon-card neon-card-green">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
                     <h3 className="glow-text-green" style={{ margin: 0 }}>
@@ -1223,7 +1225,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* 2. BLOQUE COSTOS DE FLETES, COMISIONISTAS Y ESCALAS EN USD */}
                 <div className="neon-card neon-card-purple">
                   <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
                     🚚 2. Costos de Fletes (Comisionistas), Repartidor Local y Escalas en USD
@@ -1306,7 +1307,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* 3. BLOQUE DATOS FISCALES ARCA, CUOTAS Y URL EXTERNA */}
                 <div className="neon-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
                   <h3 className="glow-text-cyan" style={{ gridColumn: '1 / -1', margin: 0 }}>
                     🏛️ 3. Datos Fiscales ARCA, Tarjetas/Cuotas y URL de Catálogo Externo
@@ -1362,7 +1362,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </form>
             )}
 
-            {/* 4. GESTIÓN DE USUARIOS Y PERMISOS */}
             <div className="neon-card">
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
                 {idUsuarioEditando ? '✏️ Editando Usuario y Permisos' : `🛡️ Gestión de Usuarios, Roles y Permisos (${nombreNegocioActivo})`}
@@ -1496,7 +1495,6 @@ export default function App() {
         if (d.tamanoFuenteBase) setFontSizeActivo(Number(d.tamanoFuenteBase));
         if (d.cotizacionDolar) setDolarGlobal(Number(d.cotizacionDolar));
 
-        // Si está activada la sincronización automática con la web, verifica la cotización del día al iniciar
         if (d.dolarAutoWeb !== false && !(window as any).__dolarSincronizadoHoy) {
           (window as any).__dolarSincronizadoHoy = true;
           const valorWeb = await obtenerDolarDesdeWeb(d.dolarTipoFuente || 'blue');

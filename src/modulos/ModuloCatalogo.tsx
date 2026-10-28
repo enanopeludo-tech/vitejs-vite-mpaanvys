@@ -1,6 +1,6 @@
 // src/modulos/ModuloCatalogo.tsx
 import React, { useState } from 'react';
-import { collection, addDoc, updateDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { aplicarRedondeo } from '../estilosTema';
 
@@ -19,6 +19,9 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   config,
   setEscaneandoPara
 }) => {
+  // Selector principal que separa el Stock del Local vs el Stock de Proveedores de Taller
+  const [vistaInventario, setVistaInventario] = useState<'local' | 'proveedores'>('local');
+
   const [idEditando, setIdEditando] = useState<string | null>(null);
   const [prodNom, setProdNom] = useState('');
   const [prodCat, setProdCat] = useState('');
@@ -32,23 +35,25 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const [prodProveedor, setProdProveedor] = useState('');
   const [prodUrlOrigen, setProdUrlOrigen] = useState('');
   const [prodDestacado, setProdDestacado] = useState(false);
-  const [esDeProveedor, setEsDeProveedor] = useState(false);
 
   const [urlExternaInput, setUrlExternaInput] = useState('');
   const [extrayendoUrl, setExtrayendoUrl] = useState(false);
 
   const [inflacionPorcentaje, setInflacionPorcentaje] = useState('10');
   const [inflacionCategoria, setInflacionCategoria] = useState('Todas');
-  const [inflacionOrigen, setInflacionOrigen] = useState<'todos' | 'propios' | 'proveedores'>('todos');
   const [inflacionPrecioMin, setInflacionPrecioMin] = useState('');
   const [inflacionPrecioMax, setInflacionPrecioMax] = useState('');
   const [aplicandoInflacion, setAplicandoInflacion] = useState(false);
 
   const [busquedaInventario, setBusquedaInventario] = useState('');
   const [filtroCategoriaInv, setFiltroCategoriaInv] = useState('Todas');
-  const [filtroOrigenInv, setFiltroOrigenInv] = useState<'todos' | 'propios' | 'proveedores'>('todos');
 
-  const categoriasUnicas = ['Todas', ...Array.from(new Set(misProductos.map(p => p.categoria || 'General')))];
+  // Separación estricta de listas
+  const articulosDelLocal = misProductos.filter(p => !p.esDeProveedor && p.descripcion !== 'Importado de lista');
+  const articulosDeProveedores = misProductos.filter(p => Boolean(p.esDeProveedor || p.descripcion === 'Importado de lista'));
+
+  const listaActivaSegunPestana = vistaInventario === 'local' ? articulosDelLocal : articulosDeProveedores;
+  const categoriasUnicas = ['Todas', ...Array.from(new Set(listaActivaSegunPestana.map(p => p.categoria || 'General')))];
 
   const extraerDatosDesdeUrl = async () => {
     if (!urlExternaInput) return alert('Pega una URL o término de búsqueda para traer los datos.');
@@ -76,7 +81,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
           const sugerido = aplicarRedondeo(Number(metaPrice) * (1 + Number(config.margenGanancia || 35) / 100), config.redondeoPrecios);
           setProdPrecio(sugerido.toString());
         }
-        alert('✅ Datos extraídos de la URL. Verifica el Precio de Lista y presiona Publicar.');
+        alert('✅ Datos extraídos de la URL. Verifica el Precio de Lista y presiona Guardar.');
       } else {
         const baseApi = config.urlsProveedoresVinculados || 'https://api.mercadolibre.com/sites/MLA/search?q=';
         const resp = await fetch(`${baseApi}${encodeURIComponent(urlExternaInput)}`);
@@ -105,17 +110,16 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     const porc = Number(inflacionPorcentaje);
     if (isNaN(porc) || porc === 0) return alert('Ingresa un porcentaje válido (Ej: 15 para subir 15%, o -10 para bajar 10%).');
 
-    const articulosAfectados = misProductos.filter(p => {
+    const articulosAfectados = listaActivaSegunPestana.filter(p => {
       if (inflacionCategoria !== 'Todas' && (p.categoria || 'General') !== inflacionCategoria) return false;
-      if (inflacionOrigen === 'propios' && p.esDeProveedor) return false;
-      if (inflacionOrigen === 'proveedores' && !p.esDeProveedor) return false;
       if (inflacionPrecioMin && Number(p.precio || 0) < Number(inflacionPrecioMin)) return false;
       if (inflacionPrecioMax && Number(p.precio || 0) > Number(inflacionPrecioMax)) return false;
       return true;
     });
 
+    const etiquetaSeccion = vistaInventario === 'local' ? 'Stock del Local (Accesorios)' : 'Catálogo de Proveedores (Taller)';
     if (articulosAfectados.length === 0) return alert('Ningún artículo coincide con los filtros seleccionados.');
-    if (!window.confirm(`📈 AJUSTE DE INFLACIÓN:\nSe actualizarán ${articulosAfectados.length} artículos aplicando un ${porc > 0 ? `+${porc}%` : `${porc}%`}.\n¿Confirmar actualización masiva?`)) return;
+    if (!window.confirm(`📈 AJUSTE DE INFLACIÓN EN ${etiquetaSeccion.toUpperCase()}:\nSe actualizarán ${articulosAfectados.length} artículos aplicando un ${porc > 0 ? `+${porc}%` : `${porc}%`}.\n¿Confirmar actualización?`)) return;
 
     setAplicandoInflacion(true);
     try {
@@ -140,7 +144,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         }
       }
       if (cont > 0) await batch.commit();
-      alert(`✅ ¡Ajuste por Inflación completado! Se actualizaron ${articulosAfectados.length} artículos.`);
+      alert(`✅ ¡Ajuste por Inflación completado! Se actualizaron ${articulosAfectados.length} artículos de ${etiquetaSeccion}.`);
     } catch (e: any) {
       alert('Error al aplicar ajuste: ' + e.message);
     } finally {
@@ -150,6 +154,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
 
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
+    const esDeProveedorActual = vistaInventario === 'proveedores';
     const dataProducto = { 
       ownerId: tenantId,
       nombre: prodNom,
@@ -158,11 +163,11 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
       costoProveedor: Number(prodCosto) || 0,
       stock: Number(prodStock), 
       ubicacion: prodUbicacion,
-      descripcion: prodDesc,
+      descripcion: prodDesc || (esDeProveedorActual ? 'Repuesto de Proveedor' : 'Accesorio Oficial'),
       imagenUrl: prodImg, 
       proveedor: prodProveedor,
       urlProveedor: prodUrlOrigen,
-      esDeProveedor: esDeProveedor,
+      esDeProveedor: esDeProveedorActual,
       ultimaActualizacion: new Date().toLocaleDateString(), 
       codigoBarras: prodCodigoBarras,
       destacado: prodDestacado 
@@ -175,24 +180,22 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const limpiarFormulario = () => {
     setIdEditando(null); setProdNom(''); setProdCat(''); setProdPrecio(''); setProdCosto('');
     setProdStock(''); setProdUbicacion(''); setProdDesc(''); setProdImg(''); setProdCodigoBarras('');
-    setProdProveedor(''); setProdUrlOrigen(''); setProdDestacado(false); setEsDeProveedor(false);
+    setProdProveedor(''); setProdUrlOrigen(''); setProdDestacado(false);
   };
 
   const cargarParaEdicion = (p: any) => {
+    setVistaInventario(p.esDeProveedor || p.descripcion === 'Importado de lista' ? 'proveedores' : 'local');
     setIdEditando(p.id); setProdNom(p.nombre); setProdCat(p.categoria || '');
     setProdPrecio(p.precio?.toString() || ''); setProdCosto(p.costoProveedor?.toString() || '');
     setProdStock(p.stock?.toString() || ''); setProdUbicacion(p.ubicacion || '');
     setProdDesc(p.descripcion || ''); setProdImg(p.imagenUrl || '');
     setProdCodigoBarras(p.codigoBarras || ''); setProdProveedor(p.proveedor || '');
     setProdUrlOrigen(p.urlProveedor || ''); setProdDestacado(Boolean(p.destacado));
-    setEsDeProveedor(Boolean(p.esDeProveedor));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const inventarioFiltrado = misProductos.filter(p => {
+  const inventarioFiltrado = listaActivaSegunPestana.filter(p => {
     if (filtroCategoriaInv !== 'Todas' && (p.categoria || 'General') !== filtroCategoriaInv) return false;
-    if (filtroOrigenInv === 'propios' && p.esDeProveedor) return false;
-    if (filtroOrigenInv === 'proveedores' && !p.esDeProveedor) return false;
     if (busquedaInventario) {
       const b = busquedaInventario.toLowerCase();
       return p.nombre.toLowerCase().includes(b) || (p.codigoBarras && p.codigoBarras.includes(b)) || (p.ubicacion && p.ubicacion.toLowerCase().includes(b));
@@ -206,19 +209,51 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
 
   return (
     <div>
+      {/* SELECTOR SUPERIOR QUE SEPARA STOCK DEL LOCAL VS STOCK DE PROVEEDORES DE TALLER */}
+      <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h2 className="glow-text-cyan" style={{ margin: 0 }}>
+            {vistaInventario === 'local' ? '🛍️ Stock del Local (Accesorios y Tienda Oficial)' : '🔧 Stock de Proveedores (Repuestos de Taller)'}
+          </h2>
+          <small style={{ color: 'var(--text-muted)' }}>
+            {vistaInventario === 'local' 
+              ? 'Estos artículos son exclusivos de tu local y se muestran en la Tienda Oficial y Caja POS.' 
+              : 'Estos repuestos son de tus listas de proveedores para Taller y Presupuestos (no se mezclan con la venta de accesorios).'}
+          </small>
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            type="button" 
+            onClick={() => { setVistaInventario('local'); setFiltroCategoriaInv('Todas'); }} 
+            className={`neon-btn ${vistaInventario === 'local' ? 'neon-btn-fillCyan' : ''}`}
+          >
+            🛍️ Stock Local Accesorios ({articulosDelLocal.length})
+          </button>
+          <button 
+            type="button" 
+            onClick={() => { setVistaInventario('proveedores'); setFiltroCategoriaInv('Todas'); }} 
+            className={`neon-btn ${vistaInventario === 'proveedores' ? 'neon-btn-fillCyan' : ''}`}
+          >
+            🔧 Stock Proveedores Taller ({articulosDeProveedores.length})
+          </button>
+        </div>
+      </div>
+
+      {/* FORMULARIO DE CARGA */}
       <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 className="glow-text-cyan" style={{ margin: 0 }}>
-            {idEditando ? '✏️ Editando Artículo' : `➕ Cargar Artículo en ${nombreNegocioActivo}`}
+            {idEditando 
+              ? '✏️ Editando Artículo' 
+              : vistaInventario === 'local' 
+                ? `➕ Cargar Accesorio / Producto Propio en ${nombreNegocioActivo}` 
+                : `➕ Cargar Repuesto en Catálogo de Proveedores`}
           </h3>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <label style={{ fontWeight: 'bold', cursor: 'pointer', color: !esDeProveedor ? 'var(--neon-green)' : 'var(--text-muted)' }}>
-              <input type="checkbox" checked={!esDeProveedor} onChange={e => setEsDeProveedor(!e.target.checked)} /> 🛍️ Artículo Mío (Visible en Tienda Oficial)
-            </label>
+          {vistaInventario === 'local' && (
             <label style={{ fontWeight: 'bold', cursor: 'pointer' }}>
-              <input type="checkbox" checked={prodDestacado} onChange={e => setProdDestacado(e.target.checked)} /> ⭐ Destacar
+              <input type="checkbox" checked={prodDestacado} onChange={e => setProdDestacado(e.target.checked)} /> ⭐ Destacar en Tienda Oficial
             </label>
-          </div>
+          )}
         </div>
 
         <div style={{ background: 'var(--bg-input)', padding: '12px 15px', borderRadius: '14px', marginBottom: '14px', border: '1px dashed var(--neon-cyan)' }}>
@@ -286,8 +321,8 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
           <input type="text" className="neon-input" placeholder="Nombre del Artículo *" value={prodNom} onChange={e => setProdNom(e.target.value)} required />
-          <input type="text" className="neon-input" placeholder="Categoría (Ej: Cargadores) *" value={prodCat} onChange={e => setProdCat(e.target.value)} required />
-          <input type="text" className="neon-input" placeholder="📍 Gaveta / Ubicación" value={prodUbicacion} onChange={e => setProdUbicacion(e.target.value)} />
+          <input type="text" className="neon-input" placeholder="Categoría *" value={prodCat} onChange={e => setProdCat(e.target.value)} required />
+          <input type="text" className="neon-input" placeholder={vistaInventario === 'local' ? "📍 Estante / Gaveta" : "🏢 Nombre Proveedor"} value={vistaInventario === 'local' ? prodUbicacion : prodProveedor} onChange={e => vistaInventario === 'local' ? setProdUbicacion(e.target.value) : setProdProveedor(e.target.value)} />
           <div style={{ display: 'flex', gap: '5px' }}>
             <input type="text" className="neon-input" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e => setProdCodigoBarras(e.target.value)} />
             <button type="button" onClick={() => setEscaneandoPara('formulario')} className="neon-btn">📷</button>
@@ -295,14 +330,14 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-          <input type="text" className="neon-input" placeholder="Descripción para la tienda..." value={prodDesc} onChange={e => setProdDesc(e.target.value)} />
+          <input type="text" className="neon-input" placeholder="Descripción..." value={prodDesc} onChange={e => setProdDesc(e.target.value)} />
           <input type="text" className="neon-input" placeholder="URL Imagen (Opcional)" value={prodImg} onChange={e => setProdImg(e.target.value)} />
-          <input type="text" className="neon-input" placeholder="URL Proveedor vinculada" value={prodUrlOrigen} onChange={e => setProdUrlOrigen(e.target.value)} />
+          <input type="text" className="neon-input" placeholder="URL Externa vinculada" value={prodUrlOrigen} onChange={e => setProdUrlOrigen(e.target.value)} />
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
           <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '13px' }}>
-            {idEditando ? '💾 Guardar Cambios' : '➕ Publicar Artículo'}
+            {idEditando ? '💾 Guardar Cambios' : vistaInventario === 'local' ? '➕ Guardar en Stock del Local' : '➕ Guardar en Stock de Proveedores'}
           </button>
           {idEditando && (
             <button type="button" onClick={limpiarFormulario} className="neon-btn neon-btn-red">
@@ -315,7 +350,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
       {/* BLOQUE 2: HERRAMIENTA DE AJUSTE DE INFLACIÓN */}
       <div className="neon-card neon-card-yellow" style={{ marginBottom: '20px' }}>
         <h3 className="glow-text-yellow" style={{ marginTop: 0 }}>
-          📈 Ajuste de Inflación (Por Categoría o Rango de Precios)
+          📈 Ajuste de Inflación en {vistaInventario === 'local' ? 'Stock del Local' : 'Catálogo de Proveedores'}
         </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', alignItems: 'flex-end' }}>
           <div>
@@ -326,14 +361,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
             <label className="label-neon">Filtrar Categoría</label>
             <select className="neon-select" value={inflacionCategoria} onChange={e => setInflacionCategoria(e.target.value)}>
               {categoriasUnicas.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label-neon">Origen de Artículos</label>
-            <select className="neon-select" value={inflacionOrigen} onChange={e => setInflacionOrigen(e.target.value as any)}>
-              <option value="todos">Todos (Míos y Proveedores)</option>
-              <option value="propios">🛍️ Solo Artículos Míos</option>
-              <option value="proveedores">🚚 Solo Listas Proveedores</option>
             </select>
           </div>
           <div>
@@ -350,14 +377,16 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
       </div>
 
-      {/* BLOQUE 3: TABLA DE INVENTARIO */}
+      {/* BLOQUE 3: TABLA DE INVENTARIO SEPARADA */}
       <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <input type="text" className="neon-input" placeholder="🔍 Buscar por nombre, código o ubicación..." value={busquedaInventario} onChange={e => setBusquedaInventario(e.target.value)} style={{ flex: 1 }} />
-        <select className="neon-select" value={filtroOrigenInv} onChange={e => setFiltroOrigenInv(e.target.value as any)} style={{ width: 'auto' }}>
-          <option value="todos">Todos los Artículos ({misProductos.length})</option>
-          <option value="propios">🛍️ Solo Artículos Míos (Tienda Oficial)</option>
-          <option value="proveedores">🚚 Solo Catálogo Proveedores (Interno)</option>
-        </select>
+        <input 
+          type="text" 
+          className="neon-input" 
+          placeholder={vistaInventario === 'local' ? "🔍 Buscar accesorio en Stock del Local..." : "🔍 Buscar repuesto en Catálogo de Proveedores..."} 
+          value={busquedaInventario} 
+          onChange={e => setBusquedaInventario(e.target.value)} 
+          style={{ flex: 1 }} 
+        />
         <select className="neon-select" value={filtroCategoriaInv} onChange={e => setFiltroCategoriaInv(e.target.value)} style={{ width: 'auto' }}>
           {categoriasUnicas.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -367,8 +396,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         <table className="neon-table">
           <thead>
             <tr>
-              <th>Visibilidad</th>
-              <th>Ubicación</th>
+              <th>{vistaInventario === 'local' ? 'Ubicación' : 'Proveedor'}</th>
               <th>Artículo / Categoría</th>
               <th>Costo</th>
               <th>Precio Lista</th>
@@ -383,13 +411,8 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
               return (
                 <tr key={p.id}>
                   <td>
-                    <span className="neon-badge" style={{ background: p.esDeProveedor ? 'rgba(255,149,0,0.15)' : 'rgba(40,205,65,0.15)', color: p.esDeProveedor ? 'var(--neon-yellow)' : 'var(--neon-green)' }}>
-                      {p.esDeProveedor ? '🚚 Proveedor' : '🛍️ Tienda Oficial'}
-                    </span>
-                  </td>
-                  <td>
                     <span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>
-                      📍 {p.ubicacion || 'S/U'}
+                      {vistaInventario === 'local' ? `📍 ${p.ubicacion || 'Local'}` : `🚚 ${p.proveedor || 'Proveedor'}`}
                     </span>
                   </td>
                   <td>
@@ -414,11 +437,28 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
                     </div>
                   </td>
                   <td>
-                    <button onClick={() => cargarParaEdicion(p)} className="neon-btn">✏️</button>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => cargarParaEdicion(p)} className="neon-btn" title="Editar">✏️</button>
+                      <button 
+                        onClick={() => updateDoc(doc(db, 'productos', p.id), { esDeProveedor: !p.esDeProveedor })} 
+                        className="neon-btn" 
+                        title={vistaInventario === 'local' ? "Mover a Catálogo de Proveedores" : "Mover a Stock del Local"}
+                      >
+                        ⇄
+                      </button>
+                      <button onClick={() => { if (window.confirm('¿Eliminar artículo?')) deleteDoc(doc(db, 'productos', p.id)); }} className="neon-btn neon-btn-red">🗑️</button>
+                    </div>
                   </td>
                 </tr>
               );
             })}
+            {inventarioFiltrado.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                  No hay artículos cargados en {vistaInventario === 'local' ? 'Stock del Local' : 'Catálogo de Proveedores'}.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
