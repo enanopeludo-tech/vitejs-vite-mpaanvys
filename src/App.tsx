@@ -1275,6 +1275,8 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [temaActivo, setTemaActivo] = useState<string>('claro');
   const [fontSizeActivo, setFontSizeActivo] = useState<number>(17);
+  const [rolesGlobal, setRolesGlobal] = useState<any[]>([]);
+  const [talleresGlobal, setTalleresGlobal] = useState<any[]>([]);
 
   useEffect(() => { 
     const u = onAuthStateChanged(auth, u => { 
@@ -1288,8 +1290,27 @@ export default function App() {
         if (d.tamanoFuenteBase) setFontSizeActivo(Number(d.tamanoFuenteBase));
       }
     });
-    return () => { u(); unsubConf(); }; 
+    const unsubR = onSnapshot(query(collection(db, 'usuarios_roles')), snap => {
+      setRolesGlobal(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const unsubT = onSnapshot(query(collection(db, 'talleres_gremio')), snap => {
+      setTalleresGlobal(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { u(); unsubConf(); unsubR(); unsubT(); }; 
   }, []);
+
+  // --- ACTUALIZACIÓN DINÁMICA DEL TÍTULO DE LA PESTAÑA DEL NAVEGADOR ---
+  useEffect(() => {
+    if (!user) {
+      document.title = 'Walabba Tecno';
+      return;
+    }
+    const emailActual = user.email?.toLowerCase() || '';
+    const perfilEmpleado = rolesGlobal.find(r => r.email?.toLowerCase() === emailActual);
+    const perfilTaller = talleresGlobal.find(t => t.email?.toLowerCase() === emailActual);
+    const nombreMostrar = perfilEmpleado?.nombre || perfilTaller?.nombre || user.displayName || user.email?.split('@')[0] || 'Admin';
+    document.title = `Walabba Tecno + ${nombreMostrar}`;
+  }, [user, rolesGlobal, talleresGlobal]);
 
   if (cargando) {
     return (
