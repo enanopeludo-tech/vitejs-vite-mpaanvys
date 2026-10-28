@@ -108,6 +108,15 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     setCalcManoObra('0');
   };
 
+  const enviarRepuestoACalculadoraUsd = (p: any) => {
+    const dolarHoy = Number(config.cotizacionDolar || 1200);
+    const costoBaseArs = Number(p.costoProveedor || p.precio || 0);
+    const usdEstimado = Math.max(1, Math.round((costoBaseArs / dolarHoy) * 10) / 10);
+    setCalcDescRepuesto(`Cambio de ${p.nombre}`);
+    setCalcCostoUsd(usdEstimado.toString());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const agregarProductoAPresupuesto = (p: any) => {
     const existe = itemsPresupuesto.find(i => i.nombre === p.nombre);
     if (existe) {
@@ -508,7 +517,16 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
                       </small>
                     </td>
                     <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
-                    <td><button type="button" onClick={() => agregarProductoAPresupuesto(p)} className="neon-btn">+ Cotizar</button></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button type="button" onClick={() => agregarProductoAPresupuesto(p)} className="neon-btn">+ Directo</button>
+                        {origenStockBuscador === 'proveedores' && (
+                          <button type="button" onClick={() => enviarRepuestoACalculadoraUsd(p)} className="neon-btn neon-btn-purple" title="Cargar en Calculadora USD + Flete">
+                            🧮 USD
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {productosFiltradosPorOrigen.length === 0 && (
@@ -526,7 +544,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
         {/* BLOQUE 3: RESUMEN FINANCIERO MULTIPAGO + 50% DE SEÑA + CADETERÍA */}
         <form onSubmit={guardarPresupuesto} className="neon-card neon-card-green" style={{ flex: '1 1 440px' }}>
           <h3 className="glow-text-green" style={{ marginTop: 0 }}>3. Cliente, Entrega, Medios de Pago y 50% Seña</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' }}>
             <div>
               <label className="label-neon">Nombre del Cliente *</label>
               <input type="text" className="neon-input" required value={presCliente} onChange={e => setPresCliente(e.target.value)} placeholder="Ej: Juan Pérez" />
@@ -540,6 +558,10 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
               <input type="text" className="neon-input" value={presEquipo} onChange={e => setPresEquipo(e.target.value)} placeholder="Ej: Samsung A52" />
             </div>
             <div>
+              <label className="label-neon">Validez (Días)</label>
+              <input type="number" className="neon-input" value={presValidez} onChange={e => setPresValidez(e.target.value)} />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
               <label className="label-neon">Logística de Entrega / Retiro</label>
               <select className="neon-select" value={modalidadEntregaPres} onChange={e => setModalidadEntregaPres(e.target.value as any)}>
                 <option value="retira_local">📍 Retira por el Local ($0)</option>
@@ -643,3 +665,4 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     </div>
   );
 };
+// --- FIN DEL ARCHIVO MODULOPRESUPUESTOS.TSX ---
