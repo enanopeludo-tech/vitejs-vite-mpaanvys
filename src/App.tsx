@@ -30,7 +30,8 @@ import {
   LISTA_MODULOS_PERMISOS, 
   aplicarRedondeo, 
   getEstilosTema, 
-  imprimirFacturaARCA 
+  imprimirFacturaARCA,
+  obtenerDolarDesdeWeb
 } from './estilosTema';
 import { TiendaPublica } from './modulos/TiendaPublica';
 import { ModuloCatalogo } from './modulos/ModuloCatalogo';
@@ -199,6 +200,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [presupuestos, setPresupuestos] = useState<any[]>([]);
   const [pestaña, setPestaña] = useState('dashboard'); 
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
+  const [sincronizandoDolar, setSincronizandoDolar] = useState(false);
 
   // Estados POS
   const [carritoPOS, setCarritoPOS] = useState<any[]>([]);
@@ -301,6 +303,31 @@ const DashboardTaller = ({ user }: { user: User }) => {
       unsubFinanzas(); unsubRoles(); unsubTalleres(); unsubRmas(); unsubPres(); 
     };
   }, []);
+
+  // --- FUNCIÓN PARA CONSULTAR EL DÓLAR EN LA WEB Y GUARDARLO EN CONFIGURACIÓN ---
+  const sincronizarDolarAhora = async (tipoElegido?: string, mostrarAlerta: boolean = true) => {
+    setSincronizandoDolar(true);
+    try {
+      const fuente = tipoElegido || conf.dolarTipoFuente || 'blue';
+      const valorWeb = await obtenerDolarDesdeWeb(fuente);
+      if (valorWeb && valorWeb > 0) {
+        const ahoraStr = new Date().toLocaleString();
+        setConf((prev: any) => ({ ...prev, cotizacionDolar: valorWeb, dolarUltimaSync: ahoraStr }));
+        await setDoc(doc(db, 'configuracion', 'general'), { 
+          cotizacionDolar: valorWeb, 
+          dolarTipoFuente: fuente,
+          dolarUltimaSync: ahoraStr 
+        }, { merge: true });
+        if (mostrarAlerta) {
+          alert(`💵 Cotización Dólar (${fuente.toUpperCase()}) actualizada desde la web: $${valorWeb}`);
+        }
+      } else if (mostrarAlerta) {
+        alert('No se pudo leer la cotización web en este momento. Puedes ingresarla manualmente.');
+      }
+    } finally {
+      setSincronizandoDolar(false);
+    }
+  };
 
   const sucursalDirecta = talleresGremio.find(
     t => t.email?.toLowerCase() === user.email?.toLowerCase()
@@ -622,9 +649,25 @@ const DashboardTaller = ({ user }: { user: User }) => {
           <div className="glow-text-cyan" style={{ fontWeight: 800, fontSize: '16px' }}>
             {nombreNegocioActivo}
           </div>
-          <small style={{ color: 'var(--text-muted)' }}>
+          <small style={{ color: 'var(--text-muted)', display: 'block' }}>
             CUIT: {datosFiscalesActivos.cuit}
           </small>
+          <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-input)', padding: '5px 10px', borderRadius: '10px' }}>
+            <span className="glow-text-green" style={{ fontWeight: 'bold', fontSize: '13px' }}>
+              💵 USD: ${config.cotizacionDolar}
+            </span>
+            {!esSucursalExterna && (
+              <button 
+                onClick={() => sincronizarDolarAhora(undefined, true)} 
+                disabled={sincronizandoDolar}
+                className="neon-btn" 
+                style={{ padding: '2px 8px', fontSize: '11px' }}
+                title="Actualizar Dólar desde la Web"
+              >
+                {sincronizandoDolar ? '...' : '🔄'}
+              </button>
+            )}
+          </div>
         </div>
 
         {!esSucursalExterna && rolNormalizado !== 'admin' && (
@@ -685,7 +728,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
         {esAdminDelNegocioActivo && (
           <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>
-            🛡️ 11. ARCA, URLs y Usuarios
+            🛡️ 11. Dólar, Fletes y Config
           </button>
         )}
 
@@ -701,19 +744,23 @@ const DashboardTaller = ({ user }: { user: User }) => {
               <h2 className="glow-text-cyan" style={{ margin: 0 }}>
                 📊 Panel Principal // {nombreNegocioActivo}
               </h2>
+              <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                💵 Cotización Dólar Global Activa: <b className="glow-text-green">${config.cotizacionDolar}</b> ({config.dolarTipoFuente?.toUpperCase() || 'BLUE'})
+                {config.dolarUltimaSync && ` — Actualizado: ${config.dolarUltimaSync}`}
+              </div>
               <span>
                 Tienda Oficial:{' '}
-                <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-green" style={{ fontWeight: 'bold' }}>
+                <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-cyan" style={{ fontWeight: 'bold' }}>
                   {urlVitrinaPropia}
                 </a>
               </span>
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button onClick={() => setPestaña('catalogo')} className="neon-btn neon-btn-fillCyan">
-                📈 Ir a Ajuste de Inflación / Stock
+              <button onClick={() => sincronizarDolarAhora(undefined, true)} className="neon-btn neon-btn-green">
+                🔄 Sincronizar Dólar Web (${config.cotizacionDolar})
               </button>
-              <button onClick={() => setPestaña('proveedores')} className="neon-btn neon-btn-purple">
-                🌐 Traer Artículos por URL
+              <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-fillCyan">
+                🚚 Configurar Fletes y Dólar
               </button>
             </div>
           </div>
@@ -1109,8 +1156,213 @@ const DashboardTaller = ({ user }: { user: User }) => {
           </div>
         )}
 
+        {/* ========================================================================= */}
+        {/* MÓDULO 11: CONFIGURACIÓN DE DÓLAR WEB, FLETES, ESCALAS USD Y USUARIOS     */}
+        {/* ========================================================================= */}
         {pestaña === 'configuracion' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            {!esSucursalExterna && (
+              <form 
+                onSubmit={async (e) => { 
+                  e.preventDefault(); 
+                  await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); 
+                  alert('⚡ Cotización Dólar, Costos de Fletes, Escalas USD y Configuración guardados en todo el sistema.'); 
+                }} 
+                style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
+              >
+                {/* 1. BLOQUE DÓLAR GLOBAL (WEB AUTOMÁTICO + MANUAL EDITABLE) */}
+                <div className="neon-card neon-card-green">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                    <h3 className="glow-text-green" style={{ margin: 0 }}>
+                      💵 1. Cotización del Dólar Global (Sincronización Web + Edición Manual)
+                    </h3>
+                    <button 
+                      type="button" 
+                      onClick={() => sincronizarDolarAhora(conf.dolarTipoFuente, true)} 
+                      disabled={sincronizandoDolar} 
+                      className="neon-btn neon-btn-green"
+                    >
+                      {sincronizandoDolar ? 'Consultando Web...' : '🌐 Leer Cotización de la Web Ahora'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                    <div>
+                      <label className="label-neon" style={{ color: 'var(--neon-green)' }}>
+                        Valor del Dólar Activo ($) — Editable
+                      </label>
+                      <input 
+                        type="number" 
+                        className="neon-input" 
+                        value={conf.cotizacionDolar} 
+                        onChange={e => setConf({ ...conf, cotizacionDolar: Number(e.target.value) })} 
+                        style={{ fontWeight: 'bold', fontSize: '18px', borderColor: 'var(--neon-green)' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">Fuente Web de Referencia</label>
+                      <select 
+                        className="neon-select" 
+                        value={conf.dolarTipoFuente || 'blue'} 
+                        onChange={e => setConf({ ...conf, dolarTipoFuente: e.target.value })}
+                      >
+                        <option value="blue">💵 Dólar Blue (Venta)</option>
+                        <option value="oficial">🏦 Dólar Oficial (Venta)</option>
+                        <option value="bolsa">📈 Dólar MEP / Bolsa</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', paddingTop: '18px' }}>
+                      <label style={{ cursor: 'pointer', fontWeight: 'bold' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={conf.dolarAutoWeb !== false} 
+                          onChange={e => setConf({ ...conf, dolarAutoWeb: e.target.checked })} 
+                        />{' '}
+                        🔄 Sincronizar automáticamente desde la web al iniciar el sistema
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. BLOQUE COSTOS DE FLETES, COMISIONISTAS Y ESCALAS EN USD */}
+                <div className="neon-card neon-card-purple">
+                  <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
+                    🚚 2. Costos de Fletes (Comisionistas), Repartidor Local y Escalas en USD
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>
+                        Agenda y Tarifas de Comisionistas / Fletes de Origen (Formato: Nombre y Días:Costo separados por coma)
+                      </label>
+                      <input 
+                        type="text" 
+                        className="neon-input" 
+                        value={conf.comisionistasLista || ''} 
+                        onChange={e => setConf({ ...conf, comisionistasLista: e.target.value })} 
+                        placeholder="Comisionista Mar del Plata (Lun/Mié/Vie):4500, Comisionista CABA (Mar/Jue):7500, Sin Flete:0"
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">🛵 Costo Repartidor / Cadete Local ($)</label>
+                      <input 
+                        type="number" 
+                        className="neon-input" 
+                        value={conf.repartidorLocalCosto || 2000} 
+                        onChange={e => setConf({ ...conf, repartidorLocalCosto: Number(e.target.value) })} 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">📦 Costo Envío Tienda Web ($)</label>
+                      <input 
+                        type="number" 
+                        className="neon-input" 
+                        value={conf.envioLocalCosto || 1500} 
+                        onChange={e => setConf({ ...conf, envioLocalCosto: Number(e.target.value) })} 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">⚠️ Tope USD Gremio sin Seña (USD)</label>
+                      <input 
+                        type="number" 
+                        className="neon-input" 
+                        value={conf.topeUsdSinSenaGremio || 70} 
+                        onChange={e => setConf({ ...conf, topeUsdSinSenaGremio: Number(e.target.value) })} 
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px', background: 'var(--bg-input)', padding: '14px', borderRadius: '14px' }}>
+                    <div>
+                      <label className="label-neon">Escala 1: Hasta USD</label>
+                      <input type="number" className="neon-input" value={conf.escala1MaxUsd || 30} onChange={e => setConf({ ...conf, escala1MaxUsd: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">% Ganancia Central (Esc. 1)</label>
+                      <input type="number" className="neon-input" value={conf.escala1MargenPublico || 80} onChange={e => setConf({ ...conf, escala1MargenPublico: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">% Ganancia Gremio (Esc. 1)</label>
+                      <input type="number" className="neon-input" value={conf.escala1MargenGremio || 45} onChange={e => setConf({ ...conf, escala1MargenGremio: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">Escala 2: Hasta USD</label>
+                      <input type="number" className="neon-input" value={conf.escala2MaxUsd || 80} onChange={e => setConf({ ...conf, escala2MaxUsd: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">% Ganancia Central (Esc. 2)</label>
+                      <input type="number" className="neon-input" value={conf.escala2MargenPublico || 55} onChange={e => setConf({ ...conf, escala2MargenPublico: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">% Ganancia Gremio (Esc. 2)</label>
+                      <input type="number" className="neon-input" value={conf.escala2MargenGremio || 30} onChange={e => setConf({ ...conf, escala2MargenGremio: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">% Central (+USD {conf.escala2MaxUsd || 80})</label>
+                      <input type="number" className="neon-input" value={conf.escala3MargenPublico || 35} onChange={e => setConf({ ...conf, escala3MargenPublico: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="label-neon">% Gremio (+USD {conf.escala2MaxUsd || 80})</label>
+                      <input type="number" className="neon-input" value={conf.escala3MargenGremio || 20} onChange={e => setConf({ ...conf, escala3MargenGremio: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. BLOQUE DATOS FISCALES ARCA, CUOTAS Y URL EXTERNA */}
+                <div className="neon-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                  <h3 className="glow-text-cyan" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                    🏛️ 3. Datos Fiscales ARCA, Tarjetas/Cuotas y URL de Catálogo Externo
+                  </h3>
+                  <div>
+                    <label className="label-neon">Razón Social ARCA</label>
+                    <input type="text" className="neon-input" value={conf.razonSocial || ''} onChange={e => setConf({ ...conf, razonSocial: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">CUIT ARCA</label>
+                    <input type="text" className="neon-input" value={conf.cuit || ''} onChange={e => setConf({ ...conf, cuit: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Punto de Venta ARCA</label>
+                    <input type="text" className="neon-input" value={conf.puntoVentaArca || '00001'} onChange={e => setConf({ ...conf, puntoVentaArca: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Margen General Stock (%)</label>
+                    <input type="number" className="neon-input" value={conf.margenGanancia} onChange={e => setConf({ ...conf, margenGanancia: Number(e.target.value) })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Descuento Efectivo (%)</label>
+                    <input type="number" className="neon-input" value={conf.descuentoEfectivoPorcentaje} onChange={e => setConf({ ...conf, descuentoEfectivoPorcentaje: Number(e.target.value) })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Recargo Tarjeta 1 Pago (%)</label>
+                    <input type="number" className="neon-input" value={conf.recargoTarjeta1Pago || 15} onChange={e => setConf({ ...conf, recargoTarjeta1Pago: Number(e.target.value), recargoTarjetaPorcentaje: Number(e.target.value) })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Recargo 3 Cuotas (%)</label>
+                    <input type="number" className="neon-input" value={conf.recargoTarjeta3Cuotas || 28} onChange={e => setConf({ ...conf, recargoTarjeta3Cuotas: Number(e.target.value) })} />
+                  </div>
+                  <div>
+                    <label className="label-neon">Recargo 6 Cuotas (%)</label>
+                    <input type="number" className="neon-input" value={conf.recargoTarjeta6Cuotas || 45} onChange={e => setConf({ ...conf, recargoTarjeta6Cuotas: Number(e.target.value) })} />
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>
+                      🌐 URL de Catálogo / Página Externa Vinculada para Traer Artículos y Precios:
+                    </label>
+                    <input 
+                      type="text" 
+                      className="neon-input" 
+                      value={conf.urlsProveedoresVinculados || ''} 
+                      onChange={e => setConf({ ...conf, urlsProveedoresVinculados: e.target.value })} 
+                      placeholder="https://api.mercadolibre.com/sites/MLA/search?q=" 
+                    />
+                  </div>
+                  <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ gridColumn: '1 / -1', padding: '15px' }}>
+                    💾 Guardar Dólar, Costos de Fletes y Configuración General
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* 4. GESTIÓN DE USUARIOS Y PERMISOS */}
             <div className="neon-card">
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
                 {idUsuarioEditando ? '✏️ Editando Usuario y Permisos' : `🛡️ Gestión de Usuarios, Roles y Permisos (${nombreNegocioActivo})`}
@@ -1212,53 +1464,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 </tbody>
               </table>
             </div>
-
-            {!esSucursalExterna && (
-              <form 
-                onSubmit={async (e) => { 
-                  e.preventDefault(); 
-                  await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); 
-                  alert('⚡ Configuración guardada.'); 
-                }} 
-                className="neon-card" 
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}
-              >
-                <h3 className="glow-text-green" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                  🏛️ Datos Fiscales ARCA, Precios y URL de Proveedores Vinculados
-                </h3>
-                <div>
-                  <label className="label-neon">Razón Social ARCA</label>
-                  <input type="text" className="neon-input" value={conf.razonSocial || ''} onChange={e => setConf({ ...conf, razonSocial: e.target.value })} />
-                </div>
-                <div>
-                  <label className="label-neon">CUIT ARCA</label>
-                  <input type="text" className="neon-input" value={conf.cuit || ''} onChange={e => setConf({ ...conf, cuit: e.target.value })} />
-                </div>
-                <div>
-                  <label className="label-neon">Punto de Venta ARCA</label>
-                  <input type="text" className="neon-input" value={conf.puntoVentaArca || '00001'} onChange={e => setConf({ ...conf, puntoVentaArca: e.target.value })} />
-                </div>
-                <div>
-                  <label className="label-neon">Margen Ganancia Lista (%)</label>
-                  <input type="number" className="neon-input" value={conf.margenGanancia} onChange={e => setConf({ ...conf, margenGanancia: Number(e.target.value) })} />
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label className="label-neon" style={{ color: 'var(--neon-cyan)' }}>
-                    🌐 URL de Catálogo / Página Externa Vinculada para Traer Artículos y Precios:
-                  </label>
-                  <input 
-                    type="text" 
-                    className="neon-input" 
-                    value={conf.urlsProveedoresVinculados || ''} 
-                    onChange={e => setConf({ ...conf, urlsProveedoresVinculados: e.target.value })} 
-                    placeholder="https://api.mercadolibre.com/sites/MLA/search?q=" 
-                  />
-                </div>
-                <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ gridColumn: '1 / -1', padding: '14px' }}>
-                  💾 Guardar Configuración General
-                </button>
-              </form>
-            )}
           </div>
         )}
       </main>
@@ -1275,6 +1480,7 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [temaActivo, setTemaActivo] = useState<string>('claro');
   const [fontSizeActivo, setFontSizeActivo] = useState<number>(17);
+  const [dolarGlobal, setDolarGlobal] = useState<number>(CONFIG_DEFAULT.cotizacionDolar);
   const [rolesGlobal, setRolesGlobal] = useState<any[]>([]);
   const [talleresGlobal, setTalleresGlobal] = useState<any[]>([]);
 
@@ -1283,11 +1489,25 @@ export default function App() {
       setUser(u); 
       setCargando(false); 
     }); 
-    const unsubConf = onSnapshot(doc(db, 'configuracion', 'general'), (docSnap) => {
+    const unsubConf = onSnapshot(doc(db, 'configuracion', 'general'), async (docSnap) => {
       if (docSnap.exists()) {
         const d = docSnap.data();
         if (d.temaVisual) setTemaActivo(d.temaVisual);
         if (d.tamanoFuenteBase) setFontSizeActivo(Number(d.tamanoFuenteBase));
+        if (d.cotizacionDolar) setDolarGlobal(Number(d.cotizacionDolar));
+
+        // Si está activada la sincronización automática con la web, verifica la cotización del día al iniciar
+        if (d.dolarAutoWeb !== false && !(window as any).__dolarSincronizadoHoy) {
+          (window as any).__dolarSincronizadoHoy = true;
+          const valorWeb = await obtenerDolarDesdeWeb(d.dolarTipoFuente || 'blue');
+          if (valorWeb && valorWeb > 0 && valorWeb !== Number(d.cotizacionDolar)) {
+            setDolarGlobal(valorWeb);
+            await setDoc(doc(db, 'configuracion', 'general'), { 
+              cotizacionDolar: valorWeb, 
+              dolarUltimaSync: new Date().toLocaleString() 
+            }, { merge: true });
+          }
+        }
       }
     });
     const unsubR = onSnapshot(query(collection(db, 'usuarios_roles')), snap => {
@@ -1299,7 +1519,6 @@ export default function App() {
     return () => { u(); unsubConf(); unsubR(); unsubT(); }; 
   }, []);
 
-  // --- ACTUALIZACIÓN DINÁMICA DEL TÍTULO DE LA PESTAÑA DEL NAVEGADOR ---
   useEffect(() => {
     if (!user) {
       document.title = 'Walabba Tecno';
@@ -1331,6 +1550,9 @@ export default function App() {
           🔍 Rastrear Equipo
         </Link>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.14)', color: 'var(--neon-green)', fontSize: '13px' }}>
+            💵 Dólar Hoy: ${dolarGlobal}
+          </span>
           <select 
             className="neon-select" 
             value={temaActivo} 

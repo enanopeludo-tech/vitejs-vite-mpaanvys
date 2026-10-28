@@ -1,9 +1,7 @@
 // src/estilosTema.ts
 
-// src/estilosTema.ts (Reemplazar el bloque CONFIG_DEFAULT al inicio del archivo)
-
 export const CONFIG_DEFAULT = {
-  temaVisual: "claro",
+  temaVisual: "claro", // 'claro' | 'oscuro' | 'sistema' | 'neon'
   tamanoFuenteBase: 17,
   empresaNombre: "WALABBA TECNO",
   eslogan: "Laboratorio Central de Microelectrónica & Hub B2B",
@@ -20,6 +18,12 @@ export const CONFIG_DEFAULT = {
   arcaPrivateKey: "",
   arcaAliasWsfe: "walabba_wsfe",
 
+  // --- DÓLAR GLOBAL (WEB AUTOMÁTICO + EDITABLE MANUAL) ---
+  cotizacionDolar: 1200,
+  dolarAutoWeb: true, // Si está activo, sincroniza al iniciar con DolarApi
+  dolarTipoFuente: "blue", // 'blue' | 'oficial' | 'bolsa'
+  dolarUltimaSync: "",
+
   // --- ESCALAS DE GANANCIA EN USD (CENTRAL VS GREMIO) ---
   escala1MaxUsd: 30,
   escala1MargenPublico: 80,
@@ -29,14 +33,17 @@ export const CONFIG_DEFAULT = {
   escala2MargenGremio: 30,
   escala3MargenPublico: 35,
   escala3MargenGremio: 20,
-  topeUsdSinSenaGremio: 70, // Si el repuesto supera USD 70, pide 50% de seña también al Gremio
+  topeUsdSinSenaGremio: 70,
 
-  // --- LOGÍSTICA DE COMISIONISTAS Y REPARTIDOR LOCAL ---
+  // --- LOGÍSTICA DE COMISIONISTAS Y FLETES (EDITABLES EN CONFIGURACIÓN) ---
   comisionistasLista: "Comisionista Mar del Plata (Lun/Mié/Vie):4500, Comisionista CABA / BsAs (Mar/Jue):7500, Encomienda Micro / Correo:6500, Stock en Pañol Local (Sin Flete):0",
   repartidorLocalCosto: 2000,
+  envioLocalCosto: 1500,
+  envioGratisDesde: 50000,
 
   // --- MODALIDADES DE PAGO Y CUOTAS ---
   descuentoEfectivoPorcentaje: 10,
+  recargoTarjetaPorcentaje: 15,
   recargoTarjeta1Pago: 15,
   recargoTarjeta3Cuotas: 28,
   recargoTarjeta6Cuotas: 45,
@@ -51,17 +58,13 @@ export const CONFIG_DEFAULT = {
   instagram: "@walabbatecno",
   logoUrl: "",
   monedaSimbolo: "$",
-  cotizacionDolar: 1200,
   margenGanancia: 35,
   descuentoGremioBronce: 10,
   descuentoGremioOro: 18,
   ivaPorcentaje: 21,
-  recargoTarjetaPorcentaje: 15,
   redondeoPrecios: "100",
   stockCriticoAlerta: 3,
   compraMinima: 0,
-  envioLocalCosto: 1500,
-  envioGratisDesde: 50000,
   aliasTransferencia: "walabba.tecno.mp",
   bancoTitular: "Jose Luis Sena - Mercado Pago",
   linkMercadoPago: "",
@@ -102,6 +105,25 @@ export const aplicarRedondeo = (valor: number, multiploStr: string) => {
   const multiplo = Number(multiploStr) || 1;
   if (multiplo <= 1) return Math.round(valor);
   return Math.ceil(valor / multiplo) * multiplo;
+};
+
+// --- FUNCIÓN PARA LEER LA COTIZACIÓN DEL DÓLAR EN VIVO DESDE LA WEB ---
+export const obtenerDolarDesdeWeb = async (tipo: string = 'blue'): Promise<number | null> => {
+  try {
+    const endpoint = tipo === 'oficial' 
+      ? 'https://dolarapi.com/v1/dolares/oficial' 
+      : tipo === 'bolsa' 
+        ? 'https://dolarapi.com/v1/dolares/bolsa' 
+        : 'https://dolarapi.com/v1/dolares/blue';
+    const resp = await fetch(endpoint);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const valorVenta = Number(data.venta || data.promedio || 0);
+    return valorVenta > 0 ? Math.round(valorVenta) : null;
+  } catch (e) {
+    console.warn("No se pudo conectar con DolarApi:", e);
+    return null;
+  }
 };
 
 export const imprimirFacturaARCA = (movimiento: any, datosFiscalesEmisor: any) => {
@@ -285,7 +307,8 @@ export const getEstilosTema = (temaConfig: string, fontSizeBase: number = 17) =>
     .erp-main { flex: 1; padding: 22px; overflow-x: hidden; }
     .side-btn { width: 100%; justify-content: flex-start; padding: 11px 15px; border-color: transparent; color: var(--text-muted); background: transparent; border-radius: 14px; }
     .side-btn.active { background: var(--neon-cyan); color: ${p.esNeon ? '#000' : '#fff'}; font-weight: 700; }
-    .top-nav-bar { padding: 12px 25px; background: ${p.bgNav}; border-bottom: 1px solid ${p.borderCard}; display: flex; gap: 20px; align-items: center; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px); }
+    .top-nav-bar { padding: 12px 25px; background: ${p.bgNav}; border-bottom: 1px solid ${p.borderCard}; display: flex; gap: 20px; align-items: center; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px); flex-wrap: wrap; }
     @media (max-width: 900px) { .erp-layout { flex-direction: column; } .erp-sidebar { width: 100%; flex-direction: row; overflow-x: auto; } .side-btn { width: auto; white-space: nowrap; } }
   `;
 };
+// --- FIN DEL ARCHIVO ESTILOSTEMA.TS ---
