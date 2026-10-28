@@ -1,7 +1,9 @@
 // src/estilosTema.ts
 
+// src/estilosTema.ts (Reemplazar el bloque CONFIG_DEFAULT al inicio del archivo)
+
 export const CONFIG_DEFAULT = {
-  temaVisual: "claro", // 'claro' | 'oscuro' | 'sistema' | 'neon'
+  temaVisual: "claro",
   tamanoFuenteBase: 17,
   empresaNombre: "WALABBA TECNO",
   eslogan: "Laboratorio Central de Microelectrónica & Hub B2B",
@@ -18,9 +20,30 @@ export const CONFIG_DEFAULT = {
   arcaPrivateKey: "",
   arcaAliasWsfe: "walabba_wsfe",
 
+  // --- ESCALAS DE GANANCIA EN USD (CENTRAL VS GREMIO) ---
+  escala1MaxUsd: 30,
+  escala1MargenPublico: 80,
+  escala1MargenGremio: 45,
+  escala2MaxUsd: 80,
+  escala2MargenPublico: 55,
+  escala2MargenGremio: 30,
+  escala3MargenPublico: 35,
+  escala3MargenGremio: 20,
+  topeUsdSinSenaGremio: 70, // Si el repuesto supera USD 70, pide 50% de seña también al Gremio
+
+  // --- LOGÍSTICA DE COMISIONISTAS Y REPARTIDOR LOCAL ---
+  comisionistasLista: "Comisionista Mar del Plata (Lun/Mié/Vie):4500, Comisionista CABA / BsAs (Mar/Jue):7500, Encomienda Micro / Correo:6500, Stock en Pañol Local (Sin Flete):0",
+  repartidorLocalCosto: 2000,
+
+  // --- MODALIDADES DE PAGO Y CUOTAS ---
+  descuentoEfectivoPorcentaje: 10,
+  recargoTarjeta1Pago: 15,
+  recargoTarjeta3Cuotas: 28,
+  recargoTarjeta6Cuotas: 45,
+
   // --- VINCULACIÓN DE CATÁLOGOS EXTERNOS POR URL ---
   urlsProveedoresVinculados: "https://api.mercadolibre.com/sites/MLA/search?q=",
-  mostrarArticulosProveedorEnTienda: false, // Por defecto NO mezcla proveedores en la Tienda Oficial
+  mostrarArticulosProveedorEnTienda: false,
 
   direccion: "Av. 42 3998 - Necochea",
   horariosAtencion: "Lun a Vie 9:00 a 18:00 hs | Sáb 9:00 a 13:00 hs",
@@ -34,7 +57,6 @@ export const CONFIG_DEFAULT = {
   descuentoGremioOro: 18,
   ivaPorcentaje: 21,
   recargoTarjetaPorcentaje: 15,
-  descuentoEfectivoPorcentaje: 10,
   redondeoPrecios: "100",
   stockCriticoAlerta: 3,
   compraMinima: 0,
