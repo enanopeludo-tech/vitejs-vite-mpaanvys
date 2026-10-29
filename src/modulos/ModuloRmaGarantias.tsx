@@ -7,6 +7,7 @@ interface PropsRma {
   user: any;
   tenantId: string;
   esSucursalExterna: boolean;
+  sucursalAsociada?: any;
   nombreNegocioActivo: string;
   direccionNegocioActivo: string;
   whatsappNegocioActivo: string;
@@ -466,7 +467,7 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
                       <td>
                         <button 
                           type="button" 
-                          onClick={() => abrirReingresoInTaller(o, dias)} 
+                          onClick={() => abrirReingresoEnTaller(o, dias)} 
                           className={`neon-btn ${enGarantia ? 'neon-btn-fillCyan' : 'neon-btn-red'}`}
                         >
                           🔄 Generar Reingreso Taller
