@@ -7,7 +7,6 @@ interface PropsRma {
   user: any;
   tenantId: string;
   esSucursalExterna: boolean;
-  sucursalAsociada: any;
   nombreNegocioActivo: string;
   direccionNegocioActivo: string;
   whatsappNegocioActivo: string;
@@ -22,7 +21,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
   user,
   tenantId,
   esSucursalExterna,
-  sucursalAsociada,
   nombreNegocioActivo,
   direccionNegocioActivo,
   whatsappNegocioActivo,
@@ -105,7 +103,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
       `Sin golpes ni humedad visible - Sujeto a revisión en banco`
     ) || 'Sujeto a revisión';
 
-    // 1. Registrar el caso en la tabla de Garantías & RMA
     await addDoc(collection(db, 'rmas_garantias'), {
       ownerId: tenantId,
       origenNombre: nombreNegocioActivo,
@@ -124,7 +121,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
       fechaTimestamp: serverTimestamp()
     });
 
-    // 2. Cambiar el estado de la orden original a "reingreso garantia" para que aparezca en el banco de trabajo
     await updateDoc(doc(db, 'ordenes_taller', ordenOriginal.id), {
       estado: 'reingreso garantia',
       historial: [
@@ -137,7 +133,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
       ]
     });
 
-    // 3. Preguntar si además hay que reclamar el repuesto al proveedor
     if (window.confirm(`✅ La Orden #${ordenOriginal.codigoSeguimiento} pasó a "🔄 Garantía" en tu Taller.\n\n¿Deseas cargar también el reclamo de este repuesto (RMA) a tu Proveedor para enviarlo con el comisionista?`)) {
       setVistaRma('proveedores');
       setRmaTipo('proveedor');
@@ -225,7 +220,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
 
   // --- ACCIÓN 3: CAMBIAR ESTADO DEL RMA CON IMPACTO EN STOCK O FINANZAS ---
   const cambiarEstadoRma = async (rma: any, nuevoEstado: string) => {
-    // Si el proveedor envía un repuesto nuevo en reemplazo -> ofrecer sumar +1 al stock
     if (nuevoEstado === 'reemplazado') {
       const prodCoincidente = misProductos.find(p => p.nombre.toLowerCase().includes(rma.producto.toLowerCase()));
       if (prodCoincidente && window.confirm(`🔄 El proveedor repuso "${rma.producto}".\n¿Deseas sumar +1 unidad al stock de "${prodCoincidente.nombre}"?`)) {
@@ -235,7 +229,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
       }
     }
 
-    // Si el proveedor otorga Nota de Crédito / Reintegro -> ofrecer registrar el recupero en Finanzas
     if (nuevoEstado === 'nota_credito') {
       const montoRecupero = Number(rma.montoArs || rma.monto || 0);
       if (montoRecupero > 0 && window.confirm(`💵 El proveedor aprobó Nota de Crédito / Devolución por $${montoRecupero.toLocaleString()}.\n¿Registrar este saldo a favor / ingreso en Finanzas?`)) {
@@ -251,7 +244,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
       }
     }
 
-    // Si el RMA fue rechazado y es pérdida -> ofrecer asentar la pérdida en Finanzas
     if (nuevoEstado === 'rechazado_perdida') {
       const totalPerdida = Number(rma.montoArs || rma.monto || 0) + Number(rma.fletePerdido || 0);
       if (totalPerdida > 0 && window.confirm(`❌ RMA Rechazado / Pérdida por $${totalPerdida.toLocaleString()} (Repuesto + Flete).\n¿Deseas asentar este egreso por pérdida en Caja/Finanzas para descontarlo de tu ganancia neta?`)) {
@@ -361,7 +353,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
 
   return (
     <div>
-      {/* CABECERA Y KPIs DE GARANTÍAS & RMA */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
         <div className="neon-card neon-card-yellow">
           <span className="label-neon">⏳ Capital en Reclamo a Proveedores</span>
@@ -382,7 +373,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
         </div>
       </div>
 
-      {/* PESTAÑAS DE NAVEGACIÓN INTERNA */}
       <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         <button 
           type="button" 
@@ -410,7 +400,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
         </button>
       </div>
 
-      {/* VISTA 1: VERIFICADOR DE VIGENCIA DE GARANTÍA Y REINGRESO EN 1 CLIC */}
       {vistaRma === 'verificador' && (
         <div className="neon-card">
           <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
@@ -477,7 +466,7 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
                       <td>
                         <button 
                           type="button" 
-                          onClick={() => abrirReingresoEnTaller(o, dias)} 
+                          onClick={() => abrirReingresoInTaller(o, dias)} 
                           className={`neon-btn ${enGarantia ? 'neon-btn-fillCyan' : 'neon-btn-red'}`}
                         >
                           🔄 Generar Reingreso Taller
@@ -492,7 +481,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
         </div>
       )}
 
-      {/* VISTAS 2 Y 3: GESTIÓN DE RMAs A PROVEEDORES Y RECLAMOS DE CLIENTES */}
       {vistaRma !== 'verificador' && (
         <div>
           <form onSubmit={guardarRma} className="neon-card" style={{ marginBottom: '20px' }}>
@@ -630,7 +618,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
             </button>
           </form>
 
-          {/* FILTROS Y TABLA ACTIVA DE RMAs */}
           <div className="neon-card" style={{ overflowX: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
               <h3 className="glow-text-cyan" style={{ margin: 0 }}>
@@ -729,4 +716,3 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     </div>
   );
 };
-// --- FIN DEL ARCHIVO MODULORMAGARANTIAS.TSX ---
