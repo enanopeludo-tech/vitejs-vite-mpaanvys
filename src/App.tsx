@@ -34,11 +34,13 @@ import {
   obtenerDolarDesdeWeb
 } from './estilosTema';
 import { TiendaPublica } from './modulos/TiendaPublica';
+import { ModuloDashboard } from './modulos/ModuloDashboard';
 import { ModuloCatalogo } from './modulos/ModuloCatalogo';
 import { ModuloProveedoresExcel } from './modulos/ModuloProveedoresExcel';
 import { ModuloTaller } from './modulos/ModuloTaller';
 import { ModuloPresupuestos } from './modulos/ModuloPresupuestos';
 import { ModuloRmaGarantias } from './modulos/ModuloRmaGarantias';
+import { ModuloPedidosWeb } from './modulos/ModuloPedidosWeb';
 
 const Seguimiento = () => {
   const [codigo, setCodigo] = useState('');
@@ -710,7 +712,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
         {tienePermisoModulo('pedidos') && (
           <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>
-            🌐 8. Mis Pedidos Web
+            🌐 8. Mis Pedidos Web ({misPedidosWeb.length})
           </button>
         )}
         {tienePermisoModulo('proveedores') && (
@@ -735,32 +737,24 @@ const DashboardTaller = ({ user }: { user: User }) => {
       </aside>
 
       <main className="erp-main">
+        {/* MÓDULO 1: DASHBOARD EJECUTIVO COMPLETO */}
         {pestaña === 'dashboard' && (
-          <div className="neon-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h2 className="glow-text-cyan" style={{ margin: 0 }}>
-                📊 Panel Principal // {nombreNegocioActivo}
-              </h2>
-              <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                💵 Cotización Dólar Global Activa: <b className="glow-text-green">${config.cotizacionDolar}</b> ({config.dolarTipoFuente?.toUpperCase() || 'BLUE'})
-                {config.dolarUltimaSync && ` — Actualizado: ${config.dolarUltimaSync}`}
-              </div>
-              <span>
-                Tienda Oficial:{' '}
-                <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-cyan" style={{ fontWeight: 'bold' }}>
-                  {urlVitrinaPropia}
-                </a>
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button onClick={() => sincronizarDolarAhora(undefined, true)} className="neon-btn neon-btn-green">
-                🔄 Sincronizar Dólar Web (${config.cotizacionDolar})
-              </button>
-              <button onClick={() => setPestaña('configuracion')} className="neon-btn neon-btn-fillCyan">
-                🚚 Configurar Fletes y Dólar
-              </button>
-            </div>
-          </div>
+          <ModuloDashboard 
+            esSucursalExterna={esSucursalExterna}
+            nombreNegocioActivo={nombreNegocioActivo}
+            urlVitrinaPropia={urlVitrinaPropia}
+            config={config}
+            misOrdenesTaller={misOrdenesTaller}
+            misProductos={misProductos}
+            misFinanzas={misFinanzas}
+            misPedidosWeb={misPedidosWeb}
+            misPresupuestos={misPresupuestos}
+            talleresGremio={talleresGremio}
+            rmas={rmas}
+            sincronizandoDolar={sincronizandoDolar}
+            sincronizarDolarAhora={sincronizarDolarAhora}
+            setPestaña={setPestaña}
+          />
         )}
 
         {pestaña === 'catalogo' && (
@@ -813,7 +807,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* MÓDULO 7: GARANTÍAS & RMA CONECTADO AL NUEVO COMPONENTE MODULAR */}
         {pestaña === 'rma' && (
           <ModuloRmaGarantias 
             user={user}
@@ -828,6 +821,22 @@ const DashboardTaller = ({ user }: { user: User }) => {
             rmas={rmas}
             config={config}
             setPestaña={setPestaña}
+          />
+        )}
+
+        {/* MÓDULO 8: PEDIDOS WEB CONECTADO AL NUEVO COMPONENTE MODULAR */}
+        {pestaña === 'pedidos' && (
+          <ModuloPedidosWeb 
+            user={user}
+            tenantId={tenantId}
+            nombreNegocioActivo={nombreNegocioActivo}
+            direccionNegocioActivo={direccionNegocioActivo}
+            whatsappNegocioActivo={whatsappNegocioActivo}
+            datosFiscalesActivos={datosFiscalesActivos}
+            misPedidosWeb={misPedidosWeb}
+            misProductos={misProductos}
+            misFinanzas={misFinanzas}
+            config={config}
           />
         )}
 
@@ -936,22 +945,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 ✅ Confirmar Cobro
               </button>
             </div>
-          </div>
-        )}
-
-        {pestaña === 'pedidos' && (
-          <div className="neon-card">
-            <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
-              🌐 Pedidos Web Recibidos
-            </h3>
-            {misPedidosWeb.map(p => (
-              <div key={p.id} style={{ borderBottom: '1px solid rgba(128,128,128,0.15)', padding: '10px 0', display: 'flex', justifyContent: 'space-between' }}>
-                <div>
-                  <b>#{p.id.slice(-6).toUpperCase()}</b> - {p.cliente?.nombre} ({p.cliente?.telefono})
-                </div>
-                <b className="glow-text-green">${p.total?.toLocaleString()}</b>
-              </div>
-            ))}
           </div>
         )}
 
