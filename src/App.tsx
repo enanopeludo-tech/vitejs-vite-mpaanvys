@@ -38,6 +38,7 @@ import { ModuloCatalogo } from './modulos/ModuloCatalogo';
 import { ModuloProveedoresExcel } from './modulos/ModuloProveedoresExcel';
 import { ModuloTaller } from './modulos/ModuloTaller';
 import { ModuloPresupuestos } from './modulos/ModuloPresupuestos';
+import { ModuloRmaGarantias } from './modulos/ModuloRmaGarantias';
 
 const Seguimiento = () => {
   const [codigo, setCodigo] = useState('');
@@ -224,12 +225,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [tallerLimiteCredito, setTallerLimiteCredito] = useState('150000');
   const [creandoCuentaLocal, setCreandoCuentaLocal] = useState(false);
 
-  // Estados RMA, Finanzas y Usuarios
-  const [rmaTipo, setRmaTipo] = useState<'proveedor' | 'cliente'>('proveedor');
-  const [rmaProducto, setRmaProducto] = useState('');
-  const [rmaEntidad, setRmaEntidad] = useState('');
-  const [rmaMotivo, setRmaMotivo] = useState('');
-  const [rmaMonto, setRmaMonto] = useState('');
+  // Estados Finanzas y Usuarios
   const [finTipo, setFinTipo] = useState('ingreso');
   const [finConcepto, setFinConcepto] = useState('');
   const [finMonto, setFinMonto] = useState('');
@@ -384,7 +380,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   };
 
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
-  // Stock exclusivo del Local (Accesorios) para la Caja POS Mostrador
   const misAccesoriosLocalPOS = misProductos.filter(p => !p.esDeProveedor && p.descripcion !== 'Importado de lista');
 
   const misFinanzas = movimientosFinanzas.filter(m => (m.ownerId || 'MASTER') === tenantId);
@@ -710,7 +705,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
         {tienePermisoModulo('rma') && (
           <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>
-            🔄 7. Garantías & RMA
+            🔄 7. Garantías & RMA ({rmas.length})
           </button>
         )}
         {tienePermisoModulo('pedidos') && (
@@ -818,7 +813,24 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* CAJA POS MOSTRADOR: SOLO MUESTRA ACCESORIOS DEL LOCAL (NO MEZCLA PROVEEDORES DE TALLER) */}
+        {/* MÓDULO 7: GARANTÍAS & RMA CONECTADO AL NUEVO COMPONENTE MODULAR */}
+        {pestaña === 'rma' && (
+          <ModuloRmaGarantias 
+            user={user}
+            tenantId={tenantId}
+            esSucursalExterna={esSucursalExterna}
+            sucursalAsociada={sucursalAsociada}
+            nombreNegocioActivo={nombreNegocioActivo}
+            direccionNegocioActivo={direccionNegocioActivo}
+            whatsappNegocioActivo={whatsappNegocioActivo}
+            misOrdenesTaller={misOrdenesTaller}
+            misProductos={misProductos}
+            rmas={rmas}
+            config={config}
+            setPestaña={setPestaña}
+          />
+        )}
+
         {pestaña === 'pos' && (
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div className="neon-card" style={{ flex: '2 1 480px' }}>
@@ -924,63 +936,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 ✅ Confirmar Cobro
               </button>
             </div>
-          </div>
-        )}
-
-        {pestaña === 'rma' && (
-          <div className="neon-card">
-            <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
-              🔄 Control de Garantías y RMA
-            </h3>
-            <form 
-              onSubmit={async (e) => { 
-                e.preventDefault(); 
-                await addDoc(collection(db, 'rmas_garantias'), { 
-                  ownerId: tenantId, 
-                  origenNombre: nombreNegocioActivo, 
-                  tipo: rmaTipo, 
-                  producto: rmaProducto, 
-                  entidad: rmaEntidad, 
-                  motivo: rmaMotivo, 
-                  monto: Number(rmaMonto) || 0, 
-                  estado: 'pendiente', 
-                  fecha: new Date().toLocaleDateString() 
-                }); 
-                setRmaProducto(''); setRmaEntidad(''); setRmaMotivo(''); setRmaMonto(''); 
-              }} 
-              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '15px' }}
-            >
-              <select className="neon-select" value={rmaTipo} onChange={e => setRmaTipo(e.target.value as any)}>
-                <option value="proveedor">📦 Proveedor</option>
-                <option value="cliente">🛠️ Cliente</option>
-              </select>
-              <input type="text" className="neon-input" required placeholder="Artículo / Equipo" value={rmaProducto} onChange={e => setRmaProducto(e.target.value)} />
-              <input type="text" className="neon-input" required placeholder="Proveedor o Cliente" value={rmaEntidad} onChange={e => setRmaEntidad(e.target.value)} />
-              <input type="text" className="neon-input" required placeholder="Falla" value={rmaMotivo} onChange={e => setRmaMotivo(e.target.value)} />
-              <button type="submit" className="neon-btn neon-btn-fillCyan">
-                + Registrar RMA
-              </button>
-            </form>
-            <table className="neon-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Artículo</th>
-                  <th>Falla</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rmas.filter(r => !esSucursalExterna || r.ownerId === tenantId).map(r => (
-                  <tr key={r.id}>
-                    <td>{r.fecha}</td>
-                    <td><b>{r.producto}</b> ({r.entidad})</td>
-                    <td>{r.motivo}</td>
-                    <td>{r.estado}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
 
