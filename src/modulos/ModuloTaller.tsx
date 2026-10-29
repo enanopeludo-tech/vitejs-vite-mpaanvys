@@ -1,5 +1,5 @@
 // src/modulos/ModuloTaller.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, updateDoc, deleteDoc, doc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CHECKLIST_ITEMS, aplicarRedondeo } from '../estilosTema';
@@ -29,6 +29,13 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   talleresGremio,
   config
 }) => {
+  // --- ESTADOS DE EDICIÓN DE ORDEN ---
+  const [idOrdenEditando, setIdOrdenEditando] = useState<string | null>(null);
+  const [codigoOrdenEditando, setCodigoOrdenEditando] = useState<string>('');
+  const [senaOriginalEditando, setSenaOriginalEditando] = useState<number>(0);
+  const omitirRecalculoAlCargarRef = useRef<boolean>(false);
+
+  // --- ESTADOS DATOS DEL CLIENTE Y EQUIPO ---
   const [cliNombre, setCliNombre] = useState('');
   const [cliTel, setCliTel] = useState('');
   const [cliDni, setCliDni] = useState('');
@@ -117,23 +124,33 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     if (!esOrdenDeGremio) {
       const cincuentaPorciento = aplicarRedondeo(finalPublicoRedondeado * 0.5, config.redondeoPrecios);
       setSenaRequeridaSugerida(cincuentaPorciento);
-      setSeñaRecibida(cincuentaPorciento.toString());
+      if (!idOrdenEditando) {
+        setSeñaRecibida(cincuentaPorciento.toString());
+      }
       setAlertaTopeGremio(false);
     } else {
       if (usd >= topeUsdGremio) {
         const cincuentaGremio = aplicarRedondeo(finalGremioRedondeado * 0.5, config.redondeoPrecios);
         setSenaRequeridaSugerida(cincuentaGremio);
-        setSeñaRecibida(cincuentaGremio.toString());
+        if (!idOrdenEditando) {
+          setSeñaRecibida(cincuentaGremio.toString());
+        }
         setAlertaTopeGremio(true);
       } else {
         setSenaRequeridaSugerida(0);
-        setSeñaRecibida('0');
+        if (!idOrdenEditando) {
+          setSeñaRecibida('0');
+        }
         setAlertaTopeGremio(false);
       }
     }
   };
 
   useEffect(() => {
+    if (omitirRecalculoAlCargarRef.current) {
+      omitirRecalculoAlCargarRef.current = false;
+      return;
+    }
     if (Number(costoRepuestoUsd) > 0) {
       calcularPresupuestoOperativo();
     }
@@ -143,12 +160,125 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setChecklist(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
   };
 
+  const limpiarFormularioOrden = () => {
+    setIdOrdenEditando(null);
+    setCodigoOrdenEditando('');
+    setSenaOriginalEditando(0);
+    setCliNombre('');
+    setCliTel('');
+    setCliDni('');
+    setTallerOrigenOrden('Mostrador Propio');
+    setMarca('');
+    setModelo('');
+    setFalla('');
+    setTecnico('');
+    setImei('');
+    setContrasena('');
+    setCondicionVisual('');
+    setChecklist(["Enciende", "Batería OK"]);
+    setCostoRepuestoUsd('');
+    setManoDeObraExtra('0');
+    setPresupuestoInicial('');
+    setCostoGremioInicial('');
+    setSeñaRecibida('');
+    setSenaRequeridaSugerida(0);
+    setAlertaTopeGremio(false);
+  };
+
+  // --- CARGAR ORDEN EN EL FORMULARIO PARA EDITAR ---
+  const cargarOrdenParaEditar = (orden: any) => {
+    omitirRecalculoAlCargarRef.current = true;
+    setIdOrdenEditando(orden.id);
+    setCodigoOrdenEditando(orden.codigoSeguimiento || '');
+    setSenaOriginalEditando(Number(orden.seña || 0));
+
+    setCliNombre(orden.cliente?.nombre || '');
+    setCliTel(orden.cliente?.telefono || '');
+    setCliDni(orden.cliente?.dni || '');
+    setTallerOrigenOrden(orden.tallerOrigen || 'Mostrador Propio');
+
+    setMarca(orden.equipo?.marca || '');
+    setModelo(orden.equipo?.modelo || '');
+    setImei(orden.equipo?.imei || '');
+    setContrasena(orden.equipo?.contrasena || '');
+    setCondicionVisual(orden.equipo?.condicionVisual || '');
+    setChecklist(Array.isArray(orden.equipo?.checklist) ? orden.equipo.checklist : []);
+
+    setFalla(orden.fallaDeclarada || '');
+    setTecnico(orden.tecnicoAsignado || '');
+
+    setCostoRepuestoUsd(orden.costoRepuestoUsd ? String(orden.costoRepuestoUsd) : '');
+    setManoDeObraExtra(orden.manoDeObraExtra ? String(orden.manoDeObraExtra) : '0');
+    setComisionistaElegido(orden.fleteComisionista !== undefined ? String(orden.fleteComisionista) : '4500');
+    setModalidadEntrega(orden.modalidadEntrega || 'retira_local');
+    setModalidadPagoOrden(orden.modalidadPago || 'efectivo');
+
+    setPresupuestoInicial(orden.costoReparacion !== undefined ? String(orden.costoReparacion) : '');
+    setCostoGremioInicial(orden.costoGremio !== undefined ? String(orden.costoGremio) : '');
+    setSeñaRecibida(orden.seña !== undefined ? String(orden.seña) : '0');
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // --- GUARDAR NUEVA ORDEN O ACTUALIZAR ORDEN EDITADA ---
   const guardarOrden = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
     const origenFinal = esSucursalExterna ? sucursalAsociada.nombre : tallerOrigenOrden;
-    const idSucursalFinal = esSucursalExterna ? sucursalAsociada.id : (talleresGremio.find(t => t.nombre === tallerOrigenOrden)?.id || 'MASTER');
+    const idSucursalFinal = esSucursalExterna 
+      ? sucursalAsociada.id 
+      : (talleresGremio.find(t => t.nombre === tallerOrigenOrden)?.id || 'MASTER');
 
+    // MODO EDICIÓN DE ORDEN EXISTENTE
+    if (idOrdenEditando) {
+      const nuevaSenaNum = Number(señaRecibida) || 0;
+      const diferenciaSena = nuevaSenaNum - senaOriginalEditando;
+
+      await updateDoc(doc(db, 'ordenes_taller', idOrdenEditando), {
+        tallerId: idSucursalFinal,
+        tallerOrigen: origenFinal,
+        cliente: { nombre: cliNombre, telefono: cliTel, dni: cliDni },
+        equipo: { marca, modelo, imei, contrasena, condicionVisual, checklist },
+        fallaDeclarada: falla,
+        tecnicoAsignado: esSucursalExterna ? 'Laboratorio Central Walabba' : tecnico,
+        costoRepuestoUsd: Number(costoRepuestoUsd) || 0,
+        manoDeObraExtra: Number(manoDeObraExtra) || 0,
+        fleteComisionista: Number(comisionistaElegido) || 0,
+        modalidadPago: modalidadPagoOrden,
+        modalidadEntrega: modalidadEntrega,
+        costoReparacion: presupuestoInicial || '',
+        costoGremio: esSucursalExterna ? '' : (costoGremioInicial || ''),
+        seña: nuevaSenaNum,
+        historial: arrayUnion({
+          estado: 'editado',
+          fecha: new Date().toLocaleString(),
+          comentario: `Orden editada por ${user.email} | Total: $${presupuestoInicial || 0} | Seña: $${nuevaSenaNum}`
+        })
+      });
+
+      if (diferenciaSena > 0) {
+        const registrarDiferencia = window.confirm(
+          `💵 La seña aumentó en $${diferenciaSena.toLocaleString()} (Antes: $${senaOriginalEditando.toLocaleString()} ➔ Ahora: $${nuevaSenaNum.toLocaleString()}).\n\n¿Deseas registrar este ingreso de $${diferenciaSena.toLocaleString()} en la Caja ahora?`
+        );
+        if (registrarDiferencia) {
+          await addDoc(collection(db, 'finanzas'), {
+            ownerId: tenantId,
+            tipo: 'ingreso',
+            concepto: `Ampliación Seña Orden #${codigoOrdenEditando} - ${cliNombre} (${marca} ${modelo})`,
+            monto: diferenciaSena,
+            metodoPago: modalidadPagoOrden.startsWith('tarjeta') ? 'tarjeta' : modalidadPagoOrden,
+            fecha: serverTimestamp(),
+            usuario: user.email
+          });
+        }
+      }
+
+      alert(`✅ Orden #${codigoOrdenEditando} actualizada correctamente.`);
+      limpiarFormularioOrden();
+      return;
+    }
+
+    // MODO ALTA DE ORDEN NUEVA
+    const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
     const estadoInicial = (senaRequeridaSugerida > 0 && Number(señaRecibida) < senaRequeridaSugerida)
       ? 'esperando sena 50%'
       : 'ingresado';
@@ -162,6 +292,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       fallaDeclarada: falla,
       tecnicoAsignado: esSucursalExterna ? 'Laboratorio Central Walabba' : tecnico,
       costoRepuestoUsd: Number(costoRepuestoUsd) || 0,
+      manoDeObraExtra: Number(manoDeObraExtra) || 0,
       fleteComisionista: Number(comisionistaElegido) || 0,
       modalidadPago: modalidadPagoOrden,
       modalidadEntrega: modalidadEntrega,
@@ -192,10 +323,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       });
     }
 
-    setCliNombre(''); setCliTel(''); setCliDni(''); setMarca(''); setModelo(''); setFalla('');
-    setTecnico(''); setImei(''); setContrasena(''); setCondicionVisual('');
-    setCostoRepuestoUsd(''); setManoDeObraExtra('0');
-    setPresupuestoInicial(''); setCostoGremioInicial(''); setSeñaRecibida('');
+    limpiarFormularioOrden();
     alert(`⚡ Orden #${cod} generada (${estadoInicial.toUpperCase()}).`);
   };
 
@@ -450,10 +578,25 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
 
   return (
     <div>
-      <form onSubmit={guardarOrden} className="neon-card" style={{ marginBottom: '22px' }}>
-        <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
-          {esSucursalExterna ? `📝 Ingreso de Orden de Reparación (${nombreNegocioActivo})` : '📝 Recepción Central + Calculadora Operativa (USD / Comisionista / Cuotas / 50% Seña)'}
-        </h3>
+      <form 
+        onSubmit={guardarOrden} 
+        className={`neon-card ${idOrdenEditando ? 'neon-card-yellow' : ''}`} 
+        style={{ marginBottom: '22px' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+          <h3 className={idOrdenEditando ? 'glow-text-yellow' : 'glow-text-cyan'} style={{ margin: 0 }}>
+            {idOrdenEditando 
+              ? `✏️ Editando Orden de Reparación #${codigoOrdenEditando}` 
+              : esSucursalExterna 
+                ? `📝 Ingreso de Orden de Reparación (${nombreNegocioActivo})` 
+                : '📝 Recepción Central + Calculadora Operativa (USD / Comisionista / Cuotas / 50% Seña)'}
+          </h3>
+          {idOrdenEditando && (
+            <button type="button" onClick={limpiarFormularioOrden} className="neon-btn neon-btn-red">
+              ❌ Cancelar Edición
+            </button>
+          )}
+        </div>
 
         <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '16px', marginBottom: '16px', border: '1px solid rgba(0,122,255,0.28)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -591,9 +734,18 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
           </div>
         </div>
 
-        <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
-          ➕ Generar Orden de Reparación {Number(señaRecibida) > 0 ? `(Con Adelanto de $${Number(señaRecibida).toLocaleString()})` : ''}
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '14px' }}>
+            {idOrdenEditando 
+              ? `💾 Guardar Cambios en Orden #${codigoOrdenEditando}` 
+              : `➕ Generar Orden de Reparación ${Number(señaRecibida) > 0 ? `(Con Adelanto de $${Number(señaRecibida).toLocaleString()})` : ''}`}
+          </button>
+          {idOrdenEditando && (
+            <button type="button" onClick={limpiarFormularioOrden} className="neon-btn neon-btn-red" style={{ padding: '14px 22px' }}>
+              Cancelar
+            </button>
+          )}
+        </div>
       </form>
 
       <div className="neon-card" style={{ marginBottom: '18px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -631,8 +783,9 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
           <tbody>
             {ordenesFiltradas.map(o => {
               const saldoRestante = Math.max(0, Number(o.costoReparacion || 0) - Number(o.seña || 0));
+              const estaEditandoEsta = idOrdenEditando === o.id;
               return (
-                <tr key={o.id} style={{ opacity: o.estado === 'entregado' ? 0.55 : 1 }}>
+                <tr key={o.id} style={{ opacity: o.estado === 'entregado' ? 0.55 : 1, background: estaEditandoEsta ? 'rgba(255,149,0,0.1)' : 'transparent' }}>
                   <td>
                     <b className="glow-text-cyan" style={{ fontSize: '17px' }}>#{o.codigoSeguimiento}</b><br />
                     <span className="neon-badge" style={{ background: 'rgba(0,122,255,0.12)', color: 'var(--neon-cyan)', marginTop: '4px' }}>
@@ -672,6 +825,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                      <button onClick={() => cargarOrdenParaEditar(o)} className="neon-btn" title="Editar todos los datos de la Orden">✏️</button>
                       <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Descontar repuesto de mi stock">🔩</button>
                       <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp con saldo y envío">💬</button>
                       <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden">🖨️</button>
@@ -689,3 +843,4 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     </div>
   );
 };
+// --- FIN DEL ARCHIVO MODULOTALLER.TSX ---
