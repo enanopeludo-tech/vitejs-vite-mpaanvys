@@ -18,7 +18,9 @@ interface PropsRma {
 }
 
 export const ModuloRmaGarantias: React.FC<PropsRma> = ({
+  user,
   tenantId,
+  esSucursalExterna,
   nombreNegocioActivo,
   direccionNegocioActivo,
   whatsappNegocioActivo,

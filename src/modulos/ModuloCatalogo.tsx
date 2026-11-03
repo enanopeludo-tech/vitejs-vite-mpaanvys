@@ -1,5 +1,5 @@
 // src/modulos/ModuloCatalogo.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { aplicarRedondeo, comprimirImagenABase64 } from '../estilosTema';
@@ -54,7 +54,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const listaActivaSegunPestana = vistaInventario === 'local' ? articulosDelLocal : articulosDeProveedores;
   const categoriasUnicas = ['Todas', ...Array.from(new Set(listaActivaSegunPestana.map(p => p.categoria || 'General')))];
 
-  // Manejar la compresión de imagen subida desde archivo
   const manejarSubidaImagen = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -223,7 +222,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
 
   return (
     <div>
-      {/* SELECTOR SUPERIOR QUE SEPARA STOCK DEL LOCAL VS STOCK DE PROVEEDORES DE TALLER */}
       <div className="neon-card" style={{ marginBottom: '20px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h2 className="glow-text-cyan" style={{ margin: 0 }}>
@@ -253,7 +251,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
       </div>
 
-      {/* FORMULARIO DE CARGA */}
       <form onSubmit={guardarProducto} className="neon-card" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 className="glow-text-cyan" style={{ margin: 0 }}>
@@ -346,7 +343,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
           <input type="text" className="neon-input" placeholder="Descripción..." value={prodDesc} onChange={e => setProdDesc(e.target.value)} />
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <input type="file" accept="image/*" onChange={empretarSubidaImagen => manejarSubidaImagen(empretarSubidaImagen)} style={{ display: 'none' }} id="subirFotoProd" />
+            <input type="file" accept="image/*" onChange={manejarSubidaImagen} style={{ display: 'none' }} id="subirFotoProd" />
             <label htmlFor="subirFotoProd" className="neon-btn" style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '12px', flex: 1, textAlign: 'center' }}>
               {cargandoImagen ? 'Comprimiendo...' : '📷 Subir Foto'}
             </label>
@@ -367,7 +364,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
       </form>
 
-      {/* BLOQUE 2: HERRAMIENTA DE AJUSTE DE INFLACIÓN */}
       <div className="neon-card neon-card-yellow" style={{ marginBottom: '20px' }}>
         <h3 className="glow-text-yellow" style={{ marginTop: 0 }}>
           📈 Ajuste de Inflación en {vistaInventario === 'local' ? 'Stock del Local' : 'Catálogo de Proveedores'}
@@ -397,7 +393,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         </div>
       </div>
 
-      {/* BLOQUE 3: TABLA DE INVENTARIO SEPARADA */}
       <div className="neon-card" style={{ marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input 
           type="text" 
