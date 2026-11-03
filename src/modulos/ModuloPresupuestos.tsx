@@ -31,6 +31,10 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   config,
   setPestaña
 }) => {
+  // Estados de Edición de Presupuesto
+  const [idPresupuestoEditando, setIdPresupuestoEditando] = useState<string | null>(null);
+  const [numeroPresupuestoEditando, setNumeroPresupuestoEditando] = useState<string>('');
+
   // Datos del Cliente y Presupuesto
   const [presCliente, setPresCliente] = useState('');
   const [presTel, setPresTel] = useState('');
@@ -168,13 +172,38 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   const senaLista50 = aplicarRedondeo(totalListaPresupuesto * 0.5, config.redondeoPrecios);
   const senaTarjeta50 = aplicarRedondeo(totalTarjeta1Pago * 0.5, config.redondeoPrecios);
 
+  const limpiarFormularioPresupuesto = () => {
+    setIdPresupuestoEditando(null);
+    setNumeroPresupuestoEditando('');
+    setPresCliente('');
+    setPresTel('');
+    setPresEquipo('');
+    setPresValidez('7');
+    setPresNotas('Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
+    setModalidadEntregaPres('retira_local');
+    setItemsPresupuesto([]);
+  };
+
+  const cargarPresupuestoParaEditar = (pr: any) => {
+    setIdPresupuestoEditando(pr.id);
+    setNumeroPresupuestoEditando(pr.numero || '');
+    setPresCliente(pr.cliente || '');
+    setPresTel(pr.telefono || '');
+    setPresEquipo(pr.equipo || '');
+    setPresValidez(String(pr.validezDias || 7));
+    setPresNotas(pr.notas || 'Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
+    setTipoClientePres(pr.tipoCliente || (esSucursalExterna ? 'gremio' : 'publico'));
+    setModalidadEntregaPres(pr.modalidadEntrega || 'retira_local');
+    setItemsPresupuesto(Array.isArray(pr.items) ? pr.items : []);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const guardarPresupuesto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (itemsPresupuesto.length === 0) return alert('Agrega al menos un ítem o cotización USD al presupuesto.');
-    const numPres = Math.random().toString(36).substring(2, 7).toUpperCase();
-    await addDoc(collection(db, 'presupuestos'), {
+
+    const payloadPresupuesto = {
       ownerId: tenantId,
-      numero: numPres,
       cliente: presCliente,
       telefono: presTel,
       equipo: presEquipo,
@@ -189,15 +218,28 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       totalTarjeta: totalTarjeta1Pago,
       totalTarjeta3: totalTarjeta3Cuotas,
       totalTarjeta6: totalTarjeta6Cuotas,
-      senaEfectivo: senaEfectivo50,
+      senaEfectivo: senaEfectivo50
+    };
+
+    if (idPresupuestoEditando) {
+      await updateDoc(doc(db, 'presupuestos', idPresupuestoEditando), {
+        ...payloadPresupuesto,
+        fechaTexto: new Date().toLocaleDateString()
+      });
+      alert(`✅ Presupuesto #${numeroPresupuestoEditando} actualizado correctamente.`);
+      limpiarFormularioPresupuesto();
+      return;
+    }
+
+    const numPres = Math.random().toString(36).substring(2, 7).toUpperCase();
+    await addDoc(collection(db, 'presupuestos'), {
+      ...payloadPresupuesto,
+      numero: numPres,
       estado: 'pendiente',
       fecha: serverTimestamp(),
       fechaTexto: new Date().toLocaleDateString()
     });
-    setPresCliente(''); 
-    setPresTel(''); 
-    setPresEquipo(''); 
-    setItemsPresupuesto([]);
+    limpiarFormularioPresupuesto();
     alert(`📄 Presupuesto #${numPres} generado y guardado.`);
   };
 
@@ -373,9 +415,18 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
 
   return (
     <div>
-      <h2 className="glow-text-cyan" style={{ marginTop: 0 }}>
-        📄 Generador de Presupuestos (Con Calculadora USD, Comisionistas, Cuotas y 50% Seña)
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+        <h2 className={idPresupuestoEditando ? 'glow-text-yellow' : 'glow-text-cyan'} style={{ margin: 0 }}>
+          {idPresupuestoEditando 
+            ? `✏️ Editando Presupuesto Oficial #${numeroPresupuestoEditando}` 
+            : '📄 Generador de Presupuestos (Con Calculadora USD, Comisionistas, Cuotas y 50% Seña)'}
+        </h2>
+        {idPresupuestoEditando && (
+          <button type="button" onClick={limpiarFormularioPresupuesto} className="neon-btn neon-btn-red">
+            ❌ Cancelar Edición
+          </button>
+        )}
+      </div>
 
       {/* BLOQUE 1: CALCULADORA DE REPUESTOS EN DÓLARES + COMISIONISTA DIRECTO EN PRESUPUESTOS */}
       <div className="neon-card neon-card-purple" style={{ marginBottom: '20px' }}>
@@ -470,7 +521,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
             </div>
           </div>
 
-          {/* PESTAÑAS QUE SEPARAN STOCK DE PROVEEDORES VS STOCK DEL LOCAL */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
             <button 
               type="button" 
@@ -542,8 +592,10 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
         </div>
 
         {/* BLOQUE 3: RESUMEN FINANCIERO MULTIPAGO + 50% DE SEÑA + CADETERÍA */}
-        <form onSubmit={guardarPresupuesto} className="neon-card neon-card-green" style={{ flex: '1 1 440px' }}>
-          <h3 className="glow-text-green" style={{ marginTop: 0 }}>3. Cliente, Entrega, Medios de Pago y 50% Seña</h3>
+        <form onSubmit={guardarPresupuesto} className={`neon-card ${idPresupuestoEditando ? 'neon-card-yellow' : 'neon-card-green'}`} style={{ flex: '1 1 440px' }}>
+          <h3 className={idPresupuestoEditando ? 'glow-text-yellow' : 'glow-text-green'} style={{ marginTop: 0 }}>
+            {idPresupuestoEditando ? `3. Editando Presupuesto #${numeroPresupuestoEditando}` : '3. Cliente, Entrega, Medios de Pago y 50% Seña'}
+          </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' }}>
             <div>
               <label className="label-neon">Nombre del Cliente *</label>
@@ -610,9 +662,16 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
 
           <input type="text" className="neon-input" value={presNotas} onChange={e => setPresNotas(e.target.value)} placeholder="Notas al pie..." style={{ marginBottom: '12px' }} />
 
-          <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
-            💾 Guardar Presupuesto Oficial
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '14px' }}>
+              {idPresupuestoEditando ? `💾 Actualizar Presupuesto #${numeroPresupuestoEditando}` : '💾 Guardar Presupuesto Oficial'}
+            </button>
+            {idPresupuestoEditando && (
+              <button type="button" onClick={limpiarFormularioPresupuesto} className="neon-btn neon-btn-red">
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
@@ -633,8 +692,16 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
           </thead>
           <tbody>
             {misPresupuestos.map(pr => (
-              <tr key={pr.id}>
-                <td><b className="glow-text-cyan">#{pr.numero}</b><br /><small style={{ color: 'var(--text-muted)' }}>{pr.fechaTexto}</small></td>
+              <tr key={pr.id} style={{ background: idPresupuestoEditando === pr.id ? 'rgba(255,149,0,0.1)' : 'transparent' }}>
+                <td>
+                  <b className="glow-text-cyan">#{pr.numero}</b><br />
+                  <small style={{ color: 'var(--text-muted)' }}>{pr.fechaTexto}</small>
+                  {pr.estado === 'aprobado' && (
+                    <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)', display: 'block', marginTop: '4px' }}>
+                      ✓ Aprobado
+                    </span>
+                  )}
+                </td>
                 <td><b>{pr.cliente}</b><br /><small style={{ color: 'var(--text-muted)' }}>{pr.equipo || '-'} | 📱 {pr.telefono}</small></td>
                 <td style={{ fontSize: '13px' }}>{pr.items?.map((i: any) => `${i.cantidad}x ${i.nombre}`).join(', ')}</td>
                 <td>
@@ -648,10 +715,11 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
                 </td>
                 <td>
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <button onClick={() => enviarPresupuestoWhatsApp(pr)} className="neon-btn neon-btn-green">💬 WhatsApp</button>
-                    <button onClick={() => imprimirPresupuestoPDF(pr)} className="neon-btn">🖨️ PDF</button>
-                    <button onClick={() => convertirPresupuestoEnOrden(pr)} className="neon-btn neon-btn-purple">🛠️ Aprobar y Cobrar 50%</button>
-                    <button onClick={() => deleteDoc(doc(db, 'presupuestos', pr.id))} className="neon-btn neon-btn-red">🗑️</button>
+                    <button onClick={() => cargarPresupuestoParaEditar(pr)} className="neon-btn" title="Editar Presupuesto">✏️</button>
+                    <button onClick={() => enviarPresupuestoWhatsApp(pr)} className="neon-btn neon-btn-green" title="Enviar por WhatsApp">💬</button>
+                    <button onClick={() => imprimirPresupuestoPDF(pr)} className="neon-btn" title="Imprimir PDF">🖨️</button>
+                    <button onClick={() => convertirPresupuestoEnOrden(pr)} className="neon-btn neon-btn-purple" title="Aprobar, Cobrar 50% y pasar a Taller">🛠️ Aprobar</button>
+                    <button onClick={() => { if (window.confirm('¿Eliminar presupuesto?')) deleteDoc(doc(db, 'presupuestos', pr.id)); }} className="neon-btn neon-btn-red">🗑️</button>
                   </div>
                 </td>
               </tr>

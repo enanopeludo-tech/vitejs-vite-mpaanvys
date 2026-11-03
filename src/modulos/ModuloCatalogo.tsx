@@ -1,8 +1,8 @@
 // src/modulos/ModuloCatalogo.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { aplicarRedondeo } from '../estilosTema';
+import { aplicarRedondeo, comprimirImagenABase64 } from '../estilosTema';
 
 interface PropsCatalogo {
   tenantId: string;
@@ -19,7 +19,6 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   config,
   setEscaneandoPara
 }) => {
-  // Selector principal que separa el Stock del Local vs el Stock de Proveedores de Taller
   const [vistaInventario, setVistaInventario] = useState<'local' | 'proveedores'>('local');
 
   const [idEditando, setIdEditando] = useState<string | null>(null);
@@ -35,6 +34,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const [prodProveedor, setProdProveedor] = useState('');
   const [prodUrlOrigen, setProdUrlOrigen] = useState('');
   const [prodDestacado, setProdDestacado] = useState(false);
+  const [cargandoImagen, setCargandoImagen] = useState(false);
 
   const [urlExternaInput, setUrlExternaInput] = useState('');
   const [extrayendoUrl, setExtrayendoUrl] = useState(false);
@@ -48,12 +48,26 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
   const [busquedaInventario, setBusquedaInventario] = useState('');
   const [filtroCategoriaInv, setFiltroCategoriaInv] = useState('Todas');
 
-  // Separación estricta de listas
   const articulosDelLocal = misProductos.filter(p => !p.esDeProveedor && p.descripcion !== 'Importado de lista');
   const articulosDeProveedores = misProductos.filter(p => Boolean(p.esDeProveedor || p.descripcion === 'Importado de lista'));
 
   const listaActivaSegunPestana = vistaInventario === 'local' ? articulosDelLocal : articulosDeProveedores;
   const categoriasUnicas = ['Todas', ...Array.from(new Set(listaActivaSegunPestana.map(p => p.categoria || 'General')))];
+
+  // Manejar la compresión de imagen subida desde archivo
+  const manejarSubidaImagen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCargandoImagen(true);
+    try {
+      const base64 = await comprimirImagenABase64(file, 550, 0.7);
+      setProdImg(base64);
+    } catch (err) {
+      alert('Error al comprimir la imagen');
+    } finally {
+      setCargandoImagen(false);
+    }
+  };
 
   const extraerDatosDesdeUrl = async () => {
     if (!urlExternaInput) return alert('Pega una URL o término de búsqueda para traer los datos.');
@@ -329,9 +343,15 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
           <input type="text" className="neon-input" placeholder="Descripción..." value={prodDesc} onChange={e => setProdDesc(e.target.value)} />
-          <input type="text" className="neon-input" placeholder="URL Imagen (Opcional)" value={prodImg} onChange={e => setProdImg(e.target.value)} />
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="file" accept="image/*" onChange={empretarSubidaImagen => manejarSubidaImagen(empretarSubidaImagen)} style={{ display: 'none' }} id="subirFotoProd" />
+            <label htmlFor="subirFotoProd" className="neon-btn" style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '12px', flex: 1, textAlign: 'center' }}>
+              {cargandoImagen ? 'Comprimiendo...' : '📷 Subir Foto'}
+            </label>
+            {prodImg && <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)' }}>✓ Foto OK</span>}
+          </div>
           <input type="text" className="neon-input" placeholder="URL Externa vinculada" value={prodUrlOrigen} onChange={e => setProdUrlOrigen(e.target.value)} />
         </div>
 
@@ -465,3 +485,4 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     </div>
   );
 };
+// --- FIN DEL ARCHIVO MODULOCATALOGO.TSX ---

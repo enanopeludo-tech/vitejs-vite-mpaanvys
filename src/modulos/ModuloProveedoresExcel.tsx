@@ -27,6 +27,7 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
   const [colMarca, setColMarca] = useState<number>(-1);
   const [nombreProveedorExcel, setNombreProveedorExcel] = useState('');
   const [monedaListaExcel, setMonedaListaExcel] = useState<'ARS' | 'USD'>('ARS');
+  const [margenExcelPersonalizado, setMargenExcelPersonalizado] = useState<string>(String(config.margenGanancia || 35));
   const [ocultarEnTiendaOficial, setOcultarEnTiendaOficial] = useState(true);
 
   // --- ESTADOS CONECTOR WEB CON LOGIN / SESIÓN / EXTRACTOR ---
@@ -57,7 +58,7 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
       else str = str.replace(/,/g, '');
     } else if (str.includes(',')) {
       const partes = str.split(',');
-      if (partes[partes.length - 1].length === 3) str = str.replace(/,/g, '');
+      if (partes[partes.length - 1].length === 3) str = str.replace(/\./g, '');
       else str = str.replace(',', '.');
     } else if (str.includes('.')) {
       const partes = str.split('.');
@@ -111,7 +112,8 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
     let omitidos = 0;
     let marcaActual = 'General';
     const fechaActualizacion = new Date().toLocaleDateString();
-    const factorMoneda = monedaListaExcel === 'USD' ? Number(config.cotizacionDolar || 1) : 1;
+    const factorMoneda = monedaListaExcel === 'USD' ? Number(config.cotizacionDolar || 1200) : 1;
+    const margenAplicar = Number(margenExcelPersonalizado || config.margenGanancia || 35);
 
     setExcelCargando(true);
     try {
@@ -130,7 +132,7 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
         }
         if (nombreObtenido && !isNaN(costoBruto) && costoBruto > 0) {
           const costoEnPesos = Math.round(costoBruto * factorMoneda);
-          const precioConMargen = costoEnPesos * (1 + (Number(config.margenGanancia) / 100));
+          const precioConMargen = costoEnPesos * (1 + (margenAplicar / 100));
           const precioFinalRedondeado = aplicarRedondeo(precioConMargen, config.redondeoPrecios);
           const nombreFinal = colMarca === -1 ? nombreObtenido : `${marcaActual} - ${nombreObtenido}`;
 
@@ -191,7 +193,6 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
     const margenAplicar = Number(margenPersonalizadoWeb || config.margenGanancia || 100);
     const detectados: any[] = [];
 
-    // Caso A: El usuario pegó código HTML de la página logueada
     if (contenidoPegadoWeb.includes('<div') || contenidoPegadoWeb.includes('<tr') || contenidoPegadoWeb.includes('<li')) {
       const docHtml = new DOMParser().parseFromString(contenidoPegadoWeb, 'text/html');
       const nodosProductos = docHtml.querySelectorAll('tr, .product, .item, .card, .product-item, li');
@@ -228,19 +229,16 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
       });
     }
 
-    // Caso B: El usuario copió y pegó el texto directo desde la pantalla del navegador (Ctrl+A / Ctrl+C)
     if (detectados.length === 0) {
       const lineas = contenidoPegadoWeb.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       for (let i = 0; i < lineas.length; i++) {
         const linea = lineas[i];
-        // Busca precio en la misma línea o en la línea inmediatamente siguiente
         const regexPrecio = /(?:US\$|U\$S|USD|\$)\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?|[0-9]+(?:[.,][0-9]{1,2})?)/i;
         const matchMismaLinea = linea.match(regexPrecio);
 
         if (matchMismaLinea) {
           const costoNum = parsePrecio(matchMismaLinea[1]);
           let nombreArt = linea.replace(matchMismaLinea[0], '').replace(/[-|•\t]+/g, ' ').trim();
-          // Si la línea solo tenía el precio, tomamos la línea anterior como nombre del producto
           if (nombreArt.length < 4 && i > 0) {
             nombreArt = lineas[i - 1].trim();
           }
@@ -262,7 +260,6 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
       }
     }
 
-    // Eliminar duplicados por nombre
     const unicos = Array.from(new Map(detectados.map(item => [item.nombre.toLowerCase(), item])).values());
     setItemsUrlPreview(unicos);
 
@@ -295,14 +292,12 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
         const respDirecta = await fetch(endpoint, { headers });
         textoRespuesta = await respDirecta.text();
       } catch {
-        // Fallback por Proxy CORS si el servidor bloquea peticiones desde el navegador
         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(endpoint)}`;
         const respProxy = await fetch(proxyUrl);
         const jsonProxy = await respProxy.json();
         textoRespuesta = jsonProxy.contents || '';
       }
 
-      // Intentar primero como JSON (APIs / WooCommerce / MercadoLibre / TiendaNube)
       try {
         const data = JSON.parse(textoRespuesta);
         const listaRaw = Array.isArray(data) ? data : (data.results || data.items || data.productos || data.products || []);
@@ -326,12 +321,11 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
           return;
         }
       } catch {
-        // Si no es JSON, es una página HTML: la pasamos al analizador HTML
         setContenidoPegadoWeb(textoRespuesta);
         setTimeout(() => analizarContenidoLogueado(), 100);
       }
     } catch (e) {
-      alert('La página requiere sesión interactiva en tu navegador. Usa la pestaña "1. Capturar desde Página con Login Abierta" copiando y pegando los artículos.');
+      alert('La página requiere sesión interactiva en tu navegador. Usa la pestaña "Opción A: Capturar desde Página con Login Abierta" copiando y pegando los artículos.');
     } finally {
       setCargandoUrl(false);
     }
@@ -434,17 +428,21 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
           </label>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '20px' }}>
           <div>
-            <label className="label-neon">Nombre del Proveedor</label>
-            <input type="text" className="neon-input" value={nombreProveedorExcel} onChange={e => setNombreProveedorExcel(e.target.value)} placeholder="Ej: Mayorista Repuestos" />
+            <label className="label-neon">Nombre del Proveedor *</label>
+            <input type="text" className="neon-input" value={nombreProveedorExcel} onChange={e => setNombreProveedorExcel(e.target.value)} placeholder="Ej: Mayorista MDP / CABA" />
           </div>
           <div>
-            <label className="label-neon">Moneda de la Lista</label>
+            <label className="label-neon">Moneda de la Lista Excel</label>
             <select className="neon-select" value={monedaListaExcel} onChange={e => setMonedaListaExcel(e.target.value as any)}>
-              <option value="ARS">Pesos (ARS)</option>
+              <option value="ARS">Pesos Argentinos (ARS)</option>
               <option value="USD">Dólares (Multiplica x ${config.cotizacionDolar})</option>
             </select>
+          </div>
+          <div>
+            <label className="label-neon">Margen a Sumar (%)</label>
+            <input type="number" className="neon-input" value={margenExcelPersonalizado} onChange={e => setMargenExcelPersonalizado(e.target.value)} />
           </div>
           <div>
             <label className="label-neon">Archivo .xlsx / .xls</label>
@@ -464,25 +462,54 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
               <div>
                 <label className="label-neon">Col. Nombre</label>
                 <select className="neon-select" value={colNombre} onChange={e => setColNombre(Number(e.target.value))}>
-                  {[0, 1, 2, 3, 4].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
+                  {[0, 1, 2, 3, 4, 5].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
                 </select>
               </div>
               <div>
                 <label className="label-neon">Col. Costo</label>
                 <select className="neon-select" value={colCosto} onChange={e => setColCosto(Number(e.target.value))}>
-                  {[0, 1, 2, 3, 4].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
+                  {[0, 1, 2, 3, 4, 5].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
                 </select>
               </div>
               <div>
-                <label className="label-neon">Col. Marca</label>
+                <label className="label-neon">Col. Marca / Subtítulo</label>
                 <select className="neon-select" value={colMarca} onChange={e => setColMarca(Number(e.target.value))}>
                   <option value={-1}>No Aplica</option>
-                  {[0, 1, 2, 3, 4].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
+                  {[0, 1, 2, 3, 4, 5].map(i => <option key={i} value={i}>Columna {String.fromCharCode(65 + i)}</option>)}
                 </select>
               </div>
             </div>
+
+            {/* VISTA PREVIA DE LAS PRIMERAS FILAS DEL EXCEL */}
+            <div style={{ overflowX: 'auto', marginBottom: '14px' }}>
+              <small style={{ color: 'var(--neon-cyan)', fontWeight: 'bold' }}>
+                👀 Vista previa de las primeras filas de "{hojaActiva}" ({excelData.length} filas totales):
+              </small>
+              <table className="neon-table" style={{ marginTop: '6px', fontSize: '12px' }}>
+                <thead>
+                  <tr>
+                    {[0, 1, 2, 3, 4].map(i => (
+                      <th key={i}>
+                        Col {String.fromCharCode(65 + i)}
+                        {colNombre === i ? ' (NOMBRE)' : colCosto === i ? ' (COSTO)' : colMarca === i ? ' (MARCA)' : ''}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {excelData.slice(0, 6).map((fila, idx) => (
+                    <tr key={idx}>
+                      {[0, 1, 2, 3, 4].map(c => (
+                        <td key={c}>{fila?.[c] !== undefined ? String(fila[c]).slice(0, 35) : '-'}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             <button onClick={importarDatosAlInventario} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px' }}>
-              🚀 Sincronizar Precios de Lista con Mi Base de Datos
+              🚀 Sincronizar {excelData.length} Filas con Mi Base de Datos (+{margenExcelPersonalizado}%)
             </button>
           </div>
         )}
@@ -501,7 +528,6 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
           </div>
         </div>
 
-        {/* PARÁMETROS DE CÁLCULO (MARGEN +100% / MONEDA ARS o USD / PROVEEDOR) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', marginBottom: '15px' }}>
           <div>
             <label className="label-neon" style={{ color: 'var(--neon-green)' }}>Margen a Sumar (%)</label>
@@ -543,7 +569,6 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
           </div>
         </div>
 
-        {/* SELECTOR DE MÉTODO PARA PÁGINAS CON LOGIN */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
           <button 
             type="button" 
@@ -569,7 +594,7 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
               <div style={{ fontSize: '13.5px' }}>
                 <b>¿Cómo traer los precios si la página pide Login?</b><br />
                 1. Hacé clic en <b>"Abrir Página del Proveedor"</b> e iniciá sesión normalmente con tu usuario y clave.<br />
-                2. Cuando estés viendo la lista de repuestos con sus precios, presioná <b>Ctrl + A</b> (seleccionar todo) y <b>Ctrl + C</b> (copiar), o copiá el bloque de productos.<br />
+                2. Cuando estés viendo la lista de repuestos con sus precios, presioná <b>Ctrl + A</b> y <b>Ctrl + C</b> (copiar), o copiá el bloque de productos.<br />
                 3. Pegalo acá abajo (<b>Ctrl + V</b>) y tocá <b>"🔍 Extraer Artículos y Calcular +{margenPersonalizadoWeb}%"</b>.
               </div>
               {urlCatalogoExterno && (
@@ -618,21 +643,21 @@ export const ModuloProveedoresExcel: React.FC<PropsProveedores> = ({
               <input 
                 type="text" 
                 className="neon-input" 
-                value={ loginUsuarioWeb } 
+                value={loginUsuarioWeb} 
                 onChange={e => setLoginUsuarioWeb(e.target.value)} 
                 placeholder="Usuario / Email del sitio (Opcional)" 
               />
               <input 
                 type="password" 
                 className="neon-input" 
-                value={ loginPasswordWeb } 
+                value={loginPasswordWeb} 
                 onChange={e => setLoginPasswordWeb(e.target.value)} 
                 placeholder="Contraseña del sitio (Opcional)" 
               />
               <input 
                 type="text" 
                 className="neon-input" 
-                value={ cookieOTokenSesion } 
+                value={cookieOTokenSesion} 
                 onChange={e => setCookieOTokenSesion(e.target.value)} 
                 placeholder="Token API / Key (Si aplica)" 
               />

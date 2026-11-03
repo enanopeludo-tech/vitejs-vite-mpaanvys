@@ -1,6 +1,6 @@
 // src/modulos/ModuloTaller.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, addDoc, updateDoc, deleteDoc, doc, arrayUnion, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, arrayUnion, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CHECKLIST_ITEMS, aplicarRedondeo } from '../estilosTema';
 
@@ -49,6 +49,9 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   const [condicionVisual, setCondicionVisual] = useState('');
   const [checklist, setChecklist] = useState<string[]>(["Enciende", "Batería OK"]);
 
+  // --- BUSCADOR RÁPIDO DE REPUESTOS EN PROVEEDORES PARA LA CALCULADORA ---
+  const [busquedaRepuestoCalc, setBusquedaRepuestoCalc] = useState('');
+
   // --- MOTOR DE COTIZACIÓN USD + COMISIONISTA + MEDIO DE PAGO + REPARTIDOR ---
   const [costoRepuestoUsd, setCostoRepuestoUsd] = useState('');
   const [manoDeObraExtra, setManoDeObraExtra] = useState('0');
@@ -62,9 +65,11 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   const [senaRequeridaSugerida, setSenaRequeridaSugerida] = useState(0);
   const [alertaTopeGremio, setAlertaTopeGremio] = useState(false);
 
+  // --- FILTROS DE TABLA Y MODAL DE BITÁCORA ---
   const [filtroEstadoTaller, setFiltroEstadoTaller] = useState('todos');
   const [filtroOrigenTaller, setFiltroOrigenTaller] = useState('todos');
   const [busquedaTaller, setBusquedaTaller] = useState('');
+  const [ordenDetalleModal, setOrdenDetalleModal] = useState<any | null>(null);
 
   const listaSectores = (config.sectoresTaller || "Microelectrónica, Módulos, Software").split(',').map((s: string) => s.trim());
   
@@ -74,6 +79,22 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       const partes = item.split(':');
       return { nombre: partes[0]?.trim() || 'Comisionista', costo: Number(partes[1]) || 0 };
     });
+
+  // Filtrar catálogo de proveedores para autocompletar la calculadora USD
+  const sugerenciasRepuestosProv = busquedaRepuestoCalc.trim().length >= 2
+    ? misProductos
+        .filter(p => (p.esDeProveedor || p.descripcion === 'Importado de lista') && p.nombre.toLowerCase().includes(busquedaRepuestoCalc.toLowerCase()))
+        .slice(0, 6)
+    : [];
+
+  const seleccionarRepuestoParaCalculadora = (prod: any) => {
+    const dolarHoy = Number(config.cotizacionDolar || 1200);
+    const costoBaseArs = Number(prod.costoProveedor || prod.precio || 0);
+    const usdEstimado = Math.max(1, Math.round((costoBaseArs / dolarHoy) * 10) / 10);
+    setCostoRepuestoUsd(usdEstimado.toString());
+    if (!falla) setFalla(`Cambio de ${prod.nombre}`);
+    setBusquedaRepuestoCalc('');
+  };
 
   const calcularPresupuestoOperativo = () => {
     const usd = Number(costoRepuestoUsd);
@@ -185,7 +206,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setAlertaTopeGremio(false);
   };
 
-  // --- CARGAR ORDEN EN EL FORMULARIO PARA EDITAR ---
   const cargarOrdenParaEditar = (orden: any) => {
     omitirRecalculoAlCargarRef.current = true;
     setIdOrdenEditando(orden.id);
@@ -220,7 +240,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- GUARDAR NUEVA ORDEN O ACTUALIZAR ORDEN EDITADA ---
   const guardarOrden = async (e: React.FormEvent) => {
     e.preventDefault();
     const origenFinal = esSucursalExterna ? sucursalAsociada.nombre : tallerOrigenOrden;
@@ -228,7 +247,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       ? sucursalAsociada.id 
       : (talleresGremio.find(t => t.nombre === tallerOrigenOrden)?.id || 'MASTER');
 
-    // MODO EDICIÓN DE ORDEN EXISTENTE
     if (idOrdenEditando) {
       const nuevaSenaNum = Number(señaRecibida) || 0;
       const diferenciaSena = nuevaSenaNum - senaOriginalEditando;
@@ -277,7 +295,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       return;
     }
 
-    // MODO ALTA DE ORDEN NUEVA
     const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
     const estadoInicial = (senaRequeridaSugerida > 0 && Number(señaRecibida) < senaRequeridaSugerida)
       ? 'esperando sena 50%'
@@ -311,6 +328,28 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       }]
     });
 
+    // Autoguardar cliente en el CRM si no está registrado
+    try {
+      const telLimpio = cliTel.replace(/\D/g, '');
+      if (telLimpio.length >= 6) {
+        const snapCrm = await getDocs(query(collection(db, 'clientes_crm'), where('telefono', '==', cliTel)));
+        if (snapCrm.empty) {
+          await addDoc(collection(db, 'clientes_crm'), {
+            ownerId: tenantId,
+            nombre: cliNombre,
+            telefono: cliTel,
+            dni: cliDni,
+            ultimoEquipo: `${marca} ${modelo}`,
+            origen: 'Taller',
+            fechaAlta: new Date().toLocaleDateString(),
+            fechaTimestamp: serverTimestamp()
+          });
+        }
+      }
+    } catch {
+      // Continuar normalmente si falla la consulta CRM
+    }
+
     if (Number(señaRecibida) > 0) {
       await addDoc(collection(db, 'finanzas'), {
         ownerId: tenantId,
@@ -330,22 +369,25 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   const imputarRepuestoAOrden = async (orden: any) => {
     const busquedaRep = prompt('Escribe parte del nombre del repuesto usado (Ej: A52, Pin, Modulo):');
     if (!busquedaRep) return;
-    const candidatos = misProductos.filter(p => p.stock > 0 && p.nombre.toLowerCase().includes(busquedaRep.toLowerCase()));
-    if (candidatos.length === 0) return alert('No se encontraron repuestos en tu stock con ese nombre.');
+    const candidatos = misProductos.filter(p => p.nombre.toLowerCase().includes(busquedaRep.toLowerCase()));
+    if (candidatos.length === 0) return alert('No se encontraron repuestos en tu catálogo con ese nombre.');
 
-    const listaOpciones = candidatos.slice(0, 8).map((c, idx) => `${idx + 1}. ${c.nombre} (Stock: ${c.stock} | Costo: $${c.costoProveedor || 0})`).join('\n');
-    const eleccion = prompt(`Selecciona el número del repuesto a descontar de tu stock:\n\n${listaOpciones}`);
+    const listaOpciones = candidatos.slice(0, 10).map((c, idx) => `${idx + 1}. ${c.nombre} (Stock: ${c.stock || 0} | Costo: $${c.costoProveedor || c.precio || 0})`).join('\n');
+    const eleccion = prompt(`Selecciona el número del repuesto a imputar en la orden:\n\n${listaOpciones}`);
     const indexElegido = Number(eleccion) - 1;
     if (isNaN(indexElegido) || !candidatos[indexElegido]) return;
 
     const repuesto = candidatos[indexElegido];
-    await updateDoc(doc(db, 'productos', repuesto.id), { stock: repuesto.stock - 1 });
+    if (Number(repuesto.stock || 0) > 0) {
+      await updateDoc(doc(db, 'productos', repuesto.id), { stock: Math.max(0, Number(repuesto.stock) - 1) });
+    }
+    const costoImputado = Number(repuesto.costoProveedor || repuesto.precio || 0);
     await updateDoc(doc(db, 'ordenes_taller', orden.id), {
-      costoRepuestosUsados: Number(orden.costoRepuestosUsados || 0) + Number(repuesto.costoProveedor || 0),
-      repuestosLista: arrayUnion({ nombre: repuesto.nombre, costo: Number(repuesto.costoProveedor || 0) }),
-      historial: arrayUnion({ estado: orden.estado, fecha: new Date().toLocaleString(), comentario: `Repuesto instalado: ${repuesto.nombre}` })
+      costoRepuestosUsados: Number(orden.costoRepuestosUsados || 0) + costoImputado,
+      repuestosLista: arrayUnion({ nombre: repuesto.nombre, costo: costoImputado }),
+      historial: arrayUnion({ estado: orden.estado, fecha: new Date().toLocaleString(), comentario: `Repuesto instalado: ${repuesto.nombre} ($${costoImputado})` })
     });
-    alert(`🔩 Repuesto "${repuesto.nombre}" descontado del stock.`);
+    alert(`🔩 Repuesto "${repuesto.nombre}" imputado a la orden #${orden.codigoSeguimiento}.`);
   };
 
   const actualizarEstado = async (id: string, nuevoEstado: string, orden: any) => {
@@ -578,6 +620,42 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
 
   return (
     <div>
+      {/* MODAL DE BITÁCORA Y REPUESTOS USADOS */}
+      {ordenDetalleModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="neon-card" style={{ width: '100%', maxWidth: '580px', maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="glow-text-cyan" style={{ margin: 0 }}>
+                📋 Bitácora Técnica — Orden #{ordenDetalleModal.codigoSeguimiento}
+              </h3>
+              <button onClick={() => setOrdenDetalleModal(null)} className="neon-btn neon-btn-red" style={{ padding: '4px 12px' }}>✕</button>
+            </div>
+            <p style={{ margin: '0 0 10px 0', fontSize: '14px' }}>
+              <b>Equipo:</b> {ordenDetalleModal.equipo?.marca} {ordenDetalleModal.equipo?.modelo} | <b>Cliente:</b> {ordenDetalleModal.cliente?.nombre}
+            </p>
+            {Array.isArray(ordenDetalleModal.repuestosLista) && ordenDetalleModal.repuestosLista.length > 0 && (
+              <div style={{ background: 'var(--bg-input)', padding: '10px 14px', borderRadius: '12px', marginBottom: '14px' }}>
+                <b className="glow-text-pink" style={{ fontSize: '13px' }}>🔩 Repuestos Imputados (Costo Total: ${Number(ordenDetalleModal.costoRepuestosUsados || 0).toLocaleString()}):</b>
+                {ordenDetalleModal.repuestosLista.map((r: any, idx: number) => (
+                  <div key={idx} style={{ fontSize: '13px', marginTop: '4px' }}>
+                    • {r.nombre} (${Number(r.costo || 0).toLocaleString()})
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ borderLeft: '3px solid var(--neon-cyan)', paddingLeft: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {(ordenDetalleModal.historial || []).map((h: any, i: number) => (
+                <div key={i}>
+                  <b className="glow-text-cyan" style={{ textTransform: 'uppercase', fontSize: '12px' }}>{h.estado}</b>
+                  <div style={{ fontSize: '14px' }}>{h.comentario}</div>
+                  <small style={{ color: 'var(--text-muted)' }}>🕒 {h.fecha}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <form 
         onSubmit={guardarOrden} 
         className={`neon-card ${idOrdenEditando ? 'neon-card-yellow' : ''}`} 
@@ -599,16 +677,43 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
         </div>
 
         <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '16px', marginBottom: '16px', border: '1px solid rgba(0,122,255,0.28)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
             <span className="label-neon" style={{ color: 'var(--neon-cyan)', margin: 0 }}>
               🧮 Cotizador Instantáneo (Dólar Hoy: ${config.cotizacionDolar} | Calcula Escala + Comisionista + Medio de Pago + 50% Seña)
             </span>
-            {alertaTopeGremio && (
+            <input 
+              type="text" 
+              className="neon-input" 
+              placeholder="🔍 Autocompletar costo desde mi Catálogo de Proveedores..." 
+              value={busquedaRepuestoCalc} 
+              onChange={e => setBusquedaRepuestoCalc(e.target.value)} 
+              style={{ maxWidth: '340px', padding: '6px 12px', fontSize: '13px' }} 
+            />
+          </div>
+
+          {sugerenciasRepuestosProv.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+              {sugerenciasRepuestosProv.map(p => (
+                <button 
+                  key={p.id} 
+                  type="button" 
+                  onClick={() => seleccionarRepuestoParaCalculadora(p)} 
+                  className="neon-btn neon-btn-purple" 
+                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                >
+                  ⚡ {p.nombre} (Costo: ${Number(p.costoProveedor || p.precio || 0).toLocaleString()})
+                </button>
+              ))}
+            </div>
+          )}
+
+          {alertaTopeGremio && (
+            <div style={{ marginBottom: '10px' }}>
               <span className="neon-badge" style={{ background: 'rgba(255,59,48,0.18)', color: 'var(--neon-red)' }}>
                 ⚠️ Repuesto supera USD {config.topeUsdSinSenaGremio}: Requiere 50% de adelanto al Gremio
               </span>
-            )}
-          </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '10px' }}>
             <div>
@@ -802,7 +907,10 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                   <td>
                     <b>{o.equipo?.marca} {o.equipo?.modelo}</b> {o.equipo?.contrasena && <span className="neon-badge" style={{ background: 'rgba(255,149,0,0.15)', color: 'var(--neon-yellow)' }}>🔑 {o.equipo.contrasena}</span>}<br />
                     <span className="glow-text-red">Falla: {o.fallaDeclarada}</span><br />
-                    <small style={{ color: 'var(--text-muted)' }}>Pago: {(o.modalidadPago || 'efectivo').toUpperCase()}</small>
+                    <small style={{ color: 'var(--text-muted)' }}>
+                      Pago: {(o.modalidadPago || 'efectivo').toUpperCase()}
+                      {o.tecnicoAsignado ? ` | Sector: ${o.tecnicoAsignado}` : ''}
+                    </small>
                   </td>
                   <td>
                     <select className="neon-select" value={o.estado} onChange={e => actualizarEstado(o.id, e.target.value, o)} style={{ padding: '8px' }}>
@@ -826,6 +934,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                   <td>
                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
                       <button onClick={() => cargarOrdenParaEditar(o)} className="neon-btn" title="Editar todos los datos de la Orden">✏️</button>
+                      <button onClick={() => setOrdenDetalleModal(o)} className="neon-btn" title="Ver Bitácora Técnica y Repuestos Usados">📋</button>
                       <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Descontar repuesto de mi stock">🔩</button>
                       <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp con saldo y envío">💬</button>
                       <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden">🖨️</button>

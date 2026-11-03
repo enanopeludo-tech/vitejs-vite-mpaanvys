@@ -20,7 +20,7 @@ export const CONFIG_DEFAULT = {
 
   // --- DÓLAR GLOBAL (WEB AUTOMÁTICO + EDITABLE MANUAL) ---
   cotizacionDolar: 1200,
-  dolarAutoWeb: true, // Si está activo, sincroniza al iniciar con DolarApi
+  dolarAutoWeb: true,
   dolarTipoFuente: "blue", // 'blue' | 'oficial' | 'bolsa'
   dolarUltimaSync: "",
 
@@ -52,6 +52,7 @@ export const CONFIG_DEFAULT = {
   urlsProveedoresVinculados: "https://api.mercadolibre.com/sites/MLA/search?q=",
   mostrarArticulosProveedorEnTienda: false,
 
+  // --- DATOS COMERCIALES, BANCARIOS Y DE TALLER ---
   direccion: "Av. 42 3998 - Necochea",
   horariosAtencion: "Lun a Vie 9:00 a 18:00 hs | Sáb 9:00 a 13:00 hs",
   whatsapp: "5492262619735",
@@ -82,7 +83,7 @@ export const CHECKLIST_ITEMS = [
 ];
 
 export const PERMISOS_DEFAULT_POR_ROL: Record<string, string[]> = {
-  recepcion_ordenes: ['presupuestos', 'taller', 'rma'],
+  recepcion_ordenes: ['presupuestos', 'taller', 'rma', 'clientes'],
   vendedor_admin: ['pos', 'presupuestos', 'catalogo', 'pedidos', 'clientes', 'proveedores', 'finanzas'],
   admin: ['dashboard', 'pos', 'presupuestos', 'taller', 'talleres_b2b', 'catalogo', 'rma', 'pedidos', 'clientes', 'proveedores', 'finanzas', 'configuracion']
 };
@@ -92,11 +93,12 @@ export const LISTA_MODULOS_PERMISOS = [
   { id: 'pos', label: '🛒 Caja POS & ARCA' },
   { id: 'presupuestos', label: '📄 Presupuestos' },
   { id: 'taller', label: '🛠️ Órdenes de Taller' },
+  { id: 'talleres_b2b', label: '🏢 Red Locales Gremio' },
   { id: 'catalogo', label: '📦 Stock, Inflación y URL' },
   { id: 'rma', label: '🔄 Garantías & RMA' },
   { id: 'pedidos', label: '🌐 Pedidos Web' },
-  { id: 'clientes', label: '👥 Clientes CRM' },
-  { id: 'proveedores', label: '🚚 Importar Excel' },
+  { id: 'clientes', label: '👥 Clientes CRM & Promos' },
+  { id: 'proveedores', label: '🚚 Importar Excel y Web' },
   { id: 'finanzas', label: '💰 Caja y Finanzas' },
   { id: 'configuracion', label: '🛡️ Usuarios y Config' }
 ];
@@ -105,6 +107,36 @@ export const aplicarRedondeo = (valor: number, multiploStr: string) => {
   const multiplo = Number(multiploStr) || 1;
   if (multiplo <= 1) return Math.round(valor);
   return Math.ceil(valor / multiplo) * multiplo;
+};
+
+// --- FUNCIÓN PARA COMPRIMIR IMÁGENES A BASE64 LIVIANO (PLAN SPARK GRATUITO) ---
+export const comprimirImagenABase64 = (file: File, maxAncho: number = 600, calidad: number = 0.72): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxAncho) {
+          height = Math.round((height * maxAncho) / width);
+          width = maxAncho;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject('No se pudo inicializar el compresor de imagen');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', calidad);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
 };
 
 // --- FUNCIÓN PARA LEER LA COTIZACIÓN DEL DÓLAR EN VIVO DESDE LA WEB ---
@@ -203,7 +235,8 @@ export const imprimirFacturaARCA = (movimiento: any, datosFiscalesEmisor: any) =
               <b>Pto. Venta: ${String(ptoVtaNum).padStart(5, "0")} — Comp. Nro: ${String(nroCmpNum).padStart(8, "0")}</b><br/>
               <b>Fecha:</b> ${fac.fechaEmision || new Date().toLocaleDateString()}<br/>
               <b>CUIT:</b> ${datosFiscalesEmisor.cuit || "-"}<br/>
-              <b>IIBB:</b> ${datosFiscalesEmisor.ingresosBrutos || datosFiscalesEmisor.cuit || "-"}
+              <b>IIBB:</b> ${datosFiscalesEmisor.ingresosBrutos || datosFiscalesEmisor.cuit || "-"}<br/>
+              <b>Inicio Act.:</b> ${datosFiscalesEmisor.inicioActividades || "01/03/2020"}
             </div>
           </div>
           <div class="bloque-receptor">

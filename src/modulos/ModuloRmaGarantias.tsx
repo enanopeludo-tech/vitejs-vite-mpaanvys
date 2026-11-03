@@ -7,7 +7,6 @@ interface PropsRma {
   user: any;
   tenantId: string;
   esSucursalExterna: boolean;
-  sucursalAsociada?: any;
   nombreNegocioActivo: string;
   direccionNegocioActivo: string;
   whatsappNegocioActivo: string;
@@ -19,9 +18,7 @@ interface PropsRma {
 }
 
 export const ModuloRmaGarantias: React.FC<PropsRma> = ({
-  user,
   tenantId,
-  esSucursalExterna,
   nombreNegocioActivo,
   direccionNegocioActivo,
   whatsappNegocioActivo,
@@ -31,13 +28,9 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
   config,
   setPestaña
 }) => {
-  // Pestañas internas del módulo RMA
   const [vistaRma, setVistaRma] = useState<'verificador' | 'proveedores' | 'clientes'>('verificador');
-
-  // Buscador de órdenes para verificar vigencia de garantía
   const [busquedaOrdenGarantia, setBusquedaOrdenGarantia] = useState('');
 
-  // Estados Formulario RMA (Edición y Alta)
   const [idRmaEditando, setIdRmaEditando] = useState<string | null>(null);
   const [rmaTipo, setRmaTipo] = useState<'proveedor' | 'cliente'>('proveedor');
   const [rmaProducto, setRmaProducto] = useState('');
@@ -62,12 +55,10 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
       return { nombre: partes[0]?.trim() || 'Comisionista', costo: Number(partes[1]) || 0 };
     });
 
-  // Filtrar RMAs propios del local activo
   const misRmas = rmas.filter(r => !esSucursalExterna || r.ownerId === tenantId);
   const rmasProveedores = misRmas.filter(r => r.tipo === 'proveedor');
   const rmasClientes = misRmas.filter(r => r.tipo === 'cliente');
 
-  // KPIs Financieros de RMA
   const capitalEnReclamoArs = rmasProveedores
     .filter(r => r.estado === 'pendiente' || r.estado === 'enviado_comisionista')
     .reduce((acc, r) => acc + Number(r.montoArs || r.monto || 0), 0);
@@ -80,7 +71,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     .filter(r => r.estado === 'rechazado_perdida')
     .reduce((acc, r) => acc + Number(r.montoArs || r.monto || 0) + Number(r.fletePerdido || 0), 0);
 
-  // Calcular días transcurridos de una orden de taller
   const calcularDiasDesdeIngreso = (orden: any) => {
     if (!orden.fechaIngreso?.seconds) return 0;
     const fechaOrd = new Date(orden.fechaIngreso.seconds * 1000);
@@ -89,7 +79,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
   };
 
-  // --- ACCIÓN 1: GENERAR REINGRESO POR GARANTÍA DESDE UNA ORDEN EXISTENTE ---
   const abrirReingresoEnTaller = async (ordenOriginal: any, diasTranscurridos: number) => {
     const fallaGarantia = prompt(
       `🔄 REINGRESO POR GARANTÍA — Orden Original #${ordenOriginal.codigoSeguimiento}\n` +
@@ -147,7 +136,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     }
   };
 
-  // --- ACCIÓN 2: GUARDAR O EDITAR RMA (PROVEEDOR O CLIENTE) ---
   const guardarRma = async (e: React.FormEvent) => {
     e.preventDefault();
     const montoNum = Number(rmaMonto) || 0;
@@ -219,7 +207,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- ACCIÓN 3: CAMBIAR ESTADO DEL RMA CON IMPACTO EN STOCK O FINANZAS ---
   const cambiarEstadoRma = async (rma: any, nuevoEstado: string) => {
     if (nuevoEstado === 'reemplazado') {
       const prodCoincidente = misProductos.find(p => p.nombre.toLowerCase().includes(rma.producto.toLowerCase()));
@@ -266,7 +253,6 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     });
   };
 
-  // --- ACCIÓN 4: IMPRIMIR REMITO DE DEVOLUCIÓN PARA EL COMISIONISTA / PROVEEDOR ---
   const imprimirRemitoDevolucionRma = (r: any) => {
     const v = window.open('', '_blank');
     if (!v) return;
@@ -717,3 +703,4 @@ export const ModuloRmaGarantias: React.FC<PropsRma> = ({
     </div>
   );
 };
+// --- FIN DEL ARCHIVO MODULORMAGARANTIAS.TSX ---

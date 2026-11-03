@@ -34,7 +34,7 @@ export const ModuloDashboard: React.FC<PropsDashboard> = ({
   sincronizarDolarAhora,
   setPestaña
 }) => {
-  // 1. Métricas Financieras
+  // 1. Métricas Financieras Reales
   const totalIngresos = misFinanzas
     .filter(m => m.tipo === 'ingreso')
     .reduce((acc, m) => acc + Number(m.monto || 0), 0);
@@ -51,7 +51,9 @@ export const ModuloDashboard: React.FC<PropsDashboard> = ({
   // 2. Métricas de Laboratorio y Saldos 50% por Cobrar
   const ordenesEsperandoSena = misOrdenesTaller.filter(o => o.estado === 'esperando sena 50%');
   const ordenesEnComisionista = misOrdenesTaller.filter(o => o.estado === 'repuesto en viaje comisionista');
-  const ordenesEnBanco = misOrdenesTaller.filter(o => o.estado === 'ingresado' || o.estado === 'en revision' || o.estado === 'reingreso garantia');
+  const ordenesEnBanco = misOrdenesTaller.filter(
+    o => o.estado === 'ingresado' || o.estado === 'en revision' || o.estado === 'reingreso garantia'
+  );
   const ordenesListasParaRetiro = misOrdenesTaller.filter(o => o.estado === 'reparado');
 
   const saldoPorCobrarEnListos = ordenesListasParaRetiro.reduce((acc, o) => {
@@ -60,15 +62,27 @@ export const ModuloDashboard: React.FC<PropsDashboard> = ({
     return acc + Math.max(0, total - sena);
   }, 0);
 
-  // 3. Métricas de Stock del Local (Sin mezclar proveedores)
-  const accesoriosLocal = misProductos.filter(p => !p.esDeProveedor && p.descripcion !== 'Importado de lista');
+  // 3. Métricas de Stock del Local vs Proveedores
+  const accesoriosLocal = misProductos.filter(
+    p => !p.esDeProveedor && p.descripcion !== 'Importado de lista'
+  );
+  const repuestosProveedores = misProductos.filter(
+    p => Boolean(p.esDeProveedor || p.descripcion === 'Importado de lista')
+  );
   const alertaMinimo = Number(config.stockCriticoAlerta || 3);
-  const accesoriosStockCritico = accesoriosLocal.filter(p => Number(p.stock || 0) <= alertaMinimo);
+  const accesoriosStockCritico = accesoriosLocal.filter(
+    p => Number(p.stock || 0) <= alertaMinimo
+  );
 
   // 4. Métricas Gremio B2B, Pedidos Web y RMAs
   const deudaTotalGremio = talleresGremio.reduce((acc, t) => acc + Number(t.saldoDeudor || 0), 0);
-  const pedidosWebPendientes = misPedidosWeb.filter(p => !p.estado || p.estado === 'pendiente' || p.estado === 'pagado_preparacion');
-  const rmasActivos = rmas.filter(r => r.estado === 'pendiente' || r.estado === 'enviado_comisionista');
+  const pedidosWebPendientes = misPedidosWeb.filter(
+    p => !p.estado || p.estado === 'pendiente' || p.estado === 'pagado_preparacion'
+  );
+  const rmasActivos = rmas.filter(
+    r => (!esSucursalExterna || r.ownerId === (esSucursalExterna ? r.ownerId : 'MASTER')) &&
+         (r.estado === 'pendiente' || r.estado === 'enviado_comisionista' || r.estado === 'en_revision_taller')
+  );
 
   const recordarRetiroWhatsApp = (orden: any) => {
     const total = Number(orden.costoReparacion || 0);
@@ -77,7 +91,10 @@ export const ModuloDashboard: React.FC<PropsDashboard> = ({
     let msg = `Hola *${orden.cliente?.nombre}*, te recordamos de *${nombreNegocioActivo}* que tu *${orden.equipo?.marca} ${orden.equipo?.modelo}* (Orden *#${orden.codigoSeguimiento}*) ya se encuentra *REPARADO Y LISTO* para retirar o enviar con nuestro repartidor.\n\n`;
     msg += `💰 *Saldo restante (50%) a abonar en la entrega: $${saldo.toLocaleString()}*\n`;
     msg += `📍 Dirección: ${config.direccion} (${config.horariosAtencion})`;
-    window.open(`https://wa.me/549${(orden.cliente?.telefono || '').replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(
+      `https://wa.me/549${(orden.cliente?.telefono || '').replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`,
+      '_blank'
+    );
   };
 
   const imprimirQrMostradorTienda = () => {
@@ -118,6 +135,7 @@ export const ModuloDashboard: React.FC<PropsDashboard> = ({
           </h2>
           <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>
             💵 Dólar Global Activo: <b className="glow-text-green">${config.cotizacionDolar}</b> ({config.dolarTipoFuente?.toUpperCase() || 'BLUE'}) 
+            {config.dolarUltimaSync ? ` (${config.dolarUltimaSync})` : ''}
             {' | '} 🛍️ Tienda Pública:{' '}
             <a href={urlVitrinaPropia} target="_blank" rel="noreferrer" className="glow-text-cyan" style={{ fontWeight: 'bold' }}>
               {urlVitrinaPropia}
@@ -191,11 +209,26 @@ export const ModuloDashboard: React.FC<PropsDashboard> = ({
         </div>
 
         <div className="neon-card neon-card-pink" onClick={() => setPestaña('catalogo')} style={{ cursor: 'pointer' }}>
-          <span className="label-neon">📦 Alertas de Stock & RMA</span>
+          <span className="label-neon">📦 Inventario Separado & RMA</span>
           <h2 className="glow-text-red" style={{ margin: '6px 0' }}>{accesoriosStockCritico.length} en Stock Crítico</h2>
-          <small style={{ color: 'var(--text-muted)' }}>
-            🔄 {rmasActivos.length} RMAs reclamados a proveedores
+          <small style={{ color: 'var(--text-muted)', display: 'block' }}>
+            🛍️ Local: {accesoriosLocal.length} | 🔧 Proveedores: {repuestosProveedores.length}
           </small>
+          <small style={{ color: 'var(--neon-yellow)' }}>
+            🔄 {rmasActivos.length} RMAs activos
+          </small>
+        </div>
+      </div>
+
+      {/* BARRA DE ACCESOS DIRECTOS RÁPIDOS */}
+      <div className="neon-card" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="label-neon" style={{ margin: 0 }}>⚡ Acciones Rápidas de Mostrador:</span>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button onClick={() => setPestaña('pos')} className="neon-btn neon-btn-green">🛒 Abrir Caja POS</button>
+          <button onClick={() => setPestaña('taller')} className="neon-btn neon-btn-fillCyan">📝 Nueva Orden Taller</button>
+          <button onClick={() => setPestaña('presupuestos')} className="neon-btn">📄 Nuevo Presupuesto USD</button>
+          <button onClick={() => setPestaña('clientes')} className="neon-btn neon-btn-purple">👥 Clientes CRM y Promos</button>
+          <button onClick={() => setPestaña('proveedores')} className="neon-btn">🚚 Importar Lista / Web</button>
         </div>
       </div>
 

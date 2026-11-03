@@ -242,7 +242,6 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
 
   return (
     <div>
-      {/* KPIs DE TIENDA ONLINE */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
         <div className="neon-card">
           <span className="label-neon">🛍️ Pedidos Web Recibidos</span>
@@ -265,7 +264,6 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
         </div>
       </div>
 
-      {/* FILTROS Y BUSCADOR */}
       <div className="neon-card" style={{ marginBottom: '18px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input 
           type="text" 
@@ -285,7 +283,6 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
         </select>
       </div>
 
-      {/* TABLA DE PEDIDOS WEB */}
       <div className="neon-card" style={{ overflowX: 'auto' }}>
         <table className="neon-table">
           <thead>
