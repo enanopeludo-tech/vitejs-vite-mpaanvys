@@ -108,21 +108,22 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     if (!telLimpio) return;
     const existente = mapaUnificadoClientes.get(telLimpio);
     const montoOrden = Number(o.costoReparacion || o.seña || 0);
+    const equipoTexto = ((o.equipo?.marca || '') + ' ' + (o.equipo?.modelo || '')).trim();
     if (existente) {
       existente.cantidadOrdenes = (existente.cantidadOrdenes || 0) + 1;
       existente.totalGastado = (existente.totalGastado || 0) + montoOrden;
-      if (!existente.ultimoEquipo && o.equipo) {
-        existente.ultimoEquipo = `${o.equipo.marca || ''} ${o.equipo.modelo || ''}`.trim();
+      if (!existente.ultimoEquipo && equipoTexto) {
+        existente.ultimoEquipo = equipoTexto;
       }
     } else {
       mapaUnificadoClientes.set(telLimpio, {
-        id: `taller_${o.id}`,
+        id: 'taller_' + o.id,
         esDeColeccionCrm: false,
         nombre: o.cliente?.nombre || 'Cliente Taller',
         telefono: o.cliente?.telefono || '',
         dni: o.cliente?.dni || '',
         direccion: '',
-        ultimoEquipo: `${o.equipo?.marca || ''} ${o.equipo?.modelo || ''}`.trim(),
+        ultimoEquipo: equipoTexto,
         origen: 'Taller',
         cantidadOrdenes: 1,
         totalGastado: montoOrden
@@ -139,7 +140,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
       existente.totalGastado = (existente.totalGastado || 0) + montoPedido;
     } else {
       mapaUnificadoClientes.set(telLimpio, {
-        id: `web_${p.id}`,
+        id: 'web_' + p.id,
         esDeColeccionCrm: false,
         nombre: p.cliente?.nombre || 'Cliente Web',
         telefono: p.cliente?.telefono || '',
@@ -156,10 +157,12 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
   const carteraClientesUnificada = Array.from(mapaUnificadoClientes.values()).filter(c => {
     if (!busquedaCrm) return true;
     const b = busquedaCrm.toLowerCase();
-    return c.nombre?.toLowerCase().includes(b) ||
-           c.telefono?.toLowerCase().includes(b) ||
-           c.dni?.toLowerCase().includes(b) ||
-           c.ultimoEquipo?.toLowerCase().includes(b);
+    return Boolean(
+      c.nombre?.toLowerCase().includes(b) ||
+      c.telefono?.toLowerCase().includes(b) ||
+      c.dni?.toLowerCase().includes(b) ||
+      c.ultimoEquipo?.toLowerCase().includes(b)
+    );
   });
 
   const guardarClienteCrm = async (e: React.FormEvent) => {
@@ -204,26 +207,26 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
       .replace(/\{nombre\}/gi, cliente.nombre || 'Cliente')
       .replace(/\{empresa\}/gi, nombreNegocioActivo);
     const tel = (cliente.telefono || '').replace(/\D/g, '');
-    window.open(`https://wa.me/549${tel}?text=${encodeURIComponent(mensajePersonalizado)}`, '_blank');
+    const urlWa = 'https://wa.me/549' + tel + '?text=' + encodeURIComponent(mensajePersonalizado);
+    window.open(urlWa, '_blank');
   };
 
   const exportarClientesCsv = () => {
     if (carteraClientesUnificada.length === 0) return alert('No hay clientes para exportar.');
     const encabezados = ['Nombre', 'Telefono', 'DNI', 'Origen', 'Ultimo Equipo', 'Ordenes', 'Total Historico'];
     const filas = carteraClientesUnificada.map(c => [
-      `"${(c.nombre || '').replace(/"/g, '""')}"`,
-      `"${c.telefono || ''}"`,
-      `"${c.dni || ''}"`,
-      `"${c.origen || 'Local'}"`,
-      `"${(c.ultimoEquipo || '').replace(/"/g, '""')}"`,
+      '"' + String(c.nombre || '').replace(/"/g, '""') + '"',
+      '"' + String(c.telefono || '') + '"',
+      '"' + String(c.dni || '') + '"',
+      '"' + String(c.origen || 'Local') + '"',
+      '"' + String(c.ultimoEquipo || '').replace(/"/g, '""') + '"',
       c.cantidadOrdenes || 0,
       c.totalGastado || 0
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [encabezados.join(','), ...filas.map(f => f.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Clientes_CRM_${nombreNegocioActivo.replace(/\s+/g, '_')}.csv`);
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', 'Clientes_CRM_' + nombreNegocioActivo.replace(/\s+/g, '_') + '.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -315,14 +318,11 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
 
   const registrarCobroCuentaCorrienteGremio = async (taller: any) => {
     const deudaActual = Number(taller.saldoDeudor || 0);
-    const montoCobrado = Number(
-      prompt(
-        `💵 COBRAR CUENTA CORRIENTE — Local: ${taller.nombre}\n` +
-        `Saldo deudor actual: $${deudaActual.toLocaleString()}\n\n` +
-        `Ingresa el monto que entrega/abona el local ahora ($):`,
-        deudaActual > 0 ? String(deudaActual) : ''
-      )
-    );
+    const textoPrompt =
+      '💵 COBRAR CUENTA CORRIENTE — Local: ' + taller.nombre + '\n' +
+      'Saldo deudor actual: $' + deudaActual.toLocaleString() + '\n\n' +
+      'Ingresa el monto que entrega/abona el local ahora ($):';
+    const montoCobrado = Number(prompt(textoPrompt, deudaActual > 0 ? String(deudaActual) : ''));
     if (!montoCobrado || montoCobrado <= 0) return;
 
     const medioPago = prompt('Medio de pago recibido (efectivo, transferencia, mercadopago):', 'efectivo') || 'efectivo';
@@ -337,26 +337,26 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     await addDoc(collection(db, 'finanzas'), {
       ownerId: tenantId,
       tipo: 'ingreso',
-      concepto: `Cobro Cta. Cte. Gremio: ${taller.nombre} (Resta: $${nuevoSaldo.toLocaleString()})`,
+      concepto: 'Cobro Cta. Cte. Gremio: ' + taller.nombre + ' (Resta: $' + nuevoSaldo.toLocaleString() + ')',
       monto: montoCobrado,
       metodoPago: medioPago.toLowerCase(),
       fecha: serverTimestamp(),
       usuario: user.email
     });
 
-    alert(`✅ Entrega de $${montoCobrado.toLocaleString()} registrada en Caja. Nuevo saldo de ${taller.nombre}: $${nuevoSaldo.toLocaleString()}.`);
+    alert('✅ Entrega de $' + montoCobrado.toLocaleString() + ' registrada en Caja. Nuevo saldo de ' + taller.nombre + ': $' + nuevoSaldo.toLocaleString() + '.');
   };
 
   const cargarCargoManualCtaCte = async (taller: any) => {
     const deudaActual = Number(taller.saldoDeudor || 0);
-    const montoCargo = Number(prompt(`➕ CARGAR DEUDA A CUENTA CORRIENTE — ${taller.nombre}\nIngresa el importe a sumar al saldo deudor ($):`));
+    const montoCargo = Number(prompt('➕ CARGAR DEUDA A CUENTA CORRIENTE — ' + taller.nombre + '\nIngresa el importe a sumar al saldo deudor ($):'));
     if (!montoCargo || montoCargo <= 0) return;
 
     const nuevoSaldo = deudaActual + montoCargo;
     await updateDoc(doc(db, 'talleres_gremio', taller.id), {
       saldoDeudor: nuevoSaldo
     });
-    alert(`📌 Saldo actualizado. Deuda total de ${taller.nombre}: $${nuevoSaldo.toLocaleString()}.`);
+    alert('📌 Saldo actualizado. Deuda total de ' + taller.nombre + ': $' + nuevoSaldo.toLocaleString() + '.');
   };
 
   const enviarEstadoCuentaWhatsAppGremio = (taller: any) => {
@@ -365,15 +365,16 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     const deuda = Number(taller.saldoDeudor || 0);
     const limite = Number(taller.limiteCredito || 0);
 
-    let msg = `Hola *${taller.encargado || taller.nombre}*, te enviamos el resumen de tu cuenta Gremio B2B en *${nombreNegocioActivo}*:\n\n`;
-    msg += `🏢 *Local:* ${taller.nombre} (Nivel ${taller.nivel || 'Bronce'})\n`;
-    msg += `🛠️ *Equipos en laboratorio / para retirar:* ${enCurso}\n`;
-    msg += `💰 *Saldo actual en Cuenta Corriente:* $${deuda.toLocaleString()}\n`;
-    msg += `📊 *Límite de crédito asignado:* $${limite.toLocaleString()}\n`;
+    let msg = 'Hola *' + (taller.encargado || taller.nombre) + '*, te enviamos el resumen de tu cuenta Gremio B2B en *' + nombreNegocioActivo + '*:\n\n';
+    msg += '🏢 *Local:* ' + taller.nombre + ' (Nivel ' + (taller.nivel || 'Bronce') + ')\n';
+    msg += '🛠️ *Equipos en laboratorio / para retirar:* ' + enCurso + '\n';
+    msg += '💰 *Saldo actual en Cuenta Corriente:* $' + deuda.toLocaleString() + '\n';
+    msg += '📊 *Límite de crédito asignado:* $' + limite.toLocaleString() + '\n';
     if (config.aliasTransferencia) {
-      msg += `\n🏦 *Alias para transferencias:* ${config.aliasTransferencia} (${config.bancoTitular})`;
+      msg += '\n🏦 *Alias para transferencias:* ' + config.aliasTransferencia + ' (' + config.bancoTitular + ')';
     }
-    window.open(`https://wa.me/549${(taller.telefono || '').replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    const urlWa = 'https://wa.me/549' + (taller.telefono || '').replace(/\D/g, '') + '?text=' + encodeURIComponent(msg);
+    window.open(urlWa, '_blank');
   };
 
   // ----------------------------------------------------------------------------
@@ -412,7 +413,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     const facObj = {
       tipo: tipoCmp,
       puntoVenta: ptoVta,
-      numero: `${ptoVta}-${proximoNumero}`,
+      numero: ptoVta + '-' + proximoNumero,
       cuit: cuitReceptor,
       razonSocialReceptor: razonReceptor,
       condicionIvaReceptor: condIvaReceptor,
@@ -425,7 +426,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     imprimirFacturaARCA({ ...movimiento, factura: facObj }, datosFiscalesActivos);
   };
 
-  // --- CIERRE DE CAJA DIARIO ---
+  // --- IMPRIMIR CIERRE DE CAJA DIARIO (SIN BACKTICKS ANIDADOS) ---
   const imprimirCierreCajaDiario = () => {
     const hoyStr = new Date().toLocaleDateString();
     const movsHoy = misFinanzas.filter(m => {
@@ -441,94 +442,103 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     const totalEgr = egresosHoy.reduce((acc, m) => acc + Number(m.monto || 0), 0);
     const netoHoy = totalIng - totalEgr;
 
-    const efectivoHoy = ingresosHoy.filter(m => m.metodoPago === 'efectivo').reduce((acc, m) => acc + Number(m.monto || 0), 0) -
-                        egresosHoy.filter(m => m.metodoPago === 'efectivo').reduce((acc, m) => acc + Number(m.monto || 0), 0);
+    const efectivoIng = ingresosHoy.filter(m => m.metodoPago === 'efectivo').reduce((acc, m) => acc + Number(m.monto || 0), 0);
+    const efectivoEgr = egresosHoy.filter(m => m.metodoPago === 'efectivo').reduce((acc, m) => acc + Number(m.monto || 0), 0);
+    const efectivoHoy = efectivoIng - efectivoEgr;
 
-    const transferenciaHoy = ingresosHoy.filter(m => m.metodoPago === 'transferencia' || m.metodoPago === 'mercadopago').reduce((acc, m) => acc + Number(m.monto || 0), 0);
-    const tarjetaHoy = ingresosHoy.filter(m => (m.metodoPago || '').startsWith('tarjeta')).reduce((acc, m) => acc + Number(m.monto || 0), 0);
+    const transferenciaHoy = ingresosHoy
+      .filter(m => m.metodoPago === 'transferencia' || m.metodoPago === 'mercadopago')
+      .reduce((acc, m) => acc + Number(m.monto || 0), 0);
+
+    const tarjetaHoy = ingresosHoy
+      .filter(m => (m.metodoPago || '').startsWith('tarjeta'))
+      .reduce((acc, m) => acc + Number(m.monto || 0), 0);
+
+    const filasHtml = movsHoy.length > 0
+      ? movsHoy.map(m => {
+          const signo = m.tipo === 'ingreso' ? '+' : '-';
+          const colorMonto = m.tipo === 'ingreso' ? '#198754' : '#ff3b30';
+          return (
+            '<tr>' +
+              '<td>' + (m.concepto || '-') + '</td>' +
+              '<td style="text-transform:uppercase;">' + (m.metodoPago || '-') + '</td>' +
+              '<td style="text-align:right; font-weight:bold; color:' + colorMonto + ';">' +
+                signo + '$' + Number(m.monto || 0).toLocaleString() +
+              '</td>' +
+            '</tr>'
+          );
+        }).join('')
+      : '<tr><td colspan="3" style="text-align:center; color:#777;">No hay movimientos registrados en la fecha de hoy.</td></tr>';
+
+    const htmlDoc = [
+      '<!DOCTYPE html>',
+      '<html>',
+      '<head>',
+      '<title>Cierre de Caja Diario - ' + nombreNegocioActivo + '</title>',
+      '<style>',
+      'body { font-family: "Segoe UI", Arial, sans-serif; color: #111; max-width: 660px; margin: 0 auto; padding: 25px; }',
+      '.cierre-box { border: 3px solid #111; border-radius: 12px; padding: 22px; }',
+      '.header { display: flex; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 15px; }',
+      '.grid-totales { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 15px 0; }',
+      '.card-tot { background: #f8f9fa; border: 1px solid #ccc; padding: 12px; border-radius: 8px; text-align: center; }',
+      'table { width: 100%; border-collapse: collapse; margin-top: 15px; }',
+      'th { background: #eee; padding: 8px; text-align: left; font-size: 11px; border-bottom: 1px solid #000; }',
+      'td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px; }',
+      '@media print { .no-print { display: none; } }',
+      '</style>',
+      '</head>',
+      '<body>',
+      '<div class="no-print" style="text-align:right; margin-bottom:12px;">',
+      '<button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 20px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Arqueo de Caja Diario</button>',
+      '</div>',
+      '<div class="cierre-box">',
+      '<div class="header">',
+      '<div>',
+      '<h2 style="margin:0;">' + nombreNegocioActivo + '</h2>',
+      '<div style="font-size:12px;">📍 ' + (datosFiscalesActivos.direccion || '-') + ' | CUIT: ' + (datosFiscalesActivos.cuit || '-') + '</div>',
+      '</div>',
+      '<div style="text-align:right;">',
+      '<div style="font-size:11px; font-weight:bold;">ARQUEO Y CIERRE DE CAJA</div>',
+      '<div style="font-size:16px; font-weight:900;">📅 ' + hoyStr + '</div>',
+      '</div>',
+      '</div>',
+      '<div class="grid-totales">',
+      '<div class="card-tot" style="border-color:#28cd41; background:#f0fff4;">',
+      '<div style="font-size:11px; font-weight:bold; color:#198754;">💵 EFECTIVO NETO EN CAJA</div>',
+      '<div style="font-size:22px; font-weight:900; color:#198754; margin-top:4px;">$' + efectivoHoy.toLocaleString() + '</div>',
+      '</div>',
+      '<div class="card-tot" style="border-color:#007aff;">',
+      '<div style="font-size:11px; font-weight:bold; color:#007aff;">🏦 TRANSFERENCIA / MERCADO PAGO</div>',
+      '<div style="font-size:22px; font-weight:900; color:#007aff; margin-top:4px;">$' + transferenciaHoy.toLocaleString() + '</div>',
+      '</div>',
+      '<div class="card-tot" style="border-color:#af52de;">',
+      '<div style="font-size:11px; font-weight:bold; color:#af52de;">💳 TARJETAS / CUOTAS</div>',
+      '<div style="font-size:22px; font-weight:900; color:#af52de; margin-top:4px;">$' + tarjetaHoy.toLocaleString() + '</div>',
+      '</div>',
+      '<div class="card-tot" style="border-color:#333; background:#eee;">',
+      '<div style="font-size:11px; font-weight:bold; color:#333;">📊 BALANCE NETO DEL DÍA</div>',
+      '<div style="font-size:22px; font-weight:900; color:#111; margin-top:4px;">$' + netoHoy.toLocaleString() + '</div>',
+      '</div>',
+      '</div>',
+      '<div style="font-size:13px; margin:15px 0 5px 0;">',
+      '<b>Total Ingresos del Día:</b> +$' + totalIng.toLocaleString() + ' | <b>Total Egresos del Día:</b> -$' + totalEgr.toLocaleString() + ' (Operaciones: ' + movsHoy.length + ')',
+      '</div>',
+      '<table>',
+      '<thead><tr><th>Detalle / Concepto</th><th>Medio</th><th style="text-align:right;">Importe</th></tr></thead>',
+      '<tbody>' + filasHtml + '</tbody>',
+      '</table>',
+      '<div style="display:flex; justify-content:space-between; margin-top:42px; font-size:12px;">',
+      '<div style="border-top:1px solid #000; width:44%; text-align:center; padding-top:4px;">Firma Cajero / Operador (' + (user.email || '') + ')</div>',
+      '<div style="border-top:1px solid #000; width:44%; text-align:center; padding-top:4px;">Controló Administración</div>',
+      '</div>',
+      '</div>',
+      '</body>',
+      '</html>'
+    ].join('\n');
 
     const v = window.open('', '_blank');
     if (!v) return;
-    v.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Cierre de Caja Diario - ${nombreNegocioActivo}</title>
-          <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; max-width: 650px; margin: 0 auto; padding: 25px; }
-            .cierre-box { border: 3px solid #111; border-radius: 12px; padding: 22px; }
-            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 15px; }
-            .grid-totales { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 15px 0; }
-            .card-tot { background: #f8f9fa; border: 1px solid #ccc; padding: 12px; border-radius: 8px; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th { background: #eee; padding: 7px; text-align: left; font-size: 11px; border-bottom: 1px solid #000; }
-            td { padding: 7px; border-bottom: 1px solid #ddd; font-size: 12px; }
-            @media print { .no-print { display: none; } }
-          </style>
-        </head>
-        <body>
-          <div class="no-print" style="text-align:right; margin-bottom:12px;">
-            <button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 20px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Cierre de Caja</button>
-          </div>
-          <div class="cierre-box">
-            <div class="header">
-              <div>
-                <h2 style="margin:0;">${nombreNegocioActivo}</h2>
-                <div style="font-size:12px;">📍 ${datosFiscalesActivos.direccion || '-'} | CUIT: ${datosFiscalesActivos.cuit || '-'}</div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-size:11px; font-weight:bold;">CIERRE DE CAJA DIARIO</div>
-                <div style="font-size:16px; font-weight:900;">📅 ${hoyStr}</div>
-              </div>
-            </div>
-
-            <div class="grid-totales">
-              <div class="card-tot" style="border-color:#28cd41; background:#f0fff4;">
-                <div style="font-size:11px; font-weight:bold; color:#198754;">CAJA FÍSICA EFECTIVO</div>
-                <div style="font-size:22px; font-weight:900; color:#198754; margin-top:4px;">$${efectivoHoy.toLocaleString()}</div>
-              </div>
-              <div class="card-tot" style="border-color:#007aff;">
-                <div style="font-size:11px; font-weight:bold; color:#007aff;">TRANSFERENCIA / MP</div>
-                <div style="font-size:22px; font-weight:900; color:#007aff; margin-top:4px;">$${transferenciaHoy.toLocaleString()}</div>
-              </div>
-              <div class="card-tot" style="border-color:#af52de;">
-                <div style="font-size:11px; font-weight:bold; color:#af52de;">TARJETAS / POSNET</div>
-                <div style="font-size:22px; font-weight:900; color:#af52de; margin-top:4px;">$${tarjetaHoy.toLocaleString()}</div>
-              </div>
-              <div class="card-tot" style="border-color:#333; background:#eee;">
-                <div style="font-size:11px; font-weight:bold; color:#333;">BALANCE NETO DEL DÍA</div>
-                <div style="font-size:22px; font-weight:900; color:#111; margin-top:4px;">$${netoHoy.toLocaleString()}</div>
-              </div>
-            </div>
-
-            <div style="font-size:13px; margin: 15px 0 5px 0;">
-              <b>Total Ingresos:</b> +$${totalIng.toLocaleString()} | <b>Total Egresos:</b> -$${totalEgr.toLocaleString()} (Movimientos hoy: ${movsHoy.length})
-            </div>
-
-            <table>
-              <thead><tr><th>Concepto</th><th>Medio</th><th style="text-align:right;">Monto</th></tr></thead>
-              <tbody>
-                ${movsHoy.map(m => `
-                  <tr>
-                    <td>${m.concepto}</td>
-                    <td style="text-transform:uppercase;">${m.metodoPago}</td>
-                    <td style="text-align:right; font-weight:bold; color:${m.tipo === 'ingreso' ? '#198754' : '#ff3b30'};">
-                      ${m.tipo === 'ingreso' ? '+' : '-'}$${Number(m.monto || 0).toLocaleString()}
-                    </td>
-                  </tr>
-                `).join('')}
-                ${movsHoy.length === 0 ? '<tr><td colspan="3" style="text-align:center; color:#777;">No hay movimientos registrados hoy.</td></tr>' : ''}
-              </tbody>
-            </table>
-
-            <div style="display:flex; justify-content:space-between; margin-top:40px; font-size:12px;">
-              <div style="border-top:1px solid #000; width:45%; text-align:center; padding-top:4px;">Firma Responsable / Cajero</div>
-              <div style="border-top:1px solid #000; width:45%; text-align:center; padding-top:4px;">Firma Administrador</div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
+    v.document.write(htmlDoc);
     v.document.close();
   };
 
@@ -607,7 +617,9 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
                 <tr key={c.id}>
                   <td>
                     <b>{c.nombre}</b><br />
-                    <small style={{ color: 'var(--text-muted)' }}>DNI: {c.dni || '-'} {c.direccion ? `| 📍 ${c.direccion}` : ''}</small>
+                    <small style={{ color: 'var(--text-muted)' }}>
+                      DNI: {c.dni || '-'} {c.direccion ? '| 📍 ' + c.direccion : ''}
+                    </small>
                   </td>
                   <td className="glow-text-green" style={{ fontWeight: 'bold' }}>📱 {c.telefono}</td>
                   <td>
@@ -674,7 +686,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
               🏢 Red de Locales Asociados & Cuentas Corrientes Gremio B2B
             </h2>
             <small style={{ color: 'var(--text-muted)' }}>
-              Cada local habilitado tiene su propio panel multi-sucursal, su link de tienda web (`/?tienda=ID`) y su tarifa mayorista automática.
+              Cada local habilitado tiene su propio panel multi-sucursal, su link de tienda web (/?tienda=ID) y su tarifa mayorista automática.
             </small>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -746,7 +758,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
                     <td>
                       <button 
                         onClick={() => updateDoc(doc(db, 'talleres_gremio', t.id), { activo: t.activo === false ? true : false })} 
-                        className={`neon-btn ${t.activo !== false ? 'neon-btn-green' : 'neon-btn-red'}`} 
+                        className={'neon-btn ' + (t.activo !== false ? 'neon-btn-green' : 'neon-btn-red')} 
                         style={{ padding: '4px 10px' }}
                       >
                         {t.activo !== false ? '🟢 Activo' : '🔴 Suspendido'}
@@ -788,7 +800,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
                         >
                           ✏️
                         </button>
-                        <button onClick={() => { if (window.confirm(`¿Eliminar local ${t.nombre}?`)) deleteDoc(doc(db, 'talleres_gremio', t.id)); }} className="neon-btn neon-btn-red">
+                        <button onClick={() => { if (window.confirm('¿Eliminar local ' + t.nombre + '?')) deleteDoc(doc(db, 'talleres_gremio', t.id)); }} className="neon-btn neon-btn-red">
                           🗑️
                         </button>
                       </div>
@@ -830,18 +842,18 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     if (movimientosFiltrados.length === 0) return alert('No hay movimientos para exportar.');
     const headers = ['Fecha', 'Tipo', 'Concepto', 'Medio de Pago', 'Monto', 'Factura ARCA', 'CAE'];
     const rows = movimientosFiltrados.map(m => [
-      `"${m.fecha?.seconds ? new Date(m.fecha.seconds * 1000).toLocaleString() : '-'}"`,
-      `"${m.tipo}"`,
-      `"${(m.concepto || '').replace(/"/g, '""')}"`,
-      `"${m.metodoPago || ''}"`,
+      '"' + (m.fecha?.seconds ? new Date(m.fecha.seconds * 1000).toLocaleString() : '-') + '"',
+      '"' + (m.tipo || '') + '"',
+      '"' + String(m.concepto || '').replace(/"/g, '""') + '"',
+      '"' + (m.metodoPago || '') + '"',
       m.monto || 0,
-      `"${m.factura ? `${m.factura.tipo} ${m.factura.numero}` : 'Ticket Interno'}"`,
-      `"${m.factura?.cae || ''}"`
+      '"' + (m.factura ? (m.factura.tipo + ' ' + m.factura.numero) : 'Ticket Interno') + '"',
+      '"' + (m.factura?.cae || '') + '"'
     ]);
     const csv = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csv));
-    link.setAttribute('download', `Caja_Finanzas_${nombreNegocioActivo.replace(/\s+/g, '_')}.csv`);
+    link.setAttribute('download', 'Caja_Finanzas_' + nombreNegocioActivo.replace(/\s+/g, '_') + '.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -866,7 +878,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
           <small style={{ color: 'var(--text-muted)' }}>Cobros con Posnet / Link</small>
         </div>
         <div className="neon-card neon-card-yellow">
-          <span className="label-neon">📊 Balance Filtrado</span>
+          <span className="label-neon">📊 Balance Acumulado</span>
           <h2 className="glow-text-yellow" style={{ margin: '4px 0' }}>${(totalIngresos - totalEgresos).toLocaleString()}</h2>
           <small style={{ color: 'var(--text-muted)' }}>
             Ing: +${totalIngresos.toLocaleString()} | Egr: -${totalEgresos.toLocaleString()}
@@ -988,4 +1000,3 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
   );
 };
 // --- FIN DEL ARCHIVO MODULOCLIENTESGREMIOFINANZAS.TSX ---
-```eof

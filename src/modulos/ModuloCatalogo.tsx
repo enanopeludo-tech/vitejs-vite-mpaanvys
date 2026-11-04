@@ -61,7 +61,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     try {
       const base64 = await comprimirImagenABase64(file, 550, 0.7);
       setProdImg(base64);
-    } catch (err) {
+    } catch {
       alert('Error al comprimir la imagen');
     } finally {
       setCargandoImagen(false);
@@ -74,7 +74,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     try {
       setProdUrlOrigen(urlExternaInput);
       if (urlExternaInput.startsWith('http')) {
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(urlExternaInput)}`;
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(urlExternaInput);
         const resp = await fetch(proxyUrl);
         const data = await resp.json();
         const html = data.contents || '';
@@ -97,7 +97,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         alert('✅ Datos extraídos de la URL. Verifica el Precio de Lista y presiona Guardar.');
       } else {
         const baseApi = config.urlsProveedoresVinculados || 'https://api.mercadolibre.com/sites/MLA/search?q=';
-        const resp = await fetch(`${baseApi}${encodeURIComponent(urlExternaInput)}`);
+        const resp = await fetch(baseApi + encodeURIComponent(urlExternaInput));
         const json = await resp.json();
         const primerItem = json.results?.[0];
         if (primerItem) {
@@ -107,12 +107,12 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
           setProdUrlOrigen(primerItem.permalink || '');
           const sugerido = aplicarRedondeo(Number(primerItem.price || 0) * (1 + Number(config.margenGanancia || 35) / 100), config.redondeoPrecios);
           setProdPrecio(sugerido.toString());
-          alert(`✅ Encontrado: "${primerItem.title}" ($${primerItem.price}).`);
+          alert('✅ Encontrado: "' + primerItem.title + '" ($' + primerItem.price + ').');
         } else {
           alert('No se encontraron resultados automáticos. Puedes completar los campos manualmente.');
         }
       }
-    } catch (e) {
+    } catch {
       alert('Se vinculó el link de origen. Completa el nombre y precio para guardarlo.');
     } finally {
       setExtrayendoUrl(false);
@@ -132,7 +132,8 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
 
     const etiquetaSeccion = vistaInventario === 'local' ? 'Stock del Local (Accesorios)' : 'Catálogo de Proveedores (Taller)';
     if (articulosAfectados.length === 0) return alert('Ningún artículo coincide con los filtros seleccionados.');
-    if (!window.confirm(`📈 AJUSTE DE INFLACIÓN EN ${etiquetaSeccion.toUpperCase()}:\nSe actualizarán ${articulosAfectados.length} artículos aplicando un ${porc > 0 ? `+${porc}%` : `${porc}%`}.\n¿Confirmar actualización?`)) return;
+    const msgConfirm = '📈 AJUSTE DE INFLACIÓN EN ' + etiquetaSeccion.toUpperCase() + ':\nSe actualizarán ' + articulosAfectados.length + ' artículos aplicando un ' + (porc > 0 ? '+' + porc : porc) + '%.\n¿Confirmar actualización?';
+    if (!window.confirm(msgConfirm)) return;
 
     setAplicandoInflacion(true);
     try {
@@ -157,7 +158,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         }
       }
       if (cont > 0) await batch.commit();
-      alert(`✅ ¡Ajuste por Inflación completado! Se actualizaron ${articulosAfectados.length} artículos de ${etiquetaSeccion}.`);
+      alert('✅ ¡Ajuste por Inflación completado! Se actualizaron ' + articulosAfectados.length + ' artículos de ' + etiquetaSeccion + '.');
     } catch (e: any) {
       alert('Error al aplicar ajuste: ' + e.message);
     } finally {
@@ -182,7 +183,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
       urlProveedor: prodUrlOrigen,
       esDeProveedor: esDeProveedorActual,
       ultimaActualizacion: new Date().toLocaleDateString(), 
-      codigoBarras: prodCodigoBarras,
+      codigoBarras: prodCodigoBarras || Math.random().toString(36).substring(2, 10).toUpperCase(),
       destacado: prodDestacado 
     };
     if (idEditando) await updateDoc(doc(db, 'productos', idEditando), dataProducto);
@@ -207,11 +208,64 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // --- IMPRIMIR ETIQUETAS QR PARA BLÍSTERES Y GAVETAS ---
+  const imprimirEtiquetasQrProductos = (listaProductos: any[]) => {
+    if (listaProductos.length === 0) return alert('No hay productos para imprimir etiquetas.');
+    const tarjetasHtml = listaProductos.slice(0, 24).map(p => {
+      const cod = p.codigoBarras || p.id.slice(-6).toUpperCase();
+      const efvo = aplicarRedondeo(Number(p.precio || 0) * (1 - Number(config.descuentoEfectivoPorcentaje || 0) / 100), config.redondeoPrecios);
+      const qrImg = 'https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=' + encodeURIComponent(cod);
+      return (
+        '<div class="etiqueta-item">' +
+          '<img src="' + qrImg + '" class="qr-img" />' +
+          '<div class="info">' +
+            '<div class="marca">' + nombreNegocioActivo + '</div>' +
+            '<div class="nombre">' + String(p.nombre || '').slice(0, 38) + '</div>' +
+            '<div class="cod">CÓD: ' + cod + ' | ' + (p.ubicacion || p.categoria || 'Local') + '</div>' +
+            '<div class="precio">Efvo: $' + efvo.toLocaleString() + ' <small>(Lista: $' + Number(p.precio || 0).toLocaleString() + ')</small></div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    const htmlCompleto = [
+      '<!DOCTYPE html>',
+      '<html>',
+      '<head>',
+      '<title>Etiquetas QR de Stock - ' + nombreNegocioActivo + '</title>',
+      '<style>',
+      'body { font-family: Arial, sans-serif; margin: 0; padding: 15px; color: #000; }',
+      '.grid-etiquetas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-width: 780px; margin: 0 auto; }',
+      '.etiqueta-item { border: 2px solid #000; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; page-break-inside: avoid; }',
+      '.qr-img { width: 68px; height: 68px; flex-shrink: 0; }',
+      '.info { flex: 1; overflow: hidden; }',
+      '.marca { font-size: 9px; font-weight: bold; text-transform: uppercase; color: #444; }',
+      '.nombre { font-size: 12px; font-weight: 900; margin: 2px 0; }',
+      '.cod { font-size: 10px; font-family: monospace; color: #333; }',
+      '.precio { font-size: 13px; font-weight: 900; margin-top: 3px; }',
+      '@media print { .no-print { display: none; } }',
+      '</style>',
+      '</head>',
+      '<body>',
+      '<div class="no-print" style="text-align:right; max-width:780px; margin:0 auto 12px auto;">',
+      '<button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 20px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Plancha de Etiquetas QR</button>',
+      '</div>',
+      '<div class="grid-etiquetas">' + tarjetasHtml + '</div>',
+      '</body>',
+      '</html>'
+    ].join('\n');
+
+    const v = window.open('', '_blank');
+    if (!v) return;
+    v.document.write(htmlCompleto);
+    v.document.close();
+  };
+
   const inventarioFiltrado = listaActivaSegunPestana.filter(p => {
     if (filtroCategoriaInv !== 'Todas' && (p.categoria || 'General') !== filtroCategoriaInv) return false;
     if (busquedaInventario) {
       const b = busquedaInventario.toLowerCase();
-      return p.nombre.toLowerCase().includes(b) || (p.codigoBarras && p.codigoBarras.includes(b)) || (p.ubicacion && p.ubicacion.toLowerCase().includes(b));
+      return p.nombre.toLowerCase().includes(b) || (p.codigoBarras && p.codigoBarras.toLowerCase().includes(b)) || (p.ubicacion && p.ubicacion.toLowerCase().includes(b));
     }
     return true;
   });
@@ -237,14 +291,14 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
           <button 
             type="button" 
             onClick={() => { setVistaInventario('local'); setFiltroCategoriaInv('Todas'); }} 
-            className={`neon-btn ${vistaInventario === 'local' ? 'neon-btn-fillCyan' : ''}`}
+            className={'neon-btn ' + (vistaInventario === 'local' ? 'neon-btn-fillCyan' : '')}
           >
             🛍️ Stock Local Accesorios ({articulosDelLocal.length})
           </button>
           <button 
             type="button" 
             onClick={() => { setVistaInventario('proveedores'); setFiltroCategoriaInv('Todas'); }} 
-            className={`neon-btn ${vistaInventario === 'proveedores' ? 'neon-btn-fillCyan' : ''}`}
+            className={'neon-btn ' + (vistaInventario === 'proveedores' ? 'neon-btn-fillCyan' : '')}
           >
             🔧 Stock Proveedores Taller ({articulosDeProveedores.length})
           </button>
@@ -257,8 +311,8 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
             {idEditando 
               ? '✏️ Editando Artículo' 
               : vistaInventario === 'local' 
-                ? `➕ Cargar Accesorio / Producto Propio en ${nombreNegocioActivo}` 
-                : `➕ Cargar Repuesto en Catálogo de Proveedores`}
+                ? '➕ Cargar Accesorio / Producto Propio en ' + nombreNegocioActivo 
+                : '➕ Cargar Repuesto en Catálogo de Proveedores'}
           </h3>
           {vistaInventario === 'local' && (
             <label style={{ fontWeight: 'bold', cursor: 'pointer' }}>
@@ -333,7 +387,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
           <input type="text" className="neon-input" placeholder="Nombre del Artículo *" value={prodNom} onChange={e => setProdNom(e.target.value)} required />
           <input type="text" className="neon-input" placeholder="Categoría *" value={prodCat} onChange={e => setProdCat(e.target.value)} required />
-          <input type="text" className="neon-input" placeholder={vistaInventario === 'local' ? "📍 Estante / Gaveta" : "🏢 Nombre Proveedor"} value={vistaInventario === 'local' ? prodUbicacion : prodProveedor} onChange={e => vistaInventario === 'local' ? setProdUbicacion(e.target.value) : setProdProveedor(e.target.value)} />
+          <input type="text" className="neon-input" placeholder={vistaInventario === 'local' ? '📍 Estante / Gaveta' : '🏢 Nombre Proveedor'} value={vistaInventario === 'local' ? prodUbicacion : prodProveedor} onChange={e => vistaInventario === 'local' ? setProdUbicacion(e.target.value) : setProdProveedor(e.target.value)} />
           <div style={{ display: 'flex', gap: '5px' }}>
             <input type="text" className="neon-input" placeholder="Cód. Barras" value={prodCodigoBarras} onChange={e => setProdCodigoBarras(e.target.value)} />
             <button type="button" onClick={() => setEscaneandoPara('formulario')} className="neon-btn">📷</button>
@@ -388,7 +442,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
             <input type="number" className="neon-input" placeholder="Máximo $" value={inflacionPrecioMax} onChange={e => setInflacionPrecioMax(e.target.value)} />
           </div>
           <button type="button" onClick={ejecutarAjusteInflacion} disabled={aplicandoInflacion} className="neon-btn neon-btn-fillCyan" style={{ height: '46px' }}>
-            {aplicandoInflacion ? 'Ajustando...' : `⚡ Aplicar ${Number(inflacionPorcentaje) >= 0 ? `+${inflacionPorcentaje}%` : `${inflacionPorcentaje}%`}`}
+            {aplicandoInflacion ? 'Ajustando...' : '⚡ Aplicar ' + (Number(inflacionPorcentaje) >= 0 ? '+' + inflacionPorcentaje + '%' : inflacionPorcentaje + '%')}
           </button>
         </div>
       </div>
@@ -397,7 +451,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         <input 
           type="text" 
           className="neon-input" 
-          placeholder={vistaInventario === 'local' ? "🔍 Buscar accesorio en Stock del Local..." : "🔍 Buscar repuesto en Catálogo de Proveedores..."} 
+          placeholder={vistaInventario === 'local' ? '🔍 Buscar accesorio en Stock del Local...' : '🔍 Buscar repuesto en Catálogo de Proveedores...'} 
           value={busquedaInventario} 
           onChange={e => setBusquedaInventario(e.target.value)} 
           style={{ flex: 1 }} 
@@ -405,6 +459,9 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
         <select className="neon-select" value={filtroCategoriaInv} onChange={e => setFiltroCategoriaInv(e.target.value)} style={{ width: 'auto' }}>
           {categoriasUnicas.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <button type="button" onClick={() => imprimirEtiquetasQrProductos(inventarioFiltrado)} className="neon-btn neon-btn-purple">
+          🏷️ Imprimir Plancha QR ({Math.min(24, inventarioFiltrado.length)})
+        </button>
       </div>
 
       <div className="neon-card" style={{ overflowX: 'auto' }}>
@@ -427,7 +484,7 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
                 <tr key={p.id}>
                   <td>
                     <span className="neon-badge" style={{ background: 'rgba(175,82,222,0.15)', color: 'var(--neon-purple)' }}>
-                      {vistaInventario === 'local' ? `📍 ${p.ubicacion || 'Local'}` : `🚚 ${p.proveedor || 'Proveedor'}`}
+                      {vistaInventario === 'local' ? '📍 ' + (p.ubicacion || 'Local') : '🚚 ' + (p.proveedor || 'Proveedor')}
                     </span>
                   </td>
                   <td>
@@ -454,10 +511,11 @@ export const ModuloCatalogo: React.FC<PropsCatalogo> = ({
                   <td>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button onClick={() => cargarParaEdicion(p)} className="neon-btn" title="Editar">✏️</button>
+                      <button onClick={() => imprimirEtiquetasQrProductos([p])} className="neon-btn neon-btn-purple" title="Imprimir Etiqueta QR de este producto">🏷️</button>
                       <button 
                         onClick={() => updateDoc(doc(db, 'productos', p.id), { esDeProveedor: !p.esDeProveedor })} 
                         className="neon-btn" 
-                        title={vistaInventario === 'local' ? "Mover a Catálogo de Proveedores" : "Mover a Stock del Local"}
+                        title={vistaInventario === 'local' ? 'Mover a Catálogo de Proveedores' : 'Mover a Stock del Local'}
                       >
                         ⇄
                       </button>
