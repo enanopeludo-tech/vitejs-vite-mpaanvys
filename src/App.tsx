@@ -163,7 +163,7 @@ const LoginAdmin = () => {
     try {
       await signInWithEmailAndPassword(auth, e, p);
       navigate('/admin-panel');
-    } catch (err) {
+    } catch {
       alert('Usuario o contraseña incorrectos');
     }
   };
@@ -247,14 +247,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
   });
 
   useEffect(() => {
-    // Cargar librería Excel (SheetJS)
     if (!(window as any).XLSX) {
       const scriptXlsx = document.createElement('script');
       scriptXlsx.src = "https://unpkg.com/xlsx/dist/xlsx.full.min.js";
       scriptXlsx.async = true;
       document.body.appendChild(scriptXlsx);
     }
-    // Cargar librería Escáner Cámara (html5-qrcode)
     if (!(window as any).Html5QrcodeScanner) {
       const scriptQr = document.createElement('script');
       scriptQr.src = "https://unpkg.com/html5-qrcode";
@@ -318,15 +316,13 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const tenantId = esSucursalExterna ? sucursalAsociada.id : 'MASTER';
   const nombreNegocioActivo = esSucursalExterna ? sucursalAsociada.nombre : config.empresaNombre;
   const direccionNegocioActivo = esSucursalExterna 
-    ? `${sucursalAsociada.direccion || ''} (${sucursalAsociada.ciudad || ''})` 
+    ? (sucursalAsociada.direccion || '') + ' (' + (sucursalAsociada.ciudad || '') + ')' 
     : config.direccion;
   const whatsappNegocioActivo = esSucursalExterna ? sucursalAsociada.telefono : config.whatsapp;
 
   const misProductos = productos.filter(p => (p.ownerId || 'MASTER') === tenantId);
-  // Separación estricta: en la Caja POS solo aparecen los Accesorios del Local
   const misAccesoriosLocalPOS = misProductos.filter(p => !p.esDeProveedor && p.descripcion !== 'Importado de lista');
 
-  // Inicializar Escáner de Cámara cuando se abre el modal escaneandoPara
   useEffect(() => {
     if (!escaneandoPara) return;
     let html5QrcodeScanner: any = null;
@@ -345,7 +341,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
               }
             } else {
               navigator.clipboard?.writeText(decodedText);
-              alert(`📷 Código leído: ${decodedText} (Copiado al portapapeles para pegar en el campo Código de Barras)`);
+              alert('📷 Código leído: ' + decodedText + ' (Copiado al portapapeles para pegar en el campo Código de Barras)');
             }
             setEscaneandoPara(null);
           },
@@ -376,7 +372,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           dolarUltimaSync: ahoraStr 
         }, { merge: true });
         if (mostrarAlerta) {
-          alert(`💵 Cotización Dólar (${fuente.toUpperCase()}) actualizada desde la web: $${valorWeb}`);
+          alert('💵 Cotización Dólar (' + fuente.toUpperCase() + ') actualizada desde la web: $' + valorWeb);
         }
       } else if (mostrarAlerta) {
         alert('No se pudo leer la cotización web en este momento. Puedes ingresarla manualmente.');
@@ -445,7 +441,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return {
       tipo: tipoCmp, 
       puntoVenta: ptoVta, 
-      numero: `${ptoVta}-${proximoNumero}`,
+      numero: ptoVta + '-' + proximoNumero,
       cuit: cuitReceptor || "00-00000000-0", 
       razonSocialReceptor: razonReceptor || "Consumidor Final",
       condicionIvaReceptor: condIvaReceptor || "Consumidor Final",
@@ -461,7 +457,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
       const existe = prev.find(i => i.id === prod.id);
       if (existe) {
         if (existe.cantidad + 1 > prod.stock) {
-          alert(`Solo hay ${prod.stock} unidades en stock de "${prod.nombre}".`);
+          alert('Solo hay ' + prod.stock + ' unidades en stock de "' + prod.nombre + '".');
           return prev;
         }
         return prev.map(i => i.id === prod.id ? { ...i, cantidad: i.cantidad + 1 } : i);
@@ -477,7 +473,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           if (item.id !== idProd) return item;
           const nuevaCant = item.cantidad + delta;
           if (nuevaCant > item.stock) {
-            alert(`Stock disponible: ${item.stock} unidades.`);
+            alert('Stock disponible: ' + item.stock + ' unidades.');
             return item;
           }
           return { ...item, cantidad: nuevaCant };
@@ -490,6 +486,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
   let porcentajeAjustePOS = 0;
   if (metodoPagoPOS === 'efectivo') {
     porcentajeAjustePOS = -Number(config.descuentoEfectivoPorcentaje || 0);
+  } else if (metodoPagoPOS === 'mercadopago') {
+    porcentajeAjustePOS = Number(config.mpRecargoPorcentaje || 0);
   } else if (metodoPagoPOS === 'tarjeta_1') {
     porcentajeAjustePOS = Number(config.recargoTarjeta1Pago || config.recargoTarjetaPorcentaje || 15);
   } else if (metodoPagoPOS === 'tarjeta_3') {
@@ -501,48 +499,49 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const totalFinalPOS = aplicarRedondeo(subtotalPOS + ajusteFinancieroPOS, config.redondeoPrecios);
 
   const imprimirTicketInternoMostrador = (itemsVenta: any[], totalCobrado: number, medio: string, cliente: string) => {
+    const filas = itemsVenta.map(i =>
+      '<div class="row"><span>' + i.cantidad + 'x ' + String(i.nombre || '').slice(0, 20) + '</span><b>$' + (i.precio * i.cantidad).toLocaleString() + '</b></div>'
+    ).join('');
+
+    const htmlTicket = [
+      '<!DOCTYPE html>',
+      '<html>',
+      '<head>',
+      '<title>Comprobante Venta - ' + nombreNegocioActivo + '</title>',
+      '<style>',
+      'body { font-family: monospace; width: 300px; margin: 0 auto; padding: 15px; color: #000; }',
+      '.center { text-align: center; }',
+      '.line { border-bottom: 1px dashed #000; margin: 8px 0; }',
+      '.row { display: flex; justify-content: space-between; font-size: 12px; margin: 4px 0; }',
+      '</style>',
+      '</head>',
+      '<body>',
+      '<div class="center">',
+      '<h3 style="margin:0;">' + nombreNegocioActivo + '</h3>',
+      '<div style="font-size:11px;">' + direccionNegocioActivo + '</div>',
+      '<div style="font-size:11px;">WhatsApp: ' + whatsappNegocioActivo + '</div>',
+      '<div style="font-size:11px;">Fecha: ' + new Date().toLocaleString() + '</div>',
+      '</div>',
+      '<div class="line"></div>',
+      '<div style="font-size:12px;"><b>Cliente:</b> ' + cliente + '</div>',
+      '<div style="font-size:12px;"><b>Pago:</b> ' + medio.toUpperCase() + '</div>',
+      '<div class="line"></div>',
+      filas,
+      '<div class="line"></div>',
+      '<div class="row" style="font-size:15px; font-weight:bold;">',
+      '<span>TOTAL:</span>',
+      '<span>$' + totalCobrado.toLocaleString() + '</span>',
+      '</div>',
+      '<div class="line"></div>',
+      '<div class="center" style="font-size:11px; margin-top:10px;">¡Gracias por su compra!</div>',
+      '<script>window.print();</script>',
+      '</body>',
+      '</html>'
+    ].join('\n');
+
     const v = window.open('', '_blank');
     if (!v) return;
-    v.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Comprobante Venta - ${nombreNegocioActivo}</title>
-          <style>
-            body { font-family: monospace; width: 300px; margin: 0 auto; padding: 15px; color: #000; }
-            .center { text-align: center; }
-            .line { border-bottom: 1px dashed #000; margin: 8px 0; }
-            .row { display: flex; justify-content: space-between; font-size: 12px; margin: 4px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="center">
-            <h3 style="margin:0;">${nombreNegocioActivo}</h3>
-            <div style="font-size:11px;">${direccionNegocioActivo}</div>
-            <div style="font-size:11px;">WhatsApp: ${whatsappNegocioActivo}</div>
-            <div style="font-size:11px;">Fecha: ${new Date().toLocaleString()}</div>
-          </div>
-          <div class="line"></div>
-          <div style="font-size:12px;"><b>Cliente:</b> ${cliente}</div>
-          <div style="font-size:12px;"><b>Pago:</b> ${medio.toUpperCase()}</div>
-          <div class="line"></div>
-          ${itemsVenta.map(i => `
-            <div class="row">
-              <span>${i.cantidad}x ${i.nombre.slice(0, 20)}</span>
-              <b>$${(i.precio * i.cantidad).toLocaleString()}</b>
-            </div>
-          `).join('')}
-          <div class="line"></div>
-          <div class="row" style="font-size:15px; font-weight:bold;">
-            <span>TOTAL:</span>
-            <span>$${totalCobrado.toLocaleString()}</span>
-          </div>
-          <div class="line"></div>
-          <div class="center" style="font-size:11px; margin-top:10px;">¡Gracias por su compra!</div>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
+    v.document.write(htmlTicket);
     v.document.close();
   };
 
@@ -566,7 +565,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     const docRef = await addDoc(collection(db, 'finanzas'), {
       ownerId: tenantId, 
       tipo: 'ingreso', 
-      concepto: `Venta POS Mostrador (${clientePOS}) - ${itemsVenta.map(i => `${i.cantidad}x ${i.nombre}`).join(', ')}`,
+      concepto: 'Venta POS Mostrador (' + clientePOS + ') - ' + itemsVenta.map(i => i.cantidad + 'x ' + i.nombre).join(', '),
       monto: totalFinalPOS, 
       metodoPago: medioNormalizado, 
       modalidadDetalle: metodoPagoPOS,
@@ -584,7 +583,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     } else if (imprimirTicketInternoPOS) {
       imprimirTicketInternoMostrador(itemsVenta, totalFinalPOS, metodoPagoPOS, clientePOS);
     } else {
-      alert(`⚡ Cobro de $${totalFinalPOS.toLocaleString()} registrado y stock descontado.`);
+      alert('⚡ Cobro de $' + totalFinalPOS.toLocaleString() + ' registrado y stock descontado.');
     }
     setCarritoPOS([]); 
     setClientePOS('Consumidor Final'); 
@@ -698,8 +697,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
 
   const equiposEnBanco = misOrdenesTaller.filter(o => o.estado !== 'entregado' && o.estado !== 'reparado').length;
   const urlVitrinaPropia = esSucursalExterna 
-    ? `${window.location.origin}/?tienda=${sucursalAsociada.id}` 
+    ? window.location.origin + '/?tienda=' + sucursalAsociada.id 
     : window.location.origin;
+
+  const linkMpActivo = config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
+  const qrMpPosUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(linkMpActivo);
 
   return (
     <div className="erp-layout">
@@ -758,63 +760,63 @@ const DashboardTaller = ({ user }: { user: User }) => {
         )}
 
         {tienePermisoModulo('dashboard') && (
-          <button onClick={() => setPestaña('dashboard')} className={`neon-btn side-btn ${pestaña === 'dashboard' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('dashboard')} className={'neon-btn side-btn ' + (pestaña === 'dashboard' ? 'active' : '')}>
             📊 1. Mi Resumen & Tienda
           </button>
         )}
         {tienePermisoModulo('pos') && (
-          <button onClick={() => setPestaña('pos')} className={`neon-btn side-btn ${pestaña === 'pos' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('pos')} className={'neon-btn side-btn ' + (pestaña === 'pos' ? 'active' : '')}>
             🛒 2. Caja POS (Accesorios)
           </button>
         )}
         {tienePermisoModulo('presupuestos') && (
-          <button onClick={() => setPestaña('presupuestos')} className={`neon-btn side-btn ${pestaña === 'presupuestos' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('presupuestos')} className={'neon-btn side-btn ' + (pestaña === 'presupuestos' ? 'active' : '')}>
             📄 3. Presupuestos ({misPresupuestos.length})
           </button>
         )}
         {tienePermisoModulo('taller') && (
-          <button onClick={() => setPestaña('taller')} className={`neon-btn side-btn ${pestaña === 'taller' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('taller')} className={'neon-btn side-btn ' + (pestaña === 'taller' ? 'active' : '')}>
             🛠️ 4. Órdenes Taller ({equiposEnBanco})
           </button>
         )}
         {!esSucursalExterna && esAdminDelNegocioActivo && (
-          <button onClick={() => setPestaña('talleres_b2b')} className={`neon-btn side-btn ${pestaña === 'talleres_b2b' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('talleres_b2b')} className={'neon-btn side-btn ' + (pestaña === 'talleres_b2b' ? 'active' : '')}>
             🏢 5. Red Locales ({talleresGremio.length})
           </button>
         )}
         {tienePermisoModulo('catalogo') && (
-          <button onClick={() => setPestaña('catalogo')} className={`neon-btn side-btn ${pestaña === 'catalogo' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('catalogo')} className={'neon-btn side-btn ' + (pestaña === 'catalogo' ? 'active' : '')}>
             📦 6. Stock Local y Proveedores
           </button>
         )}
         {tienePermisoModulo('rma') && (
-          <button onClick={() => setPestaña('rma')} className={`neon-btn side-btn ${pestaña === 'rma' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('rma')} className={'neon-btn side-btn ' + (pestaña === 'rma' ? 'active' : '')}>
             🔄 7. Garantías & RMA ({rmas.length})
           </button>
         )}
         {tienePermisoModulo('pedidos') && (
-          <button onClick={() => setPestaña('pedidos')} className={`neon-btn side-btn ${pestaña === 'pedidos' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('pedidos')} className={'neon-btn side-btn ' + (pestaña === 'pedidos' ? 'active' : '')}>
             🌐 8. Mis Pedidos Web ({misPedidosWeb.length})
           </button>
         )}
         {tienePermisoModulo('clientes') && (
-          <button onClick={() => setPestaña('clientes')} className={`neon-btn side-btn ${pestaña === 'clientes' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('clientes')} className={'neon-btn side-btn ' + (pestaña === 'clientes' ? 'active' : '')}>
             👥 9. Clientes CRM & Promos
           </button>
         )}
         {tienePermisoModulo('proveedores') && (
-          <button onClick={() => setPestaña('proveedores')} className={`neon-btn side-btn ${pestaña === 'proveedores' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('proveedores')} className={'neon-btn side-btn ' + (pestaña === 'proveedores' ? 'active' : '')}>
             🚚 10. Importar Excel y Web
           </button>
         )}
         {tienePermisoModulo('finanzas') && (
-          <button onClick={() => setPestaña('finanzas')} className={`neon-btn side-btn ${pestaña === 'finanzas' ? 'active' : ''}`}>
+          <button onClick={() => setPestaña('finanzas')} className={'neon-btn side-btn ' + (pestaña === 'finanzas' ? 'active' : '')}>
             💰 11. Finanzas & ARCA
           </button>
         )}
         {esAdminDelNegocioActivo && (
-          <button onClick={() => setPestaña('configuracion')} className={`neon-btn side-btn ${pestaña === 'configuracion' ? 'active' : ''}`}>
-            🛡️ 12. Dólar, Fletes y Config
+          <button onClick={() => setPestaña('configuracion')} className={'neon-btn side-btn ' + (pestaña === 'configuracion' ? 'active' : '')}>
+            🛡️ 12. Dólar, MP y Config
           </button>
         )}
 
@@ -844,7 +846,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 2. CAJA POS MOSTRADOR (EXCLUSIVO ACCESORIOS DEL LOCAL + CARRITO COMPLETO + CUOTAS) */}
+        {/* 2. CAJA POS MOSTRADOR (CON QR MERCADO PAGO EN VIVO) */}
         {pestaña === 'pos' && (
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div className="neon-card" style={{ flex: '2 1 480px' }}>
@@ -888,7 +890,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                           <tr key={p.id}>
                             <td>
                               <b>{p.nombre}</b><br />
-                              <small style={{ color: 'var(--text-muted)' }}>📍 {p.ubicacion || 'Mostrador'} {p.codigoBarras ? `| 🏷️ ${p.codigoBarras}` : ''}</small>
+                              <small style={{ color: 'var(--text-muted)' }}>📍 {p.ubicacion || 'Mostrador'} {p.codigoBarras ? '| 🏷️ ' + p.codigoBarras : ''}</small>
                             </td>
                             <td><b>{p.stock}</b></td>
                             <td className="glow-text-green" style={{ fontWeight: 'bold' }}>${efvo.toLocaleString()}</td>
@@ -928,7 +930,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 )}
               </div>
 
-              {/* LISTA VISUAL DE ARTÍCULOS EN EL CARRITO POS */}
               <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '12px', borderTop: '1px solid rgba(128,128,128,0.2)', borderBottom: '1px solid rgba(128,128,128,0.2)', padding: '6px 0' }}>
                 {carritoPOS.map(item => (
                   <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(128,128,128,0.1)' }}>
@@ -1009,12 +1010,30 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 style={{ marginBottom: '12px', fontWeight: 'bold' }}
               >
                 <option value="efectivo">💵 Efectivo (-{config.descuentoEfectivoPorcentaje}%)</option>
+                <option value="mercadopago">💠 Mercado Pago QR / Link ({Number(config.mpRecargoPorcentaje || 0) > 0 ? '+' + config.mpRecargoPorcentaje + '%' : 'Precio Lista'})</option>
                 <option value="transferencia">🏦 Transferencia (Precio Lista)</option>
-                <option value="mercadopago">📱 Mercado Pago (Precio Lista)</option>
                 <option value="tarjeta_1">💳 Tarjeta 1 Pago (+{config.recargoTarjeta1Pago || config.recargoTarjetaPorcentaje || 15}%)</option>
                 <option value="tarjeta_3">💳 Tarjeta 3 Cuotas (+{config.recargoTarjeta3Cuotas || 28}%)</option>
                 <option value="tarjeta_6">💳 Tarjeta 6 Cuotas (+{config.recargoTarjeta6Cuotas || 45}%)</option>
               </select>
+
+              {/* WIDGET QR MERCADO PAGO EN CAJA POS */}
+              {metodoPagoPOS === 'mercadopago' && (
+                <div style={{ background: 'rgba(0,158,227,0.1)', border: '1.5px solid #009ee3', borderRadius: '14px', padding: '10px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                  <div>
+                    <b style={{ color: '#009ee3', fontSize: '13px' }}>💠 QR Mercado Pago</b>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                      Alias: <b>{config.aliasTransferencia}</b>
+                    </div>
+                    <a href={linkMpActivo} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#009ee3', fontWeight: 'bold' }}>
+                      🔗 Abrir Link MP ↗
+                    </a>
+                  </div>
+                  <div style={{ background: '#fff', padding: '5px', borderRadius: '8px', border: '1px solid #009ee3' }}>
+                    <img src={qrMpPosUrl} alt="QR MP" style={{ width: '75px', height: '75px', display: 'block' }} />
+                  </div>
+                </div>
+              )}
 
               <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--text-muted)' }}>
@@ -1024,7 +1043,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 {ajusteFinancieroPOS !== 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: ajusteFinancieroPOS < 0 ? 'var(--neon-green)' : 'var(--neon-pink)' }}>
                     <span>{ajusteFinancieroPOS < 0 ? 'Descuento Efectivo:' : 'Recargo Financiación:'}</span>
-                    <span>{ajusteFinancieroPOS > 0 ? `+${ajusteFinancieroPOS.toLocaleString()}` : ajusteFinancieroPOS.toLocaleString()}</span>
+                    <span>{ajusteFinancieroPOS > 0 ? '+' + ajusteFinancieroPOS.toLocaleString() : ajusteFinancieroPOS.toLocaleString()}</span>
                   </div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '22px', fontWeight: 900, marginTop: '4px' }}>
@@ -1073,7 +1092,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 5. CATÁLOGO SEPARADO (STOCK LOCAL VS PROVEEDORES) */}
+        {/* 5. CATÁLOGO SEPARADO */}
         {pestaña === 'catalogo' && (
           <ModuloCatalogo 
             tenantId={tenantId} 
@@ -1143,7 +1162,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 12. CONFIGURACIÓN COMPLETA (SIN NINGÚN CAMPO RECORTADO) */}
+        {/* 12. CONFIGURACIÓN COMPLETA (CON INTEGRACIÓN OFICIAL MERCADO PAGO) */}
         {pestaña === 'configuracion' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
             {esSucursalExterna ? (
@@ -1190,7 +1209,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 onSubmit={async (e) => { 
                   e.preventDefault(); 
                   await setDoc(doc(db, 'configuracion', 'general'), conf, { merge: true }); 
-                  alert('⚡ Todos los parámetros de Dólar, Fletes, Escalas, Datos Comerciales y ARCA fueron guardados en el sistema.'); 
+                  alert('⚡ Todos los parámetros de Dólar, Mercado Pago, Fletes, Escalas y ARCA fueron guardados en el sistema.'); 
                 }} 
                 style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
               >
@@ -1247,10 +1266,80 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE 2: COMISIONISTAS, REPARTIDOR Y ESCALAS USD */}
+                {/* BLOQUE 2: INTEGRACIÓN OFICIAL MERCADO PAGO */}
+                <div className="neon-card" style={{ borderColor: '#009ee3' }}>
+                  <h3 style={{ marginTop: 0, color: '#009ee3' }}>
+                    💠 2. Integración Oficial Mercado Pago (Link de Cobro, QR, Alias y Credenciales)
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label className="label-neon" style={{ color: '#009ee3' }}>
+                        Link Oficial de Cobro Mercado Pago (Se usa para generar el QR en POS, Taller y Tienda Web)
+                      </label>
+                      <input 
+                        type="text" 
+                        className="neon-input" 
+                        value={conf.linkMercadoPago || ''} 
+                        onChange={e => setConf({ ...conf, linkMercadoPago: e.target.value })} 
+                        placeholder="https://link.mercadopago.com.ar/tu_negocio" 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">Alias Oficial Mercado Pago</label>
+                      <input 
+                        type="text" 
+                        className="neon-input" 
+                        value={conf.aliasTransferencia || ''} 
+                        onChange={e => setConf({ ...conf, aliasTransferencia: e.target.value })} 
+                        placeholder="walabba.tecno.mp" 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">Titular de la Cuenta MP / Banco</label>
+                      <input 
+                        type="text" 
+                        className="neon-input" 
+                        value={conf.bancoTitular || ''} 
+                        onChange={e => setConf({ ...conf, bancoTitular: e.target.value })} 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">Recargo / Comisión Mercado Pago (%)</label>
+                      <input 
+                        type="number" 
+                        className="neon-input" 
+                        value={conf.mpRecargoPorcentaje || 0} 
+                        onChange={e => setConf({ ...conf, mpRecargoPorcentaje: Number(e.target.value) })} 
+                        placeholder="0 para Precio de Lista" 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-neon">MP Public Key (Opcional API)</label>
+                      <input 
+                        type="text" 
+                        className="neon-input" 
+                        value={conf.mpPublicKey || ''} 
+                        onChange={e => setConf({ ...conf, mpPublicKey: e.target.value })} 
+                        placeholder="APP_USR-..." 
+                      />
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label className="label-neon">MP Access Token (Opcional Checkout Pro)</label>
+                      <input 
+                        type="password" 
+                        className="neon-input" 
+                        value={conf.mpAccessToken || ''} 
+                        onChange={e => setConf({ ...conf, mpAccessToken: e.target.value })} 
+                        placeholder="APP_USR-..." 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* BLOQUE 3: COMISIONISTAS, REPARTIDOR Y ESCALAS USD */}
                 <div className="neon-card neon-card-purple">
                   <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
-                    🚚 2. Costos de Fletes (Comisionistas), Repartidor Local y Escalas en USD
+                    🚚 3. Costos de Fletes (Comisionistas), Repartidor Local y Escalas en USD
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px' }}>
                     <div style={{ gridColumn: '1 / -1' }}>
@@ -1319,10 +1408,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE 3: DATOS COMERCIALES, BANCARIOS, TALLER Y ARCA */}
+                {/* BLOQUE 4: DATOS COMERCIALES, TALLER Y ARCA */}
                 <div className="neon-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
                   <h3 className="glow-text-cyan" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                    🏪 3. Datos Comerciales, Bancarios, Medios de Pago y Facturación ARCA
+                    🏪 4. Datos Comerciales, Financiación con Tarjetas y Facturación ARCA
                   </h3>
                   <div>
                     <label className="label-neon">Nombre Comercial de la Empresa</label>
@@ -1347,14 +1436,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   <div>
                     <label className="label-neon">Instagram / Red Social</label>
                     <input type="text" className="neon-input" value={conf.instagram || ''} onChange={e => setConf({ ...conf, instagram: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="label-neon">Alias Transferencia</label>
-                    <input type="text" className="neon-input" value={conf.aliasTransferencia || ''} onChange={e => setConf({ ...conf, aliasTransferencia: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="label-neon">Titular y Banco / Billetera</label>
-                    <input type="text" className="neon-input" value={conf.bancoTitular || ''} onChange={e => setConf({ ...conf, bancoTitular: e.target.value })} />
                   </div>
                   <div>
                     <label className="label-neon">Razón Social ARCA</label>
@@ -1459,16 +1540,16 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     />
                   </div>
                   <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ gridColumn: '1 / -1', padding: '15px', fontSize: '16px' }}>
-                    💾 Guardar Dólar, Costos de Fletes, Parámetros de Taller y Configuración General
+                    💾 Guardar Dólar, Mercado Pago, Costos de Fletes, Taller y Configuración General
                   </button>
                 </div>
               </form>
             )}
 
-            {/* BLOQUE 4: GESTIÓN DE USUARIOS, ROLES Y PERMISOS */}
+            {/* BLOQUE 5: GESTIÓN DE USUARIOS, ROLES Y PERMISOS */}
             <div className="neon-card">
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
-                {idUsuarioEditando ? '✏️ Editando Usuario y Permisos' : `🛡️ Gestión de Usuarios, Roles y Permisos (${nombreNegocioActivo})`}
+                {idUsuarioEditando ? '✏️ Editando Usuario y Permisos' : '🛡️ Gestión de Usuarios, Roles y Permisos (' + nombreNegocioActivo + ')'}
               </h3>
               <form onSubmit={guardarUsuarioRol} style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '16px', marginBottom: '16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '12px' }}>
@@ -1537,7 +1618,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       <td>
                         <button 
                           onClick={() => updateDoc(doc(db, 'usuarios_roles', u.id), { activo: u.activo === false ? true : false })} 
-                          className={`neon-btn ${u.activo !== false ? 'neon-btn-green' : 'neon-btn-red'}`} 
+                          className={'neon-btn ' + (u.activo !== false ? 'neon-btn-green' : 'neon-btn-red')} 
                           style={{ padding: '4px 10px' }}
                         >
                           {u.activo !== false ? '🟢 Activo' : '🔴 Suspendido'}
@@ -1630,7 +1711,7 @@ export default function App() {
     const perfilEmpleado = rolesGlobal.find(r => r.email?.toLowerCase() === emailActual);
     const perfilTaller = talleresGlobal.find(t => t.email?.toLowerCase() === emailActual);
     const nombreMostrar = perfilEmpleado?.nombre || perfilTaller?.nombre || user.displayName || user.email?.split('@')[0] || 'Admin';
-    document.title = `Walabba Tecno + ${nombreMostrar}`;
+    document.title = 'Walabba Tecno + ' + nombreMostrar;
   }, [user, rolesGlobal, talleresGlobal]);
 
   if (cargando) {

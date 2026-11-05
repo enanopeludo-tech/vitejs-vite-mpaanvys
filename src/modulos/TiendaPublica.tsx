@@ -28,11 +28,10 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
   const [cliDni, setCliDni] = useState('');
   const [cliDireccion, setCliDireccion] = useState('');
   const [modalidadEntregaWeb, setModalidadEntregaWeb] = useState<'retiro_local' | 'envio_domicilio'>('retiro_local');
-  const [metodoPagoWeb, setMetodoPagoWeb] = useState<'efectivo' | 'transferencia' | 'tarjeta_1' | 'tarjeta_3' | 'tarjeta_6'>('transferencia');
+  const [metodoPagoWeb, setMetodoPagoWeb] = useState<'efectivo' | 'transferencia' | 'mercadopago' | 'tarjeta_1' | 'tarjeta_3' | 'tarjeta_6'>('mercadopago');
   const [notasPedido, setNotasPedido] = useState('');
   const [enviandoPedido, setEnviandoPedido] = useState(false);
 
-  // Detectar si se ingresó a la vitrina de una sucursal específica (?tienda=ID_SUCURSAL)
   const paramsUrl = new URLSearchParams(window.location.search);
   const tiendaParamId = paramsUrl.get('tienda') || 'MASTER';
 
@@ -59,23 +58,21 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
     };
   }, []);
 
-  // Identificar si la tienda visualizada pertenece a un Local Asociado o a Central
   const sucursalVitrina = tiendaParamId !== 'MASTER' 
     ? talleresGremio.find(t => t.id === tiendaParamId) 
     : null;
 
   const nombreTiendaMostrar = sucursalVitrina ? sucursalVitrina.nombre : config.empresaNombre;
   const esloganTiendaMostrar = sucursalVitrina 
-    ? `Sucursal Oficial & Servicio Técnico (${sucursalVitrina.ciudad || 'Local'})` 
+    ? 'Sucursal Oficial & Servicio Técnico (' + (sucursalVitrina.ciudad || 'Local') + ')' 
     : config.eslogan;
   const direccionTiendaMostrar = sucursalVitrina 
-    ? `${sucursalVitrina.direccion || ''} (${sucursalVitrina.ciudad || ''})` 
+    ? (sucursalVitrina.direccion || '') + ' (' + (sucursalVitrina.ciudad || '') + ')' 
     : config.direccion;
   const whatsappTiendaMostrar = sucursalVitrina 
     ? (sucursalVitrina.telefono || config.whatsapp) 
     : config.whatsapp;
 
-  // Identificar si el usuario logueado es un Taller Gremio para aplicar descuento B2B (Bronce / Oro)
   const tallerLogueadoB2B = user?.email 
     ? talleresGremio.find(t => t.email?.toLowerCase() === user.email.toLowerCase() && t.activo !== false) 
     : null;
@@ -84,7 +81,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
     ? (tallerLogueadoB2B.nivel === 'Oro' ? Number(config.descuentoGremioOro || 18) : Number(config.descuentoGremioBronce || 10))
     : 0;
 
-  // Filtrar productos que corresponden a esta vitrina y separar estrictamente el stock de proveedores
   const productosVitrina = productos.filter(p => {
     const ownerProd = p.ownerId || 'MASTER';
     if (ownerProd !== tiendaParamId) return false;
@@ -115,7 +111,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
     return true;
   });
 
-  // Cálculo de precio unitario aplicando beneficio Gremio si corresponde
   const obtenerPrecioBaseProducto = (prod: any) => {
     const base = Number(prod.precio || 0);
     if (porcentajeDescuentoGremio > 0) {
@@ -129,7 +124,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
     const existente = carrito.find(i => i.id === prod.id);
     if (existente) {
       if (prod.stock > 0 && existente.cantidad + 1 > prod.stock) {
-        return alert(`Solo quedan ${prod.stock} unidades disponibles en stock.`);
+        return alert('Solo quedan ' + prod.stock + ' unidades disponibles en stock.');
       }
       setCarrito(carrito.map(i => i.id === prod.id ? { ...i, cantidad: i.cantidad + 1, precio: precioUnitario } : i));
     } else {
@@ -144,7 +139,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
           if (item.id !== idProd) return item;
           const nuevaCant = item.cantidad + delta;
           if (nuevaCant > item.stockMax) {
-            alert(`Stock máximo disponible: ${item.stockMax} unidades.`);
+            alert('Stock máximo disponible: ' + item.stockMax + ' unidades.');
             return item;
           }
           return { ...item, cantidad: nuevaCant };
@@ -153,7 +148,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
     );
   };
 
-  // Cálculos financieros del Carrito Web
   const subtotalListaCarrito = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
   
   const montoEnvioGratis = Number(config.envioGratisDesde || 50000);
@@ -165,6 +159,8 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
   let factorMedioPago = 1;
   if (metodoPagoWeb === 'efectivo') {
     factorMedioPago = 1 - (Number(config.descuentoEfectivoPorcentaje || 10) / 100);
+  } else if (metodoPagoWeb === 'mercadopago') {
+    factorMedioPago = 1 + (Number(config.mpRecargoPorcentaje || 0) / 100);
   } else if (metodoPagoWeb === 'tarjeta_1') {
     factorMedioPago = 1 + (Number(config.recargoTarjeta1Pago || config.recargoTarjetaPorcentaje || 15) / 100);
   } else if (metodoPagoWeb === 'tarjeta_3') {
@@ -176,11 +172,14 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
   const totalProductosAjustado = aplicarRedondeo(subtotalListaCarrito * factorMedioPago, config.redondeoPrecios);
   const totalFinalCheckout = totalProductosAjustado + costoEnvioAplicado;
 
+  const linkMpActivo = config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
+  const qrMpUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=' + encodeURIComponent(linkMpActivo);
+
   const confirmarPedidoEcommerce = async (e: React.FormEvent) => {
     e.preventDefault();
     if (carrito.length === 0) return alert('Tu carrito está vacío.');
     if (Number(config.compraMinima || 0) > 0 && subtotalListaCarrito < Number(config.compraMinima)) {
-      return alert(`La compra mínima es de $${Number(config.compraMinima).toLocaleString()}.`);
+      return alert('La compra mínima es de $' + Number(config.compraMinima).toLocaleString() + '.');
     }
     if (modalidadEntregaWeb === 'envio_domicilio' && !cliDireccion.trim()) {
       return alert('Por favor ingresa tu dirección para el envío con repartidor.');
@@ -189,8 +188,8 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
     setEnviandoPedido(true);
     try {
       const direccionEntregaTexto = modalidadEntregaWeb === 'retiro_local' 
-        ? `Retira por el Local (${direccionTiendaMostrar})` 
-        : `Envío a Domicilio: ${cliDireccion}`;
+        ? 'Retira por el Local (' + direccionTiendaMostrar + ')' 
+        : 'Envío a Domicilio: ' + cliDireccion;
 
       const docPedido = await addDoc(collection(db, 'pedidos_ecommerce'), {
         ownerId: tiendaParamId,
@@ -215,7 +214,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
         fecha: serverTimestamp()
       });
 
-      // Registrar automáticamente al comprador en Clientes CRM si no existe por teléfono
       const telLimpio = cliTelefono.replace(/\D/g, '');
       const yaExisteEnCrm = clientesCrm.some(c => (c.telefono || '').replace(/\D/g, '') === telLimpio && (c.ownerId || 'MASTER') === tiendaParamId);
       if (!yaExisteEnCrm && telLimpio.length >= 6) {
@@ -232,25 +230,28 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
       }
 
       const codPedido = docPedido.id.slice(-6).toUpperCase();
-      const detalleWhatsApp = carrito.map(i => `▪️ ${i.cantidad}x ${i.nombre} ($${(i.precio * i.cantidad).toLocaleString()})`).join('\n');
+      const detalleWhatsApp = carrito.map(i => '▪️ ' + i.cantidad + 'x ' + i.nombre + ' ($' + (i.precio * i.cantidad).toLocaleString() + ')').join('\n');
 
-      let msg = `🛍️ *NUEVO PEDIDO WEB #${codPedido}* — *${nombreTiendaMostrar}*\n\n`;
-      msg += `👤 *Cliente:* ${cliNombre} ${tallerLogueadoB2B ? `(🏢 Gremio ${tallerLogueadoB2B.nivel})` : ''}\n`;
-      msg += `📱 *WhatsApp:* ${cliTelefono}\n`;
-      msg += `📍 *Entrega:* ${direccionEntregaTexto}\n`;
-      msg += `💳 *Modalidad de Pago:* ${metodoPagoWeb.toUpperCase()}\n\n`;
-      msg += `📦 *PRODUCTOS:*\n${detalleWhatsApp}\n`;
-      if (costoEnvioAplicado > 0) msg += `🛵 *Envío Repartidor:* $${costoEnvioAplicado.toLocaleString()}\n`;
-      msg += `\n💰 *TOTAL FINAL A ABONAR: $${totalFinalCheckout.toLocaleString()}*\n`;
-      if (metodoPagoWeb === 'transferencia' && config.aliasTransferencia) {
-        msg += `🏦 *Alias para transferir:* ${config.aliasTransferencia} (${config.bancoTitular})\n`;
+      let msg = '🛍️ *NUEVO PEDIDO WEB #' + codPedido + '* — *' + nombreTiendaMostrar + '*\n\n';
+      msg += '👤 *Cliente:* ' + cliNombre + (tallerLogueadoB2B ? ' (🏢 Gremio ' + tallerLogueadoB2B.nivel + ')' : '') + '\n';
+      msg += '📱 *WhatsApp:* ' + cliTelefono + '\n';
+      msg += '📍 *Entrega:* ' + direccionEntregaTexto + '\n';
+      msg += '💳 *Modalidad de Pago:* ' + metodoPagoWeb.toUpperCase() + '\n\n';
+      msg += '📦 *PRODUCTOS:*\n' + detalleWhatsApp + '\n';
+      if (costoEnvioAplicado > 0) msg += '🛵 *Envío Repartidor:* $' + costoEnvioAplicado.toLocaleString() + '\n';
+      msg += '\n💰 *TOTAL FINAL A ABONAR: $' + totalFinalCheckout.toLocaleString() + '*\n';
+      if (metodoPagoWeb === 'mercadopago') {
+        msg += '💠 *Link de Pago Mercado Pago:* ' + linkMpActivo + '\n';
       }
-      if (notasPedido) msg += `📝 *Notas:* ${notasPedido}`;
+      if ((metodoPagoWeb === 'transferencia' || metodoPagoWeb === 'mercadopago') && config.aliasTransferencia) {
+        msg += '🏦 *Alias Oficial:* ' + config.aliasTransferencia + ' (' + config.bancoTitular + ')\n';
+      }
+      if (notasPedido) msg += '📝 *Notas:* ' + notasPedido;
 
       setCarrito([]);
       setMostrarCarrito(false);
-      alert(`🎉 ¡Pedido #${codPedido} registrado con éxito! Ahora se abrirá WhatsApp para coordinar el pago y la entrega.`);
-      window.open(`https://wa.me/${whatsappTiendaMostrar.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+      alert('🎉 ¡Pedido #' + codPedido + ' registrado con éxito! Ahora se abrirá WhatsApp para coordinar el pago y la entrega.');
+      window.open('https://wa.me/' + whatsappTiendaMostrar.replace(/\D/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
     } catch (err: any) {
       alert('Error al procesar el pedido: ' + err.message);
     } finally {
@@ -262,7 +263,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
 
   return (
     <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px' }}>
-      {/* BANNER SUPERIOR DE LA TIENDA OFICIAL */}
       <div className="neon-card" style={{ marginBottom: '22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           {config.logoUrl && (
@@ -304,7 +304,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
         </div>
       </div>
 
-      {/* BARRA DE BÚSQUEDA Y FILTROS DE CATEGORÍAS */}
       <div className="neon-card" style={{ marginBottom: '22px' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
           <input 
@@ -326,7 +325,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
             <button
               key={cat}
               onClick={() => setCategoriaActiva(cat)}
-              className={`neon-btn ${categoriaActiva === cat ? 'neon-btn-fillCyan' : ''}`}
+              className={'neon-btn ' + (categoriaActiva === cat ? 'neon-btn-fillCyan' : '')}
               style={{ padding: '7px 15px', fontSize: '13px', whiteSpace: 'nowrap' }}
             >
               {cat}
@@ -335,7 +334,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
         </div>
       </div>
 
-      {/* GRILLA DE PRODUCTOS DE LA TIENDA */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(255px, 1fr))', gap: '18px' }}>
         {productosFiltrados.map(p => {
           const precioBase = obtenerPrecioBaseProducto(p);
@@ -392,7 +390,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginTop: '4px', color: 'var(--text-muted)' }}>
-                      <span>🏦 Lista / Transf.: <b>${precioBase.toLocaleString()}</b></span>
+                      <span>💠 MP / Lista: <b>${precioBase.toLocaleString()}</b></span>
                       <span>💳 3x <b>${Math.round(precio3Cuotas / 3).toLocaleString()}</b></span>
                     </div>
                   </div>
@@ -404,7 +402,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                   <small style={{ color: 'var(--text-muted)' }}>
-                    Stock: <b>{p.stock > 0 ? `${p.stock} disp.` : 'A pedido'}</b>
+                    Stock: <b>{p.stock > 0 ? p.stock + ' disp.' : 'A pedido'}</b>
                   </small>
                   <button 
                     onClick={() => agregarAlCarrito(p)} 
@@ -429,10 +427,10 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
         )}
       </div>
 
-      {/* MODAL DE CARRITO Y CHECKOUT */}
+      {/* MODAL DE CARRITO Y CHECKOUT CON MERCADO PAGO */}
       {mostrarCarrito && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', overflowY: 'auto' }}>
-          <div className="neon-card" style={{ width: '100%', maxWidth: '640px', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div className="neon-card" style={{ width: '100%', maxWidth: '650px', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(128,128,128,0.2)', paddingBottom: '12px', marginBottom: '14px' }}>
               <h3 className="glow-text-cyan" style={{ margin: 0 }}>
                 🛒 Finalizar Pedido — {nombreTiendaMostrar}
@@ -448,7 +446,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
               </p>
             ) : (
               <form onSubmit={confirmarPedidoEcommerce}>
-                <div style={{ maxHeight: '210px', overflowY: 'auto', marginBottom: '14px' }}>
+                <div style={{ maxHeight: '190px', overflowY: 'auto', marginBottom: '14px' }}>
                   {carrito.map(item => (
                     <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(128,128,128,0.12)' }}>
                       <div style={{ flex: 1 }}>
@@ -469,7 +467,6 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
                   ))}
                 </div>
 
-                {/* DATOS DE ENTREGA Y MEDIO DE PAGO */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
                   <div>
                     <label className="label-neon">Tu Nombre y Apellido *</label>
@@ -484,15 +481,16 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
                     <select className="neon-select" value={modalidadEntregaWeb} onChange={e => setModalidadEntregaWeb(e.target.value as any)}>
                       <option value="retiro_local">📍 Retiro por el Local ($0)</option>
                       <option value="envio_domicilio">
-                        🛵 Envío con Repartidor ({subtotalListaCarrito >= montoEnvioGratis && montoEnvioGratis > 0 ? '¡GRATIS!' : `+$${costoEnvioBase}`})
+                        🛵 Envío con Repartidor ({subtotalListaCarrito >= montoEnvioGratis && montoEnvioGratis > 0 ? '¡GRATIS!' : '+$' + costoEnvioBase})
                       </option>
                     </select>
                   </div>
                   <div>
                     <label className="label-neon">Modalidad de Pago</label>
                     <select className="neon-select" value={metodoPagoWeb} onChange={e => setMetodoPagoWeb(e.target.value as any)}>
+                      <option value="mercadopago">💠 Mercado Pago (QR / Link Oficial)</option>
                       <option value="efectivo">💵 Efectivo (-{config.descuentoEfectivoPorcentaje}%)</option>
-                      <option value="transferencia">🏦 Transferencia / MercadoPago (Lista)</option>
+                      <option value="transferencia">🏦 Transferencia Bancaria (Lista)</option>
                       <option value="tarjeta_1">💳 Tarjeta 1 Pago (+{config.recargoTarjeta1Pago || 15}%)</option>
                       <option value="tarjeta_3">💳 Tarjeta 3 Cuotas (+{config.recargoTarjeta3Cuotas || 28}%)</option>
                       <option value="tarjeta_6">💳 Tarjeta 6 Cuotas (+{config.recargoTarjeta6Cuotas || 45}%)</option>
@@ -512,7 +510,35 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
                   <input type="text" className="neon-input" value={notasPedido} onChange={e => setNotasPedido(e.target.value)} placeholder="Nota opcional (Ej: Horario para recibir)" />
                 </div>
 
-                {/* RESUMEN DE TOTALES */}
+                {/* BLOQUE DE MERCADO PAGO INTEGRADO EN EL CHECKOUT */}
+                {metodoPagoWeb === 'mercadopago' && (
+                  <div style={{ background: 'rgba(0,158,227,0.1)', border: '1.5px solid #009ee3', borderRadius: '14px', padding: '12px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: '200px' }}>
+                      <b style={{ color: '#009ee3', fontSize: '15px' }}>💠 Pago Oficial con Mercado Pago</b>
+                      <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                        Escaneá el QR desde tu celular o abrí el Checkout Oficial para abonar <b>${totalFinalCheckout.toLocaleString()}</b>.
+                      </div>
+                      {config.aliasTransferencia && (
+                        <div style={{ fontSize: '12px', marginTop: '4px' }}>
+                          🏦 Alias Directo MP: <b>{config.aliasTransferencia}</b> ({config.bancoTitular})
+                        </div>
+                      )}
+                      <a 
+                        href={linkMpActivo} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="neon-btn" 
+                        style={{ marginTop: '8px', borderColor: '#009ee3', color: '#009ee3', textDecoration: 'none', padding: '6px 14px', fontSize: '12px' }}
+                      >
+                        🔗 Abrir Link de Pago Mercado Pago ↗
+                      </a>
+                    </div>
+                    <div style={{ background: '#fff', padding: '8px', borderRadius: '10px', border: '1px solid #009ee3' }}>
+                      <img src={qrMpUrl} alt="QR MP" style={{ width: '95px', height: '95px', display: 'block' }} />
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: '14px', marginBottom: '14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', marginBottom: '4px' }}>
                     <span>Subtotal Productos ({metodoPagoWeb.toUpperCase()}):</span>
@@ -520,7 +546,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', marginBottom: '6px' }}>
                     <span>Costo de Envío / Repartidor:</span>
-                    <b>{costoEnvioAplicado === 0 ? 'SIN CARGO ($0)' : `$${costoEnvioAplicado.toLocaleString()}`}</b>
+                    <b>{costoEnvioAplicado === 0 ? 'SIN CARGO ($0)' : '$' + costoEnvioAplicado.toLocaleString()}</b>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: 900, borderTop: '1px solid rgba(128,128,128,0.2)', paddingTop: '8px' }}>
                     <span>TOTAL FINAL:</span>
@@ -534,7 +560,7 @@ export const TiendaPublica: React.FC<PropsTiendaPublica> = ({ user }) => {
                 </div>
 
                 <button type="submit" disabled={enviandoPedido} className="neon-btn neon-btn-fillCyan" style={{ width: '100%', padding: '14px', fontSize: '16px' }}>
-                  {enviandoPedido ? 'Procesando Pedido...' : '✅ Confirmar Pedido y Coordinar por WhatsApp'}
+                  {enviandoPedido ? 'Procesando Pedido...' : '✅ Confirmar Pedido y Enviar Comprobante por WhatsApp'}
                 </button>
               </form>
             )}

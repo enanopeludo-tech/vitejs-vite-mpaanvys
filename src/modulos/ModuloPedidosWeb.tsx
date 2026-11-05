@@ -32,20 +32,20 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
   const [filtroEstadoPedido, setFiltroEstadoPedido] = useState('todos');
   const [busquedaPedido, setBusquedaPedido] = useState('');
 
-  // --- ACCIÓN 1: COBRAR PEDIDO WEB, DESCONTAR STOCK LOCAL Y REGISTRAR EN CAJA ---
+  const linkMpActivo = config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
+
   const procesarCobroYDescuentoStock = async (pedido: any) => {
     if (pedido.cobradoEnCaja) {
       return alert('Este pedido ya fue cobrado y descontado del stock anteriormente.');
     }
 
     const metodo = prompt(
-      `💰 COBRAR PEDIDO WEB #${pedido.id.slice(-6).toUpperCase()} ($${Number(pedido.total || 0).toLocaleString()})\n` +
-      `Ingresa el medio de pago confirmado (transferencia, mercadopago, efectivo, tarjeta):`,
-      pedido.metodoPago || 'transferencia'
+      '💰 COBRAR PEDIDO WEB #' + pedido.id.slice(-6).toUpperCase() + ' ($' + Number(pedido.total || 0).toLocaleString() + ')\n' +
+      'Ingresa el medio de pago confirmado (mercadopago, transferencia, efectivo, tarjeta):',
+      pedido.metodoPago || 'mercadopago'
     );
     if (!metodo) return;
 
-    // 1. Descontar cada artículo comprado del Stock del Local
     if (Array.isArray(pedido.items)) {
       for (const item of pedido.items) {
         const prodEnBd = misProductos.find(p => p.id === item.id || p.nombre.toLowerCase() === (item.nombre || '').toLowerCase());
@@ -59,11 +59,10 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
       }
     }
 
-    // 2. Registrar ingreso en Caja / Finanzas
     const docFin = await addDoc(collection(db, 'finanzas'), {
       ownerId: tenantId,
       tipo: 'ingreso',
-      concepto: `Venta Tienda Web #${pedido.id.slice(-6).toUpperCase()} - ${pedido.cliente?.nombre || 'Cliente Web'}`,
+      concepto: 'Venta Tienda Web #' + pedido.id.slice(-6).toUpperCase() + ' - ' + (pedido.cliente?.nombre || 'Cliente Web'),
       monto: Number(pedido.total || 0),
       metodoPago: metodo.toLowerCase(),
       items: pedido.items || [],
@@ -71,7 +70,6 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
       usuario: user.email
     });
 
-    // 3. Marcar pedido como Pagado y en Preparación
     await updateDoc(doc(db, 'pedidos_ecommerce', pedido.id), {
       estado: 'pagado_preparacion',
       cobradoEnCaja: true,
@@ -79,18 +77,17 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
       metodoPagoConfirmado: metodo.toLowerCase()
     });
 
-    alert(`✅ Stock descontado y cobro de $${Number(pedido.total || 0).toLocaleString()} registrado en Caja.`);
+    alert('✅ Stock descontado y cobro de $' + Number(pedido.total || 0).toLocaleString() + ' registrado en Caja.');
   };
 
-  // --- ACCIÓN 2: CAMBIAR ESTADO Y ASIGNAR REPARTIDOR O TRACKING ---
   const cambiarEstadoPedidoWeb = async (pedido: any, nuevoEstado: string) => {
-    let datosExtra: any = { estado: nuevoEstado };
+    const datosExtra: any = { estado: nuevoEstado };
 
     if (nuevoEstado === 'en_camino') {
       const infoEnvio = prompt(
-        `🛵 DESPACHO DE PEDIDO #${pedido.id.slice(-6).toUpperCase()}\n` +
-        `Escribe el nombre del Repartidor Local o el Código de Seguimiento de Correo/Comisionista:`,
-        `Repartidor Local (${nombreNegocioActivo})`
+        '🛵 DESPACHO DE PEDIDO #' + pedido.id.slice(-6).toUpperCase() + '\n' +
+        'Escribe el nombre del Repartidor Local o el Código de Seguimiento de Correo/Comisionista:',
+        'Repartidor Local (' + nombreNegocioActivo + ')'
       );
       if (infoEnvio !== null) datosExtra.infoSeguimientoEnvio = infoEnvio;
     }
@@ -98,7 +95,6 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
     await updateDoc(doc(db, 'pedidos_ecommerce', pedido.id), datosExtra);
   };
 
-  // --- ACCIÓN 3: EMITIR FACTURA ARCA DESDE EL PEDIDO WEB ---
   const emitirFacturaArcaPedido = async (pedido: any) => {
     const tipoFac = prompt('Tipo de Factura ARCA a emitir (C, B o A):', 'C')?.toUpperCase() || 'C';
     const cuitCli = prompt('DNI o CUIT del comprador (dejar vacío para Consumidor Final):', pedido.cliente?.dni || '') || '00-00000000-0';
@@ -112,7 +108,7 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
     const facturaObj = {
       tipo: tipoFac,
       puntoVenta: ptoVta,
-      numero: `${ptoVta}-${proximoNumero}`,
+      numero: ptoVta + '-' + proximoNumero,
       cuit: cuitCli,
       razonSocialReceptor: pedido.cliente?.nombre || "Consumidor Final",
       condicionIvaReceptor: tipoFac === 'A' ? "IVA Responsable Inscripto" : "Consumidor Final",
@@ -125,8 +121,8 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
     imprimirFacturaARCA(
       {
         monto: pedido.total,
-        metodoPago: pedido.metodoPagoConfirmado || 'transferencia',
-        concepto: `Pedido Web #${pedido.id.slice(-6).toUpperCase()}`,
+        metodoPago: pedido.metodoPagoConfirmado || 'mercadopago',
+        concepto: 'Pedido Web #' + pedido.id.slice(-6).toUpperCase(),
         items: pedido.items || [],
         factura: facturaObj
       },
@@ -134,93 +130,103 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
     );
   };
 
-  // --- ACCIÓN 4: NOTIFICAR AL COMPRADOR POR WHATSAPP SEGÚN ESTADO ---
+  const enviarLinkMercadoPagoPedido = (pedido: any) => {
+    const cod = pedido.id.slice(-6).toUpperCase();
+    let msg = 'Hola *' + (pedido.cliente?.nombre || 'Cliente') + '*, te enviamos el Link Oficial de *Mercado Pago* de *' + nombreNegocioActivo + '* para abonar tu Pedido Web *#' + cod + '*:\n\n';
+    msg += '💰 *Importe Total:* $' + Number(pedido.total || 0).toLocaleString() + '\n';
+    msg += '💠 *Link Mercado Pago:* ' + linkMpActivo + '\n';
+    if (config.aliasTransferencia) {
+      msg += '🏦 *Alias Directo MP:* ' + config.aliasTransferencia + ' (' + config.bancoTitular + ')\n';
+    }
+    msg += '\nApenas se acredite el pago preparamos tu envío. ¡Gracias!';
+    const tel = (pedido.cliente?.telefono || '').replace(/\D/g, '');
+    window.open('https://wa.me/549' + tel + '?text=' + encodeURIComponent(msg), '_blank');
+  };
+
   const avisarCompradorWhatsApp = (pedido: any) => {
     const cod = pedido.id.slice(-6).toUpperCase();
     const estadoActual = pedido.estado || 'pendiente';
-    const detalleItems = (pedido.items || []).map((i: any) => `▪️ ${i.cantidad || 1}x ${i.nombre}`).join('\n');
+    const detalleItems = (pedido.items || []).map((i: any) => '▪️ ' + (i.cantidad || 1) + 'x ' + i.nombre).join('\n');
 
-    let msg = `Hola *${pedido.cliente?.nombre}*, te escribimos de *${nombreNegocioActivo}* por tu Pedido Web *#${cod}*:\n\n`;
-    msg += `🛍️ *Detalle de tu compra:*\n${detalleItems}\n`;
-    msg += `💰 *Total:* $${Number(pedido.total || 0).toLocaleString()}\n\n`;
+    let msg = 'Hola *' + (pedido.cliente?.nombre || 'Cliente') + '*, te escribimos de *' + nombreNegocioActivo + '* por tu Pedido Web *#' + cod + '*:\n\n';
+    msg += '🛍️ *Detalle de tu compra:*\n' + detalleItems + '\n';
+    msg += '💰 *Total:* $' + Number(pedido.total || 0).toLocaleString() + '\n\n';
 
     if (estadoActual === 'pendiente') {
-      msg += `⏳ *Estado:* Pendiente de acreditación de pago.\n`;
-      msg += `🏦 *Alias para transferir:* ${config.aliasTransferencia} (${config.bancoTitular})\n`;
-      msg += `Envianos el comprobante por acá así ya separamos tu pedido.`;
+      msg += '⏳ *Estado:* Pendiente de acreditación de pago.\n';
+      msg += '💠 *Link Mercado Pago:* ' + linkMpActivo + '\n';
+      msg += '🏦 *Alias para transferir:* ' + config.aliasTransferencia + ' (' + config.bancoTitular + ')\n';
+      msg += 'Envianos el comprobante por acá así ya separamos tu pedido.';
     } else if (estadoActual === 'pagado_preparacion') {
-      msg += `✅ *Estado:* ¡Pago acreditado! Tu pedido ya está preparado y separado.`;
+      msg += '✅ *Estado:* ¡Pago acreditado! Tu pedido ya está preparado y separado.';
     } else if (estadoActual === 'en_camino') {
-      msg += `🛵 *Estado:* ¡Tu pedido está en camino!\n`;
-      if (pedido.infoSeguimientoEnvio) msg += `📦 *Transporte / Seguimiento:* ${pedido.infoSeguimientoEnvio}\n`;
+      msg += '🛵 *Estado:* ¡Tu pedido está en camino!\n';
+      if (pedido.infoSeguimientoEnvio) msg += '📦 *Transporte / Seguimiento:* ' + pedido.infoSeguimientoEnvio + '\n';
     } else if (estadoActual === 'entregado') {
-      msg += `🎉 *Estado:* Pedido Entregado. ¡Muchas gracias por tu compra!`;
+      msg += '🎉 *Estado:* Pedido Entregado. ¡Muchas gracias por tu compra!';
     }
 
-    window.open(`https://wa.me/549${(pedido.cliente?.telefono || '').replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open('https://wa.me/549' + (pedido.cliente?.telefono || '').replace(/\D/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
   };
 
-  // --- ACCIÓN 5: IMPRIMIR ETIQUETA / COMANDA DE PREPARACIÓN Y ENVÍO ---
   const imprimirRemitoEnvioPedido = (pedido: any) => {
+    const cod = pedido.id.slice(-6).toUpperCase();
+    const filasItems = (pedido.items || []).map((it: any) =>
+      '<tr><td><b>' + (it.cantidad || 1) + '</b></td><td>' + it.nombre + '</td><td style="text-align:right;">$' + (Number(it.precio || 0) * Number(it.cantidad || 1)).toLocaleString() + '</td></tr>'
+    ).join('');
+
+    const htmlComanda = [
+      '<!DOCTYPE html>',
+      '<html>',
+      '<head>',
+      '<title>Comanda Pedido Web #' + cod + '</title>',
+      '<style>',
+      'body { font-family: "Segoe UI", Arial, sans-serif; color: #111; max-width: 650px; margin: 0 auto; padding: 25px; }',
+      '.etiqueta { border: 3px solid #111; border-radius: 12px; padding: 20px; }',
+      '.header { display: flex; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 14px; }',
+      'table { width: 100%; border-collapse: collapse; margin: 15px 0; }',
+      'th { background: #eee; padding: 8px; text-align: left; border-bottom: 1px solid #000; font-size: 12px; }',
+      'td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 13px; }',
+      '@media print { .no-print { display: none; } }',
+      '</style>',
+      '</head>',
+      '<body>',
+      '<div class="no-print" style="text-align:right; margin-bottom:12px;">',
+      '<button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 20px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Etiqueta / Remito para el Paquete</button>',
+      '</div>',
+      '<div class="etiqueta">',
+      '<div class="header">',
+      '<div>',
+      '<h2 style="margin:0;">' + nombreNegocioActivo + '</h2>',
+      '<div style="font-size:12px;">📍 ' + direccionNegocioActivo + ' | 📱 ' + whatsappNegocioActivo + '</div>',
+      '</div>',
+      '<div style="text-align:right;">',
+      '<div style="font-size:11px; font-weight:bold;">PEDIDO E-COMMERCE</div>',
+      '<div style="font-size:24px; font-weight:900;">#' + cod + '</div>',
+      '</div>',
+      '</div>',
+      '<div style="background:#f8f9fa; padding:12px; border-radius:8px; margin-bottom:12px; font-size:14px;">',
+      '<div><b>DESTINATARIO:</b> ' + (pedido.cliente?.nombre || 'Cliente Web') + '</div>',
+      '<div><b>TELÉFONO:</b> ' + (pedido.cliente?.telefono || '-') + '</div>',
+      '<div><b>DIRECCIÓN / ENTREGA:</b> ' + (pedido.cliente?.direccion || 'Retira por el Local') + '</div>',
+      (pedido.infoSeguimientoEnvio ? '<div><b>REPARTIDOR / TRACKING:</b> ' + pedido.infoSeguimientoEnvio + '</div>' : ''),
+      '</div>',
+      '<table>',
+      '<thead><tr><th>Cant.</th><th>Artículo</th><th style="text-align:right;">Subtotal</th></tr></thead>',
+      '<tbody>' + filasItems + '</tbody>',
+      '</table>',
+      '<div style="display:flex; justify-content:space-between; align-items:center; border-top:2px solid #000; padding-top:12px; font-weight:bold; font-size:16px;">',
+      '<span>ESTADO: ' + (pedido.cobradoEnCaja ? '✅ PAGADO' : '⏳ COBRAR AL ENTREGAR') + '</span>',
+      '<span>TOTAL: $' + Number(pedido.total || 0).toLocaleString() + '</span>',
+      '</div>',
+      '</div>',
+      '</body>',
+      '</html>'
+    ].join('\n');
+
     const v = window.open('', '_blank');
     if (!v) return;
-    const cod = pedido.id.slice(-6).toUpperCase();
-    v.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Comanda Pedido Web #${cod}</title>
-          <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; max-width: 650px; margin: 0 auto; padding: 25px; }
-            .etiqueta { border: 3px solid #111; border-radius: 12px; padding: 20px; }
-            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 14px; }
-            table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-            th { background: #eee; padding: 8px; text-align: left; border-bottom: 1px solid #000; font-size: 12px; }
-            td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 13px; }
-            @media print { .no-print { display: none; } }
-          </style>
-        </head>
-        <body>
-          <div class="no-print" style="text-align:right; margin-bottom:12px;">
-            <button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 20px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Etiqueta / Remito para el Paquete</button>
-          </div>
-          <div class="etiqueta">
-            <div class="header">
-              <div>
-                <h2 style="margin:0;">${nombreNegocioActivo}</h2>
-                <div style="font-size:12px;">📍 ${direccionNegocioActivo} | 📱 ${whatsappNegocioActivo}</div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-size:11px; font-weight:bold;">PEDIDO E-COMMERCE</div>
-                <div style="font-size:24px; font-weight:900;">#${cod}</div>
-              </div>
-            </div>
-            <div style="background:#f8f9fa; padding:12px; border-radius:8px; margin-bottom:12px; font-size:14px;">
-              <div><b>DESTINATARIO:</b> ${pedido.cliente?.nombre || 'Cliente Web'}</div>
-              <div><b>TELÉFONO:</b> ${pedido.cliente?.telefono || '-'}</div>
-              <div><b>DIRECCIÓN / ENTREGA:</b> ${pedido.cliente?.direccion || 'Retira por el Local'}</div>
-              ${pedido.infoSeguimientoEnvio ? `<div><b>REPARTIDOR / TRACKING:</b> ${pedido.infoSeguimientoEnvio}</div>` : ''}
-            </div>
-            <table>
-              <thead><tr><th>Cant.</th><th>Artículo</th><th style="text-align:right;">Subtotal</th></tr></thead>
-              <tbody>
-                ${(pedido.items || []).map((it: any) => `
-                  <tr>
-                    <td><b>${it.cantidad || 1}</b></td>
-                    <td>${it.nombre}</td>
-                    <td style="text-align:right;">$${(Number(it.precio || 0) * Number(it.cantidad || 1)).toLocaleString()}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-            <div style="display:flex; justify-content:space-between; align-items:center; border-top:2px solid #000; padding-top:12px; font-weight:bold; font-size:16px;">
-              <span>ESTADO: ${pedido.cobradoEnCaja ? '✅ PAGADO' : '⏳ COBRAR AL ENTREGAR'}</span>
-              <span>TOTAL: $${Number(pedido.total || 0).toLocaleString()}</span>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
+    v.document.write(htmlComanda);
     v.document.close();
   };
 
@@ -292,7 +298,7 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
               <th>Artículos Comprados</th>
               <th>Total & Caja</th>
               <th>Estado Logístico</th>
-              <th style={{ textAlign: 'center' }}>Acciones</th>
+              <th style={{ textAlign: 'center' }}>Acciones y Cobro MP</th>
             </tr>
           </thead>
           <tbody>
@@ -324,6 +330,9 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
                   </td>
                   <td>
                     <b className="glow-text-green" style={{ fontSize: '17px' }}>${Number(p.total || 0).toLocaleString()}</b><br />
+                    <small style={{ color: 'var(--text-muted)', display: 'block' }}>
+                      Pago: {(p.metodoPago || 'mercadopago').toUpperCase()}
+                    </small>
                     {p.cobradoEnCaja ? (
                       <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)', marginTop: '4px' }}>
                         ✅ Cobrado y Descontado
@@ -354,7 +363,15 @@ export const ModuloPedidosWeb: React.FC<PropsPedidosWeb> = ({
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                      <button onClick={() => avisarCompradorWhatsApp(p)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp">💬</button>
+                      <button 
+                        onClick={() => enviarLinkMercadoPagoPedido(p)} 
+                        className="neon-btn" 
+                        style={{ borderColor: '#009ee3', color: '#009ee3' }} 
+                        title="Enviar Link Oficial de Mercado Pago por WhatsApp"
+                      >
+                        💠 Link MP
+                      </button>
+                      <button onClick={() => avisarCompradorWhatsApp(p)} className="neon-btn neon-btn-green" title="Avisar Estado por WhatsApp">💬</button>
                       <button onClick={() => imprimirRemitoEnvioPedido(p)} className="neon-btn" title="Imprimir Etiqueta / Comanda de Paquete">🖨️</button>
                       <button onClick={() => emitirFacturaArcaPedido(p)} className="neon-btn neon-btn-purple" title="Emitir Factura ARCA">🏛️</button>
                       <button onClick={() => { if (window.confirm('¿Eliminar pedido web?')) deleteDoc(doc(db, 'pedidos_ecommerce', p.id)); }} className="neon-btn neon-btn-red">🗑️</button>

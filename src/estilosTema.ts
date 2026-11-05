@@ -41,12 +41,16 @@ export const CONFIG_DEFAULT = {
   envioLocalCosto: 1500,
   envioGratisDesde: 50000,
 
-  // --- MODALIDADES DE PAGO Y CUOTAS ---
+  // --- MODALIDADES DE PAGO, CUOTAS Y MERCADO PAGO ---
   descuentoEfectivoPorcentaje: 10,
   recargoTarjetaPorcentaje: 15,
   recargoTarjeta1Pago: 15,
   recargoTarjeta3Cuotas: 28,
   recargoTarjeta6Cuotas: 45,
+  mpRecargoPorcentaje: 0,
+  linkMercadoPago: "https://link.mercadopago.com.ar/walabbatecno",
+  mpAccessToken: "",
+  mpPublicKey: "",
 
   // --- VINCULACIÓN DE CATÁLOGOS EXTERNOS POR URL ---
   urlsProveedoresVinculados: "https://api.mercadolibre.com/sites/MLA/search?q=",
@@ -68,7 +72,6 @@ export const CONFIG_DEFAULT = {
   compraMinima: 0,
   aliasTransferencia: "walabba.tecno.mp",
   bancoTitular: "Jose Luis Sena - Mercado Pago",
-  linkMercadoPago: "",
   catalogoPublicoPrecios: true,
   garantiaDiasDefault: 30,
   sectoresTaller: "Microelectrónica & Placas, Módulos y Baterías, Software & F4, Tercerizado Externo",
@@ -185,96 +188,99 @@ export const imprimirFacturaARCA = (movimiento: any, datosFiscalesEmisor: any) =
   };
 
   const base64Arca = btoa(JSON.stringify(jsonArcaQr));
-  const urlOficialArca = `https://www.arca.gob.ar/fe/qr/?p=${base64Arca}`;
-  const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(urlOficialArca)}`;
+  const urlOficialArca = "https://www.arca.gob.ar/fe/qr/?p=" + base64Arca;
+  const qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=" + encodeURIComponent(urlOficialArca);
 
   const netoGravado = fac.tipo === "A" ? (Number(movimiento.monto) / 1.21).toFixed(2) : Number(movimiento.monto).toFixed(2);
   const ivaMonto = fac.tipo === "A" ? (Number(movimiento.monto) - Number(netoGravado)).toFixed(2) : "0.00";
 
+  const filasTabla = movimiento.items && movimiento.items.length > 0
+    ? movimiento.items.map((it: any) =>
+        '<tr><td>' + (it.cantidad || 1) + '</td><td>' + it.nombre + '</td><td style="text-align:right;">$' + Number(it.precio || 0).toLocaleString() + '</td><td style="text-align:right; font-weight:bold;">$' + (Number(it.precio || 0) * Number(it.cantidad || 1)).toLocaleString() + '</td></tr>'
+      ).join('')
+    : '<tr><td>1</td><td>' + movimiento.concepto + '</td><td style="text-align:right;">$' + Number(movimiento.monto || 0).toLocaleString() + '</td><td style="text-align:right; font-weight:bold;">$' + Number(movimiento.monto || 0).toLocaleString() + '</td></tr>';
+
+  const htmlFactura = [
+    '<!DOCTYPE html>',
+    '<html>',
+    '<head>',
+    '<title>Factura ' + fac.tipo + ' ' + fac.numero + ' - ARCA</title>',
+    '<style>',
+    '* { box-sizing: border-box; }',
+    'body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 20px; background: #f2f2f7; }',
+    '.hoja-fiscal { background: #fff; max-width: 800px; margin: 0 auto; border: 2px solid #000; padding: 25px; }',
+    '.cabecera-fiscal { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 15px; }',
+    '.letra-caja { border: 2px solid #000; width: 65px; height: 65px; text-align: center; background: #fff; margin: 0 15px; }',
+    '.letra-caja h1 { margin: 2px 0 0 0; font-size: 36px; }',
+    '.letra-caja small { font-size: 9px; font-weight: bold; display: block; }',
+    '.bloque-receptor { border-bottom: 2px solid #000; padding: 12px 0; font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }',
+    'table { width: 100%; border-collapse: collapse; margin: 18px 0; min-height: 160px; }',
+    'th { background: #eee; border: 1px solid #000; padding: 8px; font-size: 12px; text-align: left; }',
+    'td { border-bottom: 1px solid #ddd; padding: 8px; font-size: 13px; }',
+    '.pie-arca { border-top: 2px solid #000; padding-top: 15px; display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }',
+    '@media print { body { background: #fff; padding: 0; } .no-print { display: none; } }',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<div class="no-print" style="max-width:800px; margin:0 auto 12px auto; text-align:right;">',
+    '<button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 22px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Comprobante Oficial ARCA</button>',
+    '</div>',
+    '<div class="hoja-fiscal">',
+    '<div style="text-align:center; border-bottom:1px solid #000; padding-bottom:6px; margin-bottom:12px; font-weight:bold; font-size:13px;">ORIGINAL</div>',
+    '<div class="cabecera-fiscal">',
+    '<div style="flex:1;">',
+    '<h2 style="margin:0 0 6px 0; font-size:20px;">' + (datosFiscalesEmisor.empresaNombre || "WALABBA TECNO") + '</h2>',
+    '<div style="font-size:12px; line-height:1.5;">',
+    '<b>Razón Social:</b> ' + (datosFiscalesEmisor.razonSocial || datosFiscalesEmisor.empresaNombre) + '<br/>',
+    '<b>Domicilio:</b> ' + (datosFiscalesEmisor.direccion || "-") + '<br/>',
+    '<b>Condición IVA:</b> ' + (datosFiscalesEmisor.condicionIva || "Responsable Monotributo"),
+    '</div>',
+    '</div>',
+    '<div class="letra-caja"><h1>' + fac.tipo + '</h1><small>COD. 0' + codTipoCmp + '</small></div>',
+    '<div style="flex:1; text-align:right; font-size:12px; line-height:1.5;">',
+    '<h2 style="margin:0 0 6px 0; font-size:20px;">FACTURA</h2>',
+    '<b>Pto. Venta: ' + String(ptoVtaNum).padStart(5, "0") + ' — Comp. Nro: ' + String(nroCmpNum).padStart(8, "0") + '</b><br/>',
+    '<b>Fecha:</b> ' + (fac.fechaEmision || new Date().toLocaleDateString()) + '<br/>',
+    '<b>CUIT:</b> ' + (datosFiscalesEmisor.cuit || "-") + '<br/>',
+    '<b>IIBB:</b> ' + (datosFiscalesEmisor.ingresosBrutos || datosFiscalesEmisor.cuit || "-") + '<br/>',
+    '<b>Inicio Act.:</b> ' + (datosFiscalesEmisor.inicioActividades || "01/03/2020"),
+    '</div>',
+    '</div>',
+    '<div class="bloque-receptor">',
+    '<div><b>CUIT / DNI Receptor:</b> ' + (fac.cuit || "00-00000000-0") + '</div>',
+    '<div><b>Razón Social:</b> ' + (fac.razonSocialReceptor || "Consumidor Final") + '</div>',
+    '<div><b>Condición IVA:</b> ' + (fac.condicionIvaReceptor || "Consumidor Final") + '</div>',
+    '<div><b>Condición Venta:</b> ' + (movimiento.metodoPago?.toUpperCase() || "CONTADO") + '</div>',
+    '</div>',
+    '<table>',
+    '<thead><tr><th>Cant.</th><th>Descripción</th><th style="text-align:right;">Unitario</th><th style="text-align:right;">Subtotal</th></tr></thead>',
+    '<tbody>' + filasTabla + '</tbody>',
+    '</table>',
+    '<div style="text-align:right; background:#f8f9fa; padding:12px; border:1px solid #000; font-size:14px;">',
+    (fac.tipo === "A" ? '<div>Neto: $' + Number(netoGravado).toLocaleString() + ' | IVA 21%: $' + Number(ivaMonto).toLocaleString() + '</div>' : ''),
+    '<div style="font-size:19px; font-weight:900; margin-top:4px;">TOTAL: $' + Number(movimiento.monto || 0).toLocaleString() + '</div>',
+    '</div>',
+    '<div class="pie-arca">',
+    '<div style="display:flex; align-items:center; gap:15px;">',
+    '<img src="' + qrImgUrl + '" alt="QR ARCA" style="width:105px; height:105px; border:1px solid #ccc;" />',
+    '<div>',
+    '<div style="font-weight:900; font-size:18px;">ARCA</div>',
+    '<div style="font-size:10px; font-weight:bold;">COMPROBANTE AUTORIZADO</div>',
+    '</div>',
+    '</div>',
+    '<div style="text-align:right; font-size:13px;">',
+    '<b>CAE N°:</b> ' + fac.cae + '<br/>',
+    '<b>Vto. CAE:</b> ' + (fac.vtoCae || "-"),
+    '</div>',
+    '</div>',
+    '</div>',
+    '</body>',
+    '</html>'
+  ].join('\n');
+
   const v = window.open("", "_blank");
   if (!v) return;
-  v.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Factura ${fac.tipo} ${fac.numero} - ARCA</title>
-        <style>
-          * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 20px; background: #f2f2f7; }
-          .hoja-fiscal { background: #fff; max-width: 800px; margin: 0 auto; border: 2px solid #000; padding: 25px; }
-          .cabecera-fiscal { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 15px; }
-          .letra-caja { border: 2px solid #000; width: 65px; height: 65px; text-align: center; background: #fff; margin: 0 15px; }
-          .letra-caja h1 { margin: 2px 0 0 0; font-size: 36px; }
-          .letra-caja small { font-size: 9px; font-weight: bold; display: block; }
-          .bloque-receptor { border-bottom: 2px solid #000; padding: 12px 0; font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-          table { width: 100%; border-collapse: collapse; margin: 18px 0; min-height: 160px; }
-          th { background: #eee; border: 1px solid #000; padding: 8px; font-size: 12px; text-align: left; }
-          td { border-bottom: 1px solid #ddd; padding: 8px; font-size: 13px; }
-          .pie-arca { border-top: 2px solid #000; padding-top: 15px; display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
-          @media print { body { background: #fff; padding: 0; } .no-print { display: none; } }
-        </style>
-      </head>
-      <body>
-        <div class="no-print" style="max-width:800px; margin:0 auto 12px auto; text-align:right;">
-          <button onclick="window.print()" style="background:#007aff; color:#fff; border:none; padding:10px 22px; border-radius:999px; font-weight:bold; cursor:pointer;">🖨️ Imprimir Comprobante Oficial ARCA</button>
-        </div>
-        <div class="hoja-fiscal">
-          <div style="text-align:center; border-bottom:1px solid #000; padding-bottom:6px; margin-bottom:12px; font-weight:bold; font-size:13px;">ORIGINAL</div>
-          <div class="cabecera-fiscal">
-            <div style="flex:1;">
-              <h2 style="margin:0 0 6px 0; font-size:20px;">${datosFiscalesEmisor.empresaNombre || "WALABBA TECNO"}</h2>
-              <div style="font-size:12px; line-height:1.5;">
-                <b>Razón Social:</b> ${datosFiscalesEmisor.razonSocial || datosFiscalesEmisor.empresaNombre}<br/>
-                <b>Domicilio:</b> ${datosFiscalesEmisor.direccion || "-"}<br/>
-                <b>Condición IVA:</b> ${datosFiscalesEmisor.condicionIva || "Responsable Monotributo"}
-              </div>
-            </div>
-            <div class="letra-caja"><h1>${fac.tipo}</h1><small>COD. 0${codTipoCmp}</small></div>
-            <div style="flex:1; text-align:right; font-size:12px; line-height:1.5;">
-              <h2 style="margin:0 0 6px 0; font-size:20px;">FACTURA</h2>
-              <b>Pto. Venta: ${String(ptoVtaNum).padStart(5, "0")} — Comp. Nro: ${String(nroCmpNum).padStart(8, "0")}</b><br/>
-              <b>Fecha:</b> ${fac.fechaEmision || new Date().toLocaleDateString()}<br/>
-              <b>CUIT:</b> ${datosFiscalesEmisor.cuit || "-"}<br/>
-              <b>IIBB:</b> ${datosFiscalesEmisor.ingresosBrutos || datosFiscalesEmisor.cuit || "-"}<br/>
-              <b>Inicio Act.:</b> ${datosFiscalesEmisor.inicioActividades || "01/03/2020"}
-            </div>
-          </div>
-          <div class="bloque-receptor">
-            <div><b>CUIT / DNI Receptor:</b> ${fac.cuit || "00-00000000-0"}</div>
-            <div><b>Razón Social:</b> ${fac.razonSocialReceptor || "Consumidor Final"}</div>
-            <div><b>Condición IVA:</b> ${fac.condicionIvaReceptor || "Consumidor Final"}</div>
-            <div><b>Condición Venta:</b> ${movimiento.metodoPago?.toUpperCase() || "CONTADO"}</div>
-          </div>
-          <table>
-            <thead><tr><th>Cant.</th><th>Descripción</th><th style="text-align:right;">Unitario</th><th style="text-align:right;">Subtotal</th></tr></thead>
-            <tbody>
-              ${movimiento.items && movimiento.items.length > 0 
-                ? movimiento.items.map((it: any) => `<tr><td>${it.cantidad || 1}</td><td>${it.nombre}</td><td style="text-align:right;">$${Number(it.precio || 0).toLocaleString()}</td><td style="text-align:right; font-weight:bold;">$${(Number(it.precio || 0) * Number(it.cantidad || 1)).toLocaleString()}</td></tr>`).join('')
-                : `<tr><td>1</td><td>${movimiento.concepto}</td><td style="text-align:right;">$${Number(movimiento.monto || 0).toLocaleString()}</td><td style="text-align:right; font-weight:bold;">$${Number(movimiento.monto || 0).toLocaleString()}</td></tr>`
-              }
-            </tbody>
-          </table>
-          <div style="text-align:right; background:#f8f9fa; padding:12px; border:1px solid #000; font-size:14px;">
-            ${fac.tipo === "A" ? `<div>Neto: $${Number(netoGravado).toLocaleString()} | IVA 21%: $${Number(ivaMonto).toLocaleString()}</div>` : ""}
-            <div style="font-size:19px; font-weight:900; margin-top:4px;">TOTAL: $${Number(movimiento.monto || 0).toLocaleString()}</div>
-          </div>
-          <div class="pie-arca">
-            <div style="display:flex; align-items:center; gap:15px;">
-              <img src="${qrImgUrl}" alt="QR ARCA" style="width:105px; height:105px; border:1px solid #ccc;" />
-              <div>
-                <div style="font-weight:900; font-size:18px;">ARCA</div>
-                <div style="font-size:10px; font-weight:bold;">COMPROBANTE AUTORIZADO</div>
-              </div>
-            </div>
-            <div style="text-align:right; font-size:13px;">
-              <b>CAE N°:</b> ${fac.cae}<br/>
-              <b>Vto. CAE:</b> ${fac.vtoCae || "-"}
-            </div>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
+  v.document.write(htmlFactura);
   v.document.close();
 };
 
