@@ -32,7 +32,8 @@ import {
   getEstilosTema, 
   imprimirFacturaARCA,
   obtenerDolarDesdeWeb,
-  comprimirImagenABase64
+  comprimirImagenABase64,
+  crearPreferenciaMercadoPago
 } from './estilosTema';
 import { TiendaPublica } from './modulos/TiendaPublica';
 import { ModuloDashboard } from './modulos/ModuloDashboard';
@@ -222,6 +223,11 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [condicionIvaPOS, setCondicionIvaPOS] = useState('Consumidor Final');
   const [tipoFacturaPOS, setTipoFacturaPOS] = useState<'SIN_FACTURA' | 'C' | 'B' | 'A'>('SIN_FACTURA');
   const [imprimirTicketInternoPOS, setImprimirTicketInternoPOS] = useState(false);
+
+  // Estados Preferencia Dinámica Mercado Pago en Caja POS
+  const [linkMpPosDinamico, setLinkMpPosDinamico] = useState<string>('');
+  const [esMpPosDinamico, setEsMpPosDinamico] = useState<boolean>(false);
+  const [generandoMpPos, setGenerandoMpPos] = useState<boolean>(false);
 
   // Estados Gestión de Usuarios y Roles
   const [idUsuarioEditando, setIdUsuarioEditando] = useState<string | null>(null);
@@ -498,6 +504,34 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const ajusteFinancieroPOS = Math.round(subtotalPOS * (porcentajeAjustePOS / 100));
   const totalFinalPOS = aplicarRedondeo(subtotalPOS + ajusteFinancieroPOS, config.redondeoPrecios);
 
+  // Hook automático para generar Preferencia Dinámica de Mercado Pago en la Caja POS
+  useEffect(() => {
+    if (pestaña !== 'pos' || metodoPagoPOS !== 'mercadopago' || totalFinalPOS <= 0 || carritoPOS.length === 0) {
+      setEsMpPosDinamico(false);
+      return;
+    }
+    let cancelado = false;
+    const generarPreferenciaPos = async () => {
+      setGenerandoMpPos(true);
+      const detalleItems = carritoPOS.map(i => i.cantidad + 'x ' + i.nombre).join(', ');
+      const res = await crearPreferenciaMercadoPago({
+        titulo: 'Venta POS ' + nombreNegocioActivo + ': ' + detalleItems,
+        monto: totalFinalPOS,
+        referenciaExterna: 'POS-' + Date.now(),
+        config
+      });
+      if (!cancelado) {
+        setLinkMpPosDinamico(res.url);
+        setEsMpPosDinamico(res.esDinamico);
+        setGenerandoMpPos(false);
+      }
+    };
+    generarPreferenciaPos();
+    return () => {
+      cancelado = true;
+    };
+  }, [pestaña, metodoPagoPOS, totalFinalPOS, carritoPOS.length]);
+
   const imprimirTicketInternoMostrador = (itemsVenta: any[], totalCobrado: number, medio: string, cliente: string) => {
     const filas = itemsVenta.map(i =>
       '<div class="row"><span>' + i.cantidad + 'x ' + String(i.nombre || '').slice(0, 20) + '</span><b>$' + (i.precio * i.cantidad).toLocaleString() + '</b></div>'
@@ -700,7 +734,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
     ? window.location.origin + '/?tienda=' + sucursalAsociada.id 
     : window.location.origin;
 
-  const linkMpActivo = config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
+  const linkMpActivo = (metodoPagoPOS === 'mercadopago' && linkMpPosDinamico) 
+    ? linkMpPosDinamico 
+    : (config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno');
   const qrMpPosUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(linkMpActivo);
 
   return (
@@ -846,7 +882,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 2. CAJA POS MOSTRADOR (CON QR MERCADO PAGO EN VIVO) */}
+        {/* 2. CAJA POS MOSTRADOR (CON QR MERCADO PAGO DINÁMICO EN VIVO) */}
         {pestaña === 'pos' && (
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div className="neon-card" style={{ flex: '2 1 480px' }}>
@@ -1017,20 +1053,26 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <option value="tarjeta_6">💳 Tarjeta 6 Cuotas (+{config.recargoTarjeta6Cuotas || 45}%)</option>
               </select>
 
-              {/* WIDGET QR MERCADO PAGO EN CAJA POS */}
+              {/* WIDGET QR MERCADO PAGO DINÁMICO EN CAJA POS */}
               {metodoPagoPOS === 'mercadopago' && (
                 <div style={{ background: 'rgba(0,158,227,0.1)', border: '1.5px solid #009ee3', borderRadius: '14px', padding: '10px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                   <div>
-                    <b style={{ color: '#009ee3', fontSize: '13px' }}>💠 QR Mercado Pago</b>
+                    <b style={{ color: '#009ee3', fontSize: '13px' }}>
+                      {generandoMpPos 
+                        ? '⏳ Generando QR Dinámico...' 
+                        : esMpPosDinamico 
+                          ? '💠 QR Dinámico ($' + totalFinalPOS.toLocaleString() + ')' 
+                          : '💠 QR Mercado Pago'}
+                    </b>
                     <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
                       Alias: <b>{config.aliasTransferencia}</b>
                     </div>
                     <a href={linkMpActivo} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#009ee3', fontWeight: 'bold' }}>
-                      🔗 Abrir Link MP ↗
+                      🔗 Abrir Checkout MP ↗
                     </a>
                   </div>
                   <div style={{ background: '#fff', padding: '5px', borderRadius: '8px', border: '1px solid #009ee3' }}>
-                    <img src={qrMpPosUrl} alt="QR MP" style={{ width: '75px', height: '75px', display: 'block' }} />
+                    <img src={qrMpPosUrl} alt="QR MP" style={{ width: '75px', height: '75px', display: 'block', opacity: generandoMpPos ? 0.4 : 1 }} />
                   </div>
                 </div>
               )}
@@ -1269,12 +1311,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 {/* BLOQUE 2: INTEGRACIÓN OFICIAL MERCADO PAGO */}
                 <div className="neon-card" style={{ borderColor: '#009ee3' }}>
                   <h3 style={{ marginTop: 0, color: '#009ee3' }}>
-                    💠 2. Integración Oficial Mercado Pago (Link de Cobro, QR, Alias y Credenciales)
+                    💠 2. Integración Oficial Mercado Pago (Link de Cobro, QR, Alias y Credenciales API)
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
                     <div style={{ gridColumn: 'span 2' }}>
                       <label className="label-neon" style={{ color: '#009ee3' }}>
-                        Link Oficial de Cobro Mercado Pago (Se usa para generar el QR en POS, Taller y Tienda Web)
+                        Link Fijo de Respaldo Mercado Pago (Se usa si no hay Access Token cargado)
                       </label>
                       <input 
                         type="text" 
@@ -1314,7 +1356,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       />
                     </div>
                     <div>
-                      <label className="label-neon">MP Public Key (Opcional API)</label>
+                      <label className="label-neon">MP Public Key (API Credenciales)</label>
                       <input 
                         type="text" 
                         className="neon-input" 
@@ -1324,7 +1366,9 @@ const DashboardTaller = ({ user }: { user: User }) => {
                       />
                     </div>
                     <div style={{ gridColumn: 'span 2' }}>
-                      <label className="label-neon">MP Access Token (Opcional Checkout Pro)</label>
+                      <label className="label-neon" style={{ color: 'var(--neon-green)' }}>
+                        MP Access Token (Activa Links y QR Dinámicos con el Monto Exacto en POS, Taller y Web)
+                      </label>
                       <input 
                         type="password" 
                         className="neon-input" 
