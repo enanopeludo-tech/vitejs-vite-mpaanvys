@@ -112,6 +112,87 @@ export const aplicarRedondeo = (valor: number, multiploStr: string) => {
   return Math.ceil(valor / multiplo) * multiplo;
 };
 
+// --- FUNCIÓN PARA CREAR PREFERENCIA DE PAGO DINÁMICA EN LA API DE MERCADO PAGO ---
+export const crearPreferenciaMercadoPago = async (params: {
+  titulo: string;
+  monto: number;
+  referenciaExterna?: string;
+  emailComprador?: string;
+  config: any;
+}): Promise<{ url: string; esDinamico: boolean; idPreferencia?: string; errorDetalle?: string }> => {
+  const fallbackLink = params.config?.linkMercadoPago || "https://link.mercadopago.com.ar/walabbatecno";
+  const token = (params.config?.mpAccessToken || "").trim();
+  const montoFinal = Math.round(Number(params.monto || 0));
+
+  if (!token || montoFinal <= 0) {
+    return {
+      url: fallbackLink,
+      esDinamico: false,
+      errorDetalle: !token ? "Sin Access Token configurado (Usando Link Fijo)" : "Monto inválido"
+    };
+  }
+
+  try {
+    const urlRetorno = typeof window !== "undefined" ? window.location.origin : "https://walabbatecno.com.ar";
+    const payload: any = {
+      items: [
+        {
+          id: params.referenciaExterna || "ITEM-ERP",
+          title: params.titulo.slice(0, 120),
+          description: params.config?.empresaNombre || "Walabba Tecno",
+          quantity: 1,
+          currency_id: "ARS",
+          unit_price: montoFinal
+        }
+      ],
+      external_reference: params.referenciaExterna || ("REF-" + Date.now()),
+      statement_descriptor: (params.config?.empresaNombre || "WALABBA TECNO").slice(0, 22),
+      back_urls: {
+        success: urlRetorno,
+        failure: urlRetorno,
+        pending: urlRetorno
+      },
+      auto_return: "approved"
+    };
+
+    if (params.emailComprador && params.emailComprador.includes("@")) {
+      payload.payer = { email: params.emailComprador.trim() };
+    }
+
+    const resp = await fetch("https://api.mercadopago.com/checkout/preferences", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!resp.ok) {
+      const errJson = await resp.json().catch(() => ({}));
+      return {
+        url: fallbackLink,
+        esDinamico: false,
+        errorDetalle: errJson.message || ("HTTP " + resp.status)
+      };
+    }
+
+    const data = await resp.json();
+    const linkGenerado = data.init_point || data.sandbox_init_point || fallbackLink;
+    return {
+      url: linkGenerado,
+      esDinamico: Boolean(data.init_point || data.sandbox_init_point),
+      idPreferencia: data.id
+    };
+  } catch (err: any) {
+    return {
+      url: fallbackLink,
+      esDinamico: false,
+      errorDetalle: err?.message || "Error de red al conectar con Mercado Pago"
+    };
+  }
+};
+
 // --- FUNCIÓN PARA COMPRIMIR IMÁGENES A BASE64 LIVIANO (PLAN SPARK GRATUITO) ---
 export const comprimirImagenABase64 = (file: File, maxAncho: number = 600, calidad: number = 0.72): Promise<string> => {
   return new Promise((resolve, reject) => {
