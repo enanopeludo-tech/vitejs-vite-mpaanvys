@@ -1,8 +1,8 @@
 // src/modulos/ModuloTaller.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, addDoc, updateDoc, deleteDoc, doc, arrayUnion, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, arrayUnion, serverTimestamp, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CHECKLIST_ITEMS, aplicarRedondeo } from '../estilosTema';
+import { CHECKLIST_ITEMS, aplicarRedondeo, crearPreferenciaMercadoPago } from '../estilosTema';
 
 interface PropsTaller {
   user: any;
@@ -35,6 +35,12 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   const [senaOriginalEditando, setSenaOriginalEditando] = useState<number>(0);
   const omitirRecalculoAlCargarRef = useRef<boolean>(false);
 
+  // --- ESTADOS BASE DE CLIENTES CRM PARA AUTOCOMPLETADO ---
+  const [clientesCrmBd, setClientesCrmBd] = useState<any[]>([]);
+  const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState<boolean>(false);
+  const [clienteCrmSeleccionadoId, setClienteCrmSeleccionadoId] = useState<string | null>(null);
+  const [ultimoEquipoClienteSugerido, setUltimoEquipoClienteSugerido] = useState<string>('');
+
   // --- ESTADOS DATOS DEL CLIENTE Y EQUIPO ---
   const [cliNombre, setCliNombre] = useState('');
   const [cliTel, setCliTel] = useState('');
@@ -46,17 +52,12 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   const [tecnico, setTecnico] = useState('');
   const [imei, setImei] = useState('');
   const [contrasena, setContrasena] = useState('');
-  
-  // --- ESTADO PATRÓN DE DESBLOQUEO INTERACTIVO 3x3 (NODOS 1 AL 9) ---
   const [patronNodos, setPatronNodos] = useState<number[]>([]);
-
   const [condicionVisual, setCondicionVisual] = useState('');
   const [checklist, setChecklist] = useState<string[]>(["Enciende", "Batería OK"]);
 
-  // --- BUSCADOR RÁPIDO DE REPUESTOS EN PROVEEDORES PARA LA CALCULADORA ---
   const [busquedaRepuestoCalc, setBusquedaRepuestoCalc] = useState('');
 
-  // --- MOTOR DE COTIZACIÓN USD + COMISIONISTA + MEDIO DE PAGO + REPARTIDOR ---
   const [costoRepuestoUsd, setCostoRepuestoUsd] = useState('');
   const [manoDeObraExtra, setManoDeObraExtra] = useState('0');
   const [comisionistaElegido, setComisionistaElegido] = useState('4500');
@@ -69,13 +70,115 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   const [senaRequeridaSugerida, setSenaRequeridaSugerida] = useState(0);
   const [alertaTopeGremio, setAlertaTopeGremio] = useState(false);
 
-  // --- FILTROS DE TABLA Y MODALES (BITÁCORA + COBRO MERCADO PAGO) ---
   const [filtroEstadoTaller, setFiltroEstadoTaller] = useState('todos');
   const [filtroOrigenTaller, setFiltroOrigenTaller] = useState('todos');
   const [busquedaTaller, setBusquedaTaller] = useState('');
   const [ordenDetalleModal, setOrdenDetalleModal] = useState<any | null>(null);
+
+  // Estados Modal Mercado Pago Dinámico
   const [ordenCobroMpModal, setOrdenCobroMpModal] = useState<any | null>(null);
   const [montoCobrarMpInput, setMontoCobrarMpInput] = useState<string>('');
+  const [linkMpGenerado, setLinkMpGenerado] = useState<string>('');
+  const [esLinkMpDinamico, setEsLinkMpDinamico] = useState<boolean>(false);
+  const [generandoPreferenciaMp, setGenerandoPreferenciaMp] = useState<boolean>(false);
+
+  // Escuchar en vivo la colección clientes_crm para sugerencias instantáneas
+  useEffect(() => {
+    const unsubCrm = onSnapshot(query(collection(db, 'clientes_crm')), (snap) => {
+      setClientesCrmBd(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsubCrm();
+  }, []);
+
+  // Construir directorio unificado de clientes (CRM + Histórico de Órdenes) sin duplicados
+  const directorioClientesUnificado = React.useMemo(() => {
+    const mapa = new Map<string, any>();
+
+    // 1. Primero cargar los contactos oficiales de clientes_crm de esta sucursal/tenant
+    clientesCrmBd
+      .filter(c => (c.ownerId || 'MASTER') === tenantId)
+      .forEach(c => {
+        const telDigitos = (c.telefono || '').replace(/\D/g, '');
+        const clave = telDigitos.slice(-8) || (c.nombre || '').trim().toLowerCase();
+        if (!clave) return;
+        mapa.set(clave, {
+          crmDocId: c.id,
+          nombre: (c.nombre || '').trim(),
+          telefono: (c.telefono || '').trim(),
+          dni: (c.dni || '').trim(),
+          ultimoEquipo: c.ultimoEquipo || '',
+          cantidadOrdenes: 0
+        });
+      });
+
+    // 2. Complementar con clientes de órdenes previas que aún no estén en el mapa
+    misOrdenesTaller.forEach(o => {
+      const nom = (o.cliente?.nombre || '').trim();
+      const tel = (o.cliente?.telefono || '').trim();
+      const dni = (o.cliente?.dni || '').trim();
+      const telDigitos = tel.replace(/\D/g, '');
+      const clave = telDigitos.slice(-8) || nom.toLowerCase();
+      if (!clave || !nom) return;
+
+      const eqStr = ((o.equipo?.marca || '') + ' ' + (o.equipo?.modelo || '')).trim();
+      const existente = mapa.get(clave);
+      if (existente) {
+        existente.cantidadOrdenes = (existente.cantidadOrdenes || 0) + 1;
+        if (!existente.dni && dni) existente.dni = dni;
+        if (!existente.ultimoEquipo && eqStr) existente.ultimoEquipo = eqStr;
+      } else {
+        mapa.set(clave, {
+          crmDocId: null,
+          nombre: nom,
+          telefono: tel,
+          dni: dni,
+          ultimoEquipo: eqStr,
+          cantidadOrdenes: 1
+        });
+      }
+    });
+
+    return Array.from(mapa.values());
+  }, [clientesCrmBd, misOrdenesTaller, tenantId]);
+
+  // Filtrar sugerencias mientras el usuario escribe nombre, teléfono o DNI
+  const sugerenciasClientesActivas = React.useMemo(() => {
+    if (!mostrarSugerenciasCliente) return [];
+    const terminoNom = cliNombre.trim().toLowerCase();
+    const terminoTel = cliTel.replace(/\D/g, '');
+    const terminoDni = cliDni.trim().toLowerCase();
+
+    if (terminoNom.length < 2 && terminoTel.length < 3 && terminoDni.length < 3) return [];
+
+    return directorioClientesUnificado
+      .filter(c => {
+        const matchNom = terminoNom.length >= 2 && c.nombre.toLowerCase().includes(terminoNom);
+        const matchTel = terminoTel.length >= 3 && c.telefono.replace(/\D/g, '').includes(terminoTel);
+        const matchDni = terminoDni.length >= 3 && (c.dni || '').toLowerCase().includes(terminoDni);
+        return matchNom || matchTel || matchDni;
+      })
+      .slice(0, 6);
+  }, [mostrarSugerenciasCliente, cliNombre, cliTel, cliDni, directorioClientesUnificado]);
+
+  const seleccionarClienteDeSugerencia = (clienteElegido: any) => {
+    setCliNombre(clienteElegido.nombre || '');
+    setCliTel(clienteElegido.telefono || '');
+    setCliDni(clienteElegido.dni || '');
+    setClienteCrmSeleccionadoId(clienteElegido.crmDocId || null);
+    setUltimoEquipoClienteSugerido(clienteElegido.ultimoEquipo || '');
+    setMostrarSugerenciasCliente(false);
+  };
+
+  const cargarUltimoEquipoDelCliente = () => {
+    if (!ultimoEquipoClienteSugerido) return;
+    const partes = ultimoEquipoClienteSugerido.trim().split(' ');
+    if (partes.length === 1) {
+      setMarca(partes[0]);
+    } else if (partes.length > 1) {
+      setMarca(partes[0]);
+      setModelo(partes.slice(1).join(' '));
+    }
+  };
 
   const listaSectores = (config.sectoresTaller || "Microelectrónica, Módulos, Software").split(',').map((s: string) => s.trim());
   
@@ -86,7 +189,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       return { nombre: partes[0]?.trim() || 'Comisionista', costo: Number(partes[1]) || 0 };
     });
 
-  // --- MANEJO DEL PATRÓN 3x3 INTERACTIVO ---
   const tocarNodoPatron3x3 = (nodo: number) => {
     setPatronNodos(prev => {
       if (prev.includes(nodo)) {
@@ -99,7 +201,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
 
   const patronComoTexto = patronNodos.join('-');
 
-  // Filtrar catálogo de proveedores para autocompletar la calculadora USD
   const sugerenciasRepuestosProv = busquedaRepuestoCalc.trim().length >= 2
     ? misProductos
         .filter(p => (p.esDeProveedor || p.descripcion === 'Importado de lista') && p.nombre.toLowerCase().includes(busquedaRepuestoCalc.toLowerCase()))
@@ -209,6 +310,9 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setCliNombre('');
     setCliTel('');
     setCliDni('');
+    setClienteCrmSeleccionadoId(null);
+    setUltimoEquipoClienteSugerido('');
+    setMostrarSugerenciasCliente(false);
     setTallerOrigenOrden('Mostrador Propio');
     setMarca('');
     setModelo('');
@@ -237,6 +341,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setCliNombre(orden.cliente?.nombre || '');
     setCliTel(orden.cliente?.telefono || '');
     setCliDni(orden.cliente?.dni || '');
+    setMostrarSugerenciasCliente(false);
     setTallerOrigenOrden(orden.tallerOrigen || 'Mostrador Propio');
 
     setMarca(orden.equipo?.marca || '');
@@ -244,7 +349,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setImei(orden.equipo?.imei || '');
     setContrasena(orden.equipo?.contrasena || '');
 
-    // Cargar patrón 3x3 guardado
     const patronGuardado = orden.equipo?.patron3x3 || '';
     if (patronGuardado) {
       const nodosParseados = String(patronGuardado)
@@ -282,6 +386,10 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       ? sucursalAsociada.id 
       : (talleresGremio.find(t => t.nombre === tallerOrigenOrden)?.id || 'MASTER');
 
+    const nombreNormalizado = cliNombre.trim();
+    const telNormalizado = cliTel.trim();
+    const dniNormalizado = cliDni.trim();
+
     const objetoEquipo = {
       marca,
       modelo,
@@ -299,7 +407,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       await updateDoc(doc(db, 'ordenes_taller', idOrdenEditando), {
         tallerId: idSucursalFinal,
         tallerOrigen: origenFinal,
-        cliente: { nombre: cliNombre, telefono: cliTel, dni: cliDni },
+        cliente: { nombre: nombreNormalizado, telefono: telNormalizado, dni: dniNormalizado },
         equipo: objetoEquipo,
         fallaDeclarada: falla,
         tecnicoAsignado: esSucursalExterna ? 'Laboratorio Central Walabba' : tecnico,
@@ -326,7 +434,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
           await addDoc(collection(db, 'finanzas'), {
             ownerId: tenantId,
             tipo: 'ingreso',
-            concepto: 'Ampliación Seña Orden #' + codigoOrdenEditando + ' - ' + cliNombre + ' (' + marca + ' ' + modelo + ')',
+            concepto: 'Ampliación Seña Orden #' + codigoOrdenEditando + ' - ' + nombreNormalizado + ' (' + marca + ' ' + modelo + ')',
             monto: diferenciaSena,
             metodoPago: modalidadPagoOrden.startsWith('tarjeta') ? 'tarjeta' : modalidadPagoOrden,
             fecha: serverTimestamp(),
@@ -349,7 +457,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       idTiendaOrigen: user.uid,
       tallerId: idSucursalFinal,
       tallerOrigen: origenFinal,
-      cliente: { nombre: cliNombre, telefono: cliTel, dni: cliDni },
+      cliente: { nombre: nombreNormalizado, telefono: telNormalizado, dni: dniNormalizado },
       equipo: objetoEquipo,
       fallaDeclarada: falla,
       tecnicoAsignado: esSucursalExterna ? 'Laboratorio Central Walabba' : tecnico,
@@ -373,22 +481,35 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       }]
     });
 
+    // Sincronizar con clientes_crm sin duplicar (busca por ID seleccionado, últimos 8 dígitos del teléfono o nombre exacto)
     try {
-      const telLimpio = cliTel.replace(/\D/g, '');
-      if (telLimpio.length >= 6) {
-        const snapCrm = await getDocs(query(collection(db, 'clientes_crm'), where('telefono', '==', cliTel)));
-        if (snapCrm.empty) {
-          await addDoc(collection(db, 'clientes_crm'), {
-            ownerId: tenantId,
-            nombre: cliNombre,
-            telefono: cliTel,
-            dni: cliDni,
-            ultimoEquipo: marca + ' ' + modelo,
-            origen: 'Taller',
-            fechaAlta: new Date().toLocaleDateString(),
-            fechaTimestamp: serverTimestamp()
-          });
-        }
+      const telUltimos8 = telNormalizado.replace(/\D/g, '').slice(-8);
+      const clienteExistenteCrm = clientesCrmBd.find(c => {
+        if ((c.ownerId || 'MASTER') !== tenantId) return false;
+        if (clienteCrmSeleccionadoId && c.id === clienteCrmSeleccionadoId) return true;
+        const cTel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
+        if (telUltimos8.length >= 6 && cTel8 === telUltimos8) return true;
+        return (c.nombre || '').trim().toLowerCase() === nombreNormalizado.toLowerCase();
+      });
+
+      if (clienteExistenteCrm) {
+        await updateDoc(doc(db, 'clientes_crm', clienteExistenteCrm.id), {
+          nombre: nombreNormalizado,
+          telefono: telNormalizado || clienteExistenteCrm.telefono,
+          dni: dniNormalizado || clienteExistenteCrm.dni || '',
+          ultimoEquipo: (marca + ' ' + modelo).trim()
+        });
+      } else if (telUltimos8.length >= 6) {
+        await addDoc(collection(db, 'clientes_crm'), {
+          ownerId: tenantId,
+          nombre: nombreNormalizado,
+          telefono: telNormalizado,
+          dni: dniNormalizado,
+          ultimoEquipo: (marca + ' ' + modelo).trim(),
+          origen: 'Taller',
+          fechaAlta: new Date().toLocaleDateString(),
+          fechaTimestamp: serverTimestamp()
+        });
       }
     } catch {
       // Continuar normalmente
@@ -398,7 +519,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       await addDoc(collection(db, 'finanzas'), {
         ownerId: tenantId,
         tipo: 'ingreso',
-        concepto: 'Adelanto 50% Orden #' + cod + ' - ' + cliNombre + ' (' + marca + ' ' + modelo + ')',
+        concepto: 'Adelanto 50% Orden #' + cod + ' - ' + nombreNormalizado + ' (' + marca + ' ' + modelo + ')',
         monto: Number(señaRecibida),
         metodoPago: modalidadPagoOrden.startsWith('tarjeta') ? 'tarjeta' : modalidadPagoOrden,
         fecha: serverTimestamp(),
@@ -410,14 +531,38 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     alert('⚡ Orden #' + cod + ' generada (' + estadoInicial.toUpperCase() + ').');
   };
 
-  // --- ABRIR MODAL DE COBRO CON MERCADO PAGO ---
-  const abrirModalMercadoPago = (orden: any) => {
+  // --- ABRIR MODAL DE COBRO CON MERCADO PAGO Y GENERAR PREFERENCIA DINÁMICA ---
+  const generarLinkDinamicoParaOrden = async (orden: any, montoACobrar: number) => {
+    setGenerandoPreferenciaMp(true);
+    try {
+      const resultado = await crearPreferenciaMercadoPago({
+        titulo: 'Orden #' + orden.codigoSeguimiento + ' - ' + (orden.equipo?.marca || '') + ' ' + (orden.equipo?.modelo || ''),
+        monto: montoACobrar,
+        referenciaExterna: 'ORD-' + orden.codigoSeguimiento,
+        config
+      });
+      setLinkMpGenerado(resultado.url);
+      setEsLinkMpDinamico(resultado.esDinamico);
+    } finally {
+      setGenerandoPreferenciaMp(false);
+    }
+  };
+
+  const abrirModalMercadoPago = async (orden: any) => {
     const total = Number(orden.costoReparacion || 0);
     const sena = Number(orden.seña || 0);
     const saldoRestante = Math.max(0, total - sena);
     const sugerido = sena === 0 && total > 0 ? Math.round(total * 0.5) : saldoRestante;
+    const montoInicial = sugerido > 0 ? sugerido : total;
+
     setOrdenCobroMpModal(orden);
-    setMontoCobrarMpInput(String(sugerido || 0));
+    setMontoCobrarMpInput(String(montoInicial || 0));
+    setLinkMpGenerado(config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno');
+    setEsLinkMpDinamico(false);
+
+    if (montoInicial > 0) {
+      await generarLinkDinamicoParaOrden(orden, montoInicial);
+    }
   };
 
   const acreditarCobroMercadoPagoEnOrden = async () => {
@@ -455,10 +600,10 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   };
 
   const enviarLinkMercadoPagoWhatsApp = (orden: any, montoCobrar: number) => {
-    const linkMp = config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
-    let msg = 'Hola *' + (orden.cliente?.nombre || 'Cliente') + '*, te enviamos el link y datos de *Mercado Pago* de *' + nombreNegocioActivo + '* para abonar la Orden *#' + orden.codigoSeguimiento + '* (*' + (orden.equipo?.marca || '') + ' ' + (orden.equipo?.modelo || '') + '*):\n\n';
-    msg += '💰 *Importe a abonar:* $' + Number(montoCobrar || 0).toLocaleString() + '\n';
-    msg += '🔗 *Link de Pago Mercado Pago:* ' + linkMp + '\n';
+    const linkEnviar = linkMpGenerado || config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
+    let msg = 'Hola *' + (orden.cliente?.nombre || 'Cliente') + '*, te enviamos el link oficial de *Mercado Pago* de *' + nombreNegocioActivo + '* para abonar la Orden *#' + orden.codigoSeguimiento + '* (*' + (orden.equipo?.marca || '') + ' ' + (orden.equipo?.modelo || '') + '*):\n\n';
+    msg += '💰 *Importe exacto a abonar:* $' + Number(montoCobrar || 0).toLocaleString() + '\n';
+    msg += '💠 *Pagar con Mercado Pago:* ' + linkEnviar + '\n';
     if (config.aliasTransferencia) {
       msg += '🏦 *Alias MP Directo:* ' + config.aliasTransferencia + ' (' + config.bancoTitular + ')\n';
     }
@@ -560,11 +705,22 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     await updateDoc(doc(db, 'ordenes_taller', id), data);
   };
 
-  const notificarClienteWhatsApp = (orden: any) => {
+  const notificarClienteWhatsApp = async (orden: any) => {
     const urlBase = window.location.origin;
     const total = Number(orden.costoReparacion || 0);
     const sena = Number(orden.seña || 0);
     const saldo = Math.max(0, total - sena);
+
+    let linkPagoParaMsg = config.linkMercadoPago || '';
+    if (saldo > 0 && config.mpAccessToken) {
+      const pref = await crearPreferenciaMercadoPago({
+        titulo: 'Saldo Orden #' + orden.codigoSeguimiento + ' - ' + (orden.equipo?.marca || '') + ' ' + (orden.equipo?.modelo || ''),
+        monto: saldo,
+        referenciaExterna: 'ORD-' + orden.codigoSeguimiento,
+        config
+      });
+      linkPagoParaMsg = pref.url;
+    }
 
     let textoLogistica = '📍 *Retiro:* Podés pasar a retirarlo por nuestro local (' + config.direccion + ').';
     if (orden.modalidadEntrega === 'cadete_incluido') {
@@ -581,8 +737,8 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       msg += '▪️ Presupuesto Total: $' + total.toLocaleString() + '\n';
       msg += '▪️ Adelanto entregado: -$' + sena.toLocaleString() + '\n';
       msg += '📌 *Saldo a abonar previo a la entrega: $' + saldo.toLocaleString() + '*\n';
-      if (config.linkMercadoPago) {
-        msg += '💠 *Link Mercado Pago:* ' + config.linkMercadoPago + '\n';
+      if (linkPagoParaMsg && saldo > 0) {
+        msg += '💠 *Link de Pago Mercado Pago ($' + saldo.toLocaleString() + '):* ' + linkPagoParaMsg + '\n';
       }
       msg += '\n';
     }
@@ -592,7 +748,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     window.open('https://wa.me/549' + orden.cliente.telefono.replace(/\D/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
   };
 
-  // --- IMPRIMIR ORDEN A4 CON GRÁFICO DE PATRÓN 3x3 ---
   const imprimirOrdenProfesional = (orden: any) => {
     const v = window.open('', '_blank');
     if (!v) return;
@@ -610,7 +765,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     const patronGuardado = String(orden.equipo?.patron3x3 || '');
     const nodosPatron = patronGuardado ? patronGuardado.split('-').map(n => Number(n)) : [];
 
-    // Construir celdas visuales del patrón 3x3 para la impresión
     const celdasPatronHtml = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => {
       const ordenPaso = nodosPatron.indexOf(num) + 1;
       const activo = ordenPaso > 0;
@@ -746,27 +900,43 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     return true;
   });
 
-  const linkMpActivo = config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
-  const qrMercadoPagoUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=210x210&data=' + encodeURIComponent(linkMpActivo);
+  const urlFinalParaQrMp = linkMpGenerado || config.linkMercadoPago || 'https://link.mercadopago.com.ar/walabbatecno';
+  const qrMercadoPagoUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=210x210&data=' + encodeURIComponent(urlFinalParaQrMp);
 
   return (
     <div>
-      {/* MODAL DE COBRO CON MERCADO PAGO (QR + LINK + WHATSAPP + IMPUTACIÓN EN CAJA) */}
+      {/* MODAL DE COBRO CON MERCADO PAGO DINÁMICO */}
       {ordenCobroMpModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.78)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-          <div className="neon-card" style={{ width: '100%', maxWidth: '480px', textAlign: 'center', border: '2px solid #009ee3' }}>
+          <div className="neon-card" style={{ width: '100%', maxWidth: '500px', textAlign: 'center', border: '2px solid #009ee3' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <h3 style={{ margin: 0, color: '#009ee3' }}>
                 💠 Cobro con Mercado Pago — Orden #{ordenCobroMpModal.codigoSeguimiento}
               </h3>
               <button onClick={() => setOrdenCobroMpModal(null)} className="neon-btn neon-btn-red" style={{ padding: '4px 12px' }}>✕</button>
             </div>
-            <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', margin: '0 0 12px 0' }}>
+            <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', margin: '0 0 8px 0' }}>
               Cliente: <b>{ordenCobroMpModal.cliente?.nombre}</b> | Equipo: <b>{ordenCobroMpModal.equipo?.marca} {ordenCobroMpModal.equipo?.modelo}</b>
             </p>
 
+            <div style={{ marginBottom: '10px' }}>
+              <span 
+                className="neon-badge" 
+                style={{ 
+                  background: esLinkMpDinamico ? 'rgba(40,205,65,0.16)' : 'rgba(0,158,227,0.15)', 
+                  color: esLinkMpDinamico ? 'var(--neon-green)' : '#009ee3' 
+                }}
+              >
+                {generandoPreferenciaMp 
+                  ? '⏳ Generando Preferencia API con Monto Exacto...' 
+                  : esLinkMpDinamico 
+                    ? '✅ Preferencia API Dinámica Activa ($' + Number(montoCobrarMpInput || 0).toLocaleString() + ')' 
+                    : '🔗 Link Mercado Pago Activo (Configura mpAccessToken para Link Dinámico)'}
+              </span>
+            </div>
+
             <div style={{ background: '#fff', padding: '14px', borderRadius: '16px', display: 'inline-block', marginBottom: '12px', border: '2px solid #009ee3' }}>
-              <img src={qrMercadoPagoUrl} alt="QR Mercado Pago" style={{ width: '185px', height: '185px', display: 'block' }} />
+              <img src={qrMercadoPagoUrl} alt="QR Mercado Pago" style={{ width: '185px', height: '185px', display: 'block', opacity: generandoPreferenciaMp ? 0.4 : 1 }} />
               <small style={{ color: '#009ee3', fontWeight: 'bold', display: 'block', marginTop: '4px' }}>
                 Escaneá con la App de Mercado Pago
               </small>
@@ -779,19 +949,30 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
             )}
 
             <div style={{ textAlign: 'left', marginBottom: '14px' }}>
-              <label className="label-neon">Importe a Cobrar / Acreditar ahora ($)</label>
-              <input 
-                type="number" 
-                className="neon-input" 
-                value={montoCobrarMpInput} 
-                onChange={e => setMontoCobrarMpInput(e.target.value)} 
-                style={{ fontWeight: 'bold', fontSize: '18px', textAlign: 'center', borderColor: '#009ee3' }} 
-              />
+              <label className="label-neon">Importe Exacto a Cobrar / Acreditar ($)</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input 
+                  type="number" 
+                  className="neon-input" 
+                  value={montoCobrarMpInput} 
+                  onChange={e => setMontoCobrarMpInput(e.target.value)} 
+                  style={{ fontWeight: 'bold', fontSize: '18px', textAlign: 'center', borderColor: '#009ee3' }} 
+                />
+                <button 
+                  type="button" 
+                  disabled={generandoPreferenciaMp}
+                  onClick={() => generarLinkDinamicoParaOrden(ordenCobroMpModal, Number(montoCobrarMpInput))} 
+                  className="neon-btn"
+                  style={{ borderColor: '#009ee3', color: '#009ee3', whiteSpace: 'nowrap' }}
+                >
+                  ⚡ Actualizar QR
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
               <a 
-                href={linkMpActivo} 
+                href={urlFinalParaQrMp} 
                 target="_blank" 
                 rel="noreferrer" 
                 className="neon-btn" 
@@ -878,7 +1059,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
               ? '✏️ Editando Orden de Reparación #' + codigoOrdenEditando 
               : esSucursalExterna 
                 ? '📝 Ingreso de Orden de Reparación (' + nombreNegocioActivo + ')' 
-                : '📝 Recepción Central + Patrón 3x3 + Calculadora USD / Mercado Pago / 50% Seña'}
+                : '📝 Recepción Central + Buscador CRM + Patrón 3x3 + Calculadora USD'}
           </h3>
           {idOrdenEditando && (
             <button type="button" onClick={limpiarFormularioOrden} className="neon-btn neon-btn-red">
@@ -978,10 +1159,12 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
           </div>
         </div>
 
-        {/* SECCIÓN DE CARGA DE CLIENTE, EQUIPO Y GRILLA INTERACTIVA DE PATRÓN 3x3 */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(235px, 1fr))', gap: '14px', marginBottom: '14px' }}>
-          <div>
-            <label className="label-neon">1. Origen & Cliente</label>
+          {/* COLUMNA 1: CLIENTE CON AUTOCOMPLETADO INTELIGENTE EN VIVO DESDE EL CRM */}
+          <div style={{ position: 'relative' }}>
+            <label className="label-neon">
+              1. Origen & Cliente <span style={{ color: 'var(--neon-cyan)' }}>(Autocompleta desde CRM)</span>
+            </label>
             {!esSucursalExterna ? (
               <select className="neon-select" value={tallerOrigenOrden} onChange={e => setTallerOrigenOrden(e.target.value)} style={{ marginBottom: '8px' }}>
                 <option value="Mostrador Propio">🏪 Cliente Local Central (Pide 50% Seña)</option>
@@ -992,14 +1175,132 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                 🏢 Sucursal: {sucursalAsociada.nombre}
               </div>
             )}
-            <input type="text" className="neon-input" placeholder="Nombre del Cliente *" value={cliNombre} onChange={e => setCliNombre(e.target.value)} required style={{ marginBottom: '8px' }} />
+
+            <input 
+              type="text" 
+              className="neon-input" 
+              placeholder="Escribe Nombre o Apellido (Busca en CRM) *" 
+              value={cliNombre} 
+              onFocus={() => setMostrarSugerenciasCliente(true)}
+              onChange={e => {
+                setCliNombre(e.target.value);
+                setClienteCrmSeleccionadoId(null);
+                setMostrarSugerenciasCliente(true);
+              }} 
+              required 
+              style={{ marginBottom: '8px' }} 
+            />
+
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input type="text" className="neon-input" placeholder="WhatsApp (2262...) *" value={cliTel} onChange={e => setCliTel(e.target.value)} required />
-              <input type="text" className="neon-input" placeholder="DNI" value={cliDni} onChange={e => setCliDni(e.target.value)} />
+              <input 
+                type="text" 
+                className="neon-input" 
+                placeholder="WhatsApp (2262...) *" 
+                value={cliTel} 
+                onFocus={() => setMostrarSugerenciasCliente(true)}
+                onChange={e => {
+                  setCliTel(e.target.value);
+                  setMostrarSugerenciasCliente(true);
+                }} 
+                required 
+              />
+              <input 
+                type="text" 
+                className="neon-input" 
+                placeholder="DNI" 
+                value={cliDni} 
+                onFocus={() => setMostrarSugerenciasCliente(true)}
+                onChange={e => {
+                  setCliDni(e.target.value);
+                  setMostrarSugerenciasCliente(true);
+                }} 
+              />
             </div>
+
+            {/* DESPLEGABLE DE SUGERENCIAS DE CLIENTES EXISTENTES EN CRM / HISTORIAL */}
+            {sugerenciasClientesActivas.length > 0 && (
+              <div 
+                style={{ 
+                  position: 'absolute', 
+                  top: '100%', 
+                  left: 0, 
+                  right: 0, 
+                  zIndex: 80, 
+                  background: 'var(--bg-card)', 
+                  border: '2px solid var(--neon-cyan)', 
+                  borderRadius: '14px', 
+                  padding: '8px', 
+                  marginTop: '4px', 
+                  boxShadow: '0 12px 28px rgba(0,0,0,0.35)' 
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', padding: '0 4px' }}>
+                  <small className="glow-text-cyan" style={{ fontWeight: 'bold' }}>
+                    👥 Clientes encontrados en tu CRM (Tocá para autocompletar):
+                  </small>
+                  <button 
+                    type="button" 
+                    onClick={() => setMostrarSugerenciasCliente(false)} 
+                    className="neon-btn neon-btn-red" 
+                    style={{ padding: '1px 7px', fontSize: '10px' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '210px', overflowY: 'auto' }}>
+                  {sugerenciasClientesActivas.map((c, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => seleccionarClienteDeSugerencia(c)}
+                      style={{
+                        textAlign: 'left',
+                        background: 'var(--bg-input)',
+                        border: '1px solid rgba(0,122,255,0.25)',
+                        borderRadius: '10px',
+                        padding: '8px 10px',
+                        cursor: 'pointer',
+                        color: 'var(--text-main)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <div>
+                        <b style={{ fontSize: '13.5px', color: 'var(--neon-cyan)' }}>{c.nombre}</b>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          📱 {c.telefono || 'S/T'} {c.dni ? '| DNI: ' + c.dni : ''}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {c.ultimoEquipo && (
+                          <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)', fontSize: '10px' }}>
+                            📱 {c.ultimoEquipo}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ultimoEquipoClienteSugerido && (
+              <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(40,205,65,0.12)', padding: '5px 10px', borderRadius: '10px', fontSize: '12px' }}>
+                <span>✓ Cliente CRM — Último eq.: <b>{ultimoEquipoClienteSugerido}</b></span>
+                <button 
+                  type="button" 
+                  onClick={cargarUltimoEquipoDelCliente} 
+                  className="neon-btn neon-btn-green" 
+                  style={{ padding: '2px 8px', fontSize: '11px' }}
+                >
+                  Usar equipo
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* COLUMNA 2: EQUIPO + PAD TÁCTIL DE PATRÓN 3x3 */}
           <div>
             <label className="label-neon">2. Equipo, PIN & Patrón 3x3</label>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -1011,7 +1312,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
               <input type="text" className="neon-input" placeholder="PIN / Contraseña" value={contrasena} onChange={e => setContrasena(e.target.value)} />
             </div>
 
-            {/* WIDGET INTERACTIVO DE PATRÓN DE DESBLOQUEO 3x3 */}
             <div style={{ background: 'var(--bg-input)', border: '1px solid rgba(0,122,255,0.35)', borderRadius: '14px', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
               <div>
                 <span className="label-neon" style={{ color: 'var(--neon-cyan)', marginBottom: '3px' }}>
@@ -1035,7 +1335,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                 )}
               </div>
 
-              {/* GRILLA 3x3 DE BOTONES TÁCTILES */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 34px)', gap: '7px', background: 'rgba(0,0,0,0.06)', padding: '8px', borderRadius: '12px' }}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => {
                   const pasoOrden = patronNodos.indexOf(num) + 1;
@@ -1100,7 +1399,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
             )}
             {modalidadPagoOrden === 'mercadopago' && (
               <div style={{ fontSize: '12px', color: '#009ee3', marginTop: '4px', fontWeight: 'bold' }}>
-                💠 Al crear la orden podrás mostrar el QR o enviar el Link de Mercado Pago.
+                💠 Al crear la orden podrás generar el QR o Link Dinámico de Mercado Pago.
               </div>
             )}
           </div>
@@ -1227,14 +1526,14 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                         onClick={() => abrirModalMercadoPago(o)} 
                         className="neon-btn" 
                         style={{ borderColor: '#009ee3', color: '#009ee3' }} 
-                        title="Cobrar Seña o Saldo con QR / Link de Mercado Pago"
+                        title="Generar QR / Link Dinámico de Mercado Pago para esta orden"
                       >
                         💠 MP
                       </button>
                       <button onClick={() => cargarOrdenParaEditar(o)} className="neon-btn" title="Editar Orden y Patrón 3x3">✏️</button>
                       <button onClick={() => setOrdenDetalleModal(o)} className="neon-btn" title="Ver Bitácora Técnica y Repuestos Usados">📋</button>
                       <button onClick={() => imputarRepuestoAOrden(o)} className="neon-btn neon-btn-purple" title="Descontar repuesto de mi stock">🔩</button>
-                      <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp con saldo y envío">💬</button>
+                      <button onClick={() => notificarClienteWhatsApp(o)} className="neon-btn neon-btn-green" title="Avisar por WhatsApp con link dinámico MP">💬</button>
                       <button onClick={() => imprimirOrdenProfesional(o)} className="neon-btn" title="Imprimir Orden con Gráfico Patrón 3x3">🖨️</button>
                       {esAdminDelNegocioActivo && (
                         <button onClick={async () => { if (window.confirm('¿Eliminar orden?')) await deleteDoc(doc(db, 'ordenes_taller', o.id)); }} className="neon-btn neon-btn-red">🗑️</button>
