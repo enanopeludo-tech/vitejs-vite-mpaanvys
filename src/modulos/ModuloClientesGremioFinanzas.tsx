@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, onSnapshot, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { imprimirFacturaARCA } from '../estilosTema';
 
@@ -42,6 +42,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
   const [crmDireccion, setCrmDireccion] = useState('');
   const [crmNotas, setCrmNotas] = useState('');
   const [busquedaCrm, setBusquedaCrm] = useState('');
+  const [unificandoDuplicados, setUnificandoDuplicados] = useState(false);
   const [plantillaPromo, setPlantillaPromo] = useState(
     config.promoPlantillaCRM ||
     'Hola {nombre}! En *{empresa}* tenemos promos exclusivas esta semana en cargadores carga rápida, hidrogel antishock y servicio técnico. ¡Consultanos!'
@@ -86,27 +87,48 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
   const [filtroTipoMovimiento, setFiltroTipoMovimiento] = useState<'todos' | 'ingreso' | 'egreso'>('todos');
   const [filtroMedioPagoFin, setFiltroMedioPagoFin] = useState('todos');
 
+  // Normalizador de nombres para detectar duplicados escritos distinto (sin tildes ni dobles espacios)
+  const normalizarTextoComparacion = (str: string) => {
+    return (str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  };
+
   // ----------------------------------------------------------------------------
-  // LÓGICA CLIENTES CRM
+  // LÓGICA CLIENTES CRM Y FUSIÓN INTELIGENTE DE DUPLICADOS
   // ----------------------------------------------------------------------------
   const misClientesGuardados = clientesBd.filter(c => (c.ownerId || 'MASTER') === tenantId);
 
   const mapaUnificadoClientes = new Map<string, any>();
 
   misClientesGuardados.forEach(c => {
-    const claveTel = (c.telefono || '').replace(/\D/g, '') || c.id;
-    mapaUnificadoClientes.set(claveTel, {
-      ...c,
-      esDeColeccionCrm: true,
-      cantidadOrdenes: 0,
-      totalGastado: 0
-    });
+    const tel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
+    const clave = tel8 || normalizarTextoComparacion(c.nombre) || c.id;
+    const prev = mapaUnificadoClientes.get(clave);
+    if (prev) {
+      if (!prev.dni && c.dni) prev.dni = c.dni;
+      if (!prev.direccion && c.direccion) prev.direccion = c.direccion;
+      if (!prev.ultimoEquipo && c.ultimoEquipo) prev.ultimoEquipo = c.ultimoEquipo;
+    } else {
+      mapaUnificadoClientes.set(clave, {
+        ...c,
+        esDeColeccionCrm: true,
+        cantidadOrdenes: 0,
+        totalGastado: 0
+      });
+    }
   });
 
   misOrdenesTaller.forEach(o => {
-    const telLimpio = (o.cliente?.telefono || '').replace(/\D/g, '');
-    if (!telLimpio) return;
-    const existente = mapaUnificadoClientes.get(telLimpio);
+    const telLimpio = (o.cliente?.telefono || '').replace(/\D/g, '').slice(-8);
+    const nomNorm = normalizarTextoComparacion(o.cliente?.nombre || '');
+    const clave = telLimpio || nomNorm;
+    if (!clave) return;
+
+    const existente = mapaUnificadoClientes.get(clave);
     const montoOrden = Number(o.costoReparacion || o.seña || 0);
     const equipoTexto = ((o.equipo?.marca || '') + ' ' + (o.equipo?.modelo || '')).trim();
     if (existente) {
@@ -115,8 +137,11 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
       if (!existente.ultimoEquipo && equipoTexto) {
         existente.ultimoEquipo = equipoTexto;
       }
+      if (!existente.dni && o.cliente?.dni) {
+        existente.dni = o.cliente.dni;
+      }
     } else {
-      mapaUnificadoClientes.set(telLimpio, {
+      mapaUnificadoClientes.set(clave, {
         id: 'taller_' + o.id,
         esDeColeccionCrm: false,
         nombre: o.cliente?.nombre || 'Cliente Taller',
@@ -132,14 +157,17 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
   });
 
   misPedidosWeb.forEach(p => {
-    const telLimpio = (p.cliente?.telefono || '').replace(/\D/g, '');
-    if (!telLimpio) return;
-    const existente = mapaUnificadoClientes.get(telLimpio);
+    const telLimpio = (p.cliente?.telefono || '').replace(/\D/g, '').slice(-8);
+    const nomNorm = normalizarTextoComparacion(p.cliente?.nombre || '');
+    const clave = telLimpio || nomNorm;
+    if (!clave) return;
+
+    const existente = mapaUnificadoClientes.get(clave);
     const montoPedido = Number(p.total || 0);
     if (existente) {
       existente.totalGastado = (existente.totalGastado || 0) + montoPedido;
     } else {
-      mapaUnificadoClientes.set(telLimpio, {
+      mapaUnificadoClientes.set(clave, {
         id: 'web_' + p.id,
         esDeColeccionCrm: false,
         nombre: p.cliente?.nombre || 'Cliente Web',
@@ -165,15 +193,172 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     );
   });
 
+  // --- FUNCIÓN PARA UNIFICAR Y LIMPIAR DUPLICADOS EN CRM Y ÓRDENES ---
+  const ejecutarUnificacionDuplicadosCrm = async () => {
+    if (!window.confirm(
+      '🧹 UNIFICAR Y LIMPIAR CLIENTES DUPLICADOS:\n\n' +
+      'El sistema analizará tus contactos en el CRM y tus Órdenes de Taller para:\n' +
+      '1. Fusionar fichas repetidas con el mismo número de teléfono o nombre equivalente.\n' +
+      '2. Registrar en el CRM a los clientes históricos de Taller que aún no tenían ficha oficial.\n' +
+      '3. Estandarizar el nombre y teléfono en todas sus órdenes.\n\n' +
+      '¿Ejecutar limpieza y unificación ahora?'
+    )) return;
+
+    setUnificandoDuplicados(true);
+    try {
+      let batch = writeBatch(db);
+      let ops = 0;
+      let duplicadosEliminados = 0;
+      let nuevosAgendadosDeTaller = 0;
+      let ordenesEstandarizadas = 0;
+
+      const gruposPorClave = new Map<string, any[]>();
+
+      // Agrupar documentos actuales de clientes_crm por últimos 8 dígitos del teléfono o nombre normalizado
+      misClientesGuardados.forEach(docCrm => {
+        const tel8 = (docCrm.telefono || '').replace(/\D/g, '').slice(-8);
+        const nomNorm = normalizarTextoComparacion(docCrm.nombre);
+        const clave = tel8.length >= 6 ? ('TEL_' + tel8) : ('NOM_' + nomNorm);
+        if (!gruposPorClave.has(clave)) {
+          gruposPorClave.set(clave, []);
+        }
+        gruposPorClave.get(clave)!.push(docCrm);
+      });
+
+      const mapaMaestroCrm = new Map<string, { nombre: string; telefono: string; dni: string }>();
+
+      // 1. Consolidar duplicados dentro de clientes_crm
+      for (const [clave, listaDocs] of gruposPorClave.entries()) {
+        // Elegir el nombre más largo/completo y recolectar teléfono, DNI y dirección
+        const principal = listaDocs[0];
+        let mejorNombre = (principal.nombre || '').trim();
+        let mejorTelefono = (principal.telefono || '').trim();
+        let mejorDni = (principal.dni || '').trim();
+        let mejorDireccion = (principal.direccion || '').trim();
+        let mejorEquipo = (principal.ultimoEquipo || '').trim();
+
+        for (let i = 0; i < listaDocs.length; i++) {
+          const item = listaDocs[i];
+          if ((item.nombre || '').trim().length > mejorNombre.length) mejorNombre = item.nombre.trim();
+          if ((item.telefono || '').replace(/\D/g, '').length > mejorTelefono.replace(/\D/g, '').length) mejorTelefono = item.telefono.trim();
+          if (!mejorDni && item.dni) mejorDni = String(item.dni).trim();
+          if (!mejorDireccion && item.direccion) mejorDireccion = String(item.direccion).trim();
+          if (!mejorEquipo && item.ultimoEquipo) mejorEquipo = String(item.ultimoEquipo).trim();
+        }
+
+        batch.update(doc(db, 'clientes_crm', principal.id), {
+          nombre: mejorNombre,
+          telefono: mejorTelefono,
+          dni: mejorDni,
+          direccion: mejorDireccion,
+          ultimoEquipo: mejorEquipo
+        });
+        ops++;
+
+        // Eliminar los documentos duplicados restantes de ese mismo grupo
+        for (let j = 1; j < listaDocs.length; j++) {
+          batch.delete(doc(db, 'clientes_crm', listaDocs[j].id));
+          ops++;
+          duplicadosEliminados++;
+        }
+
+        const tel8Maestro = mejorTelefono.replace(/\D/g, '').slice(-8);
+        if (tel8Maestro.length >= 6) {
+          mapaMaestroCrm.set('TEL_' + tel8Maestro, { nombre: mejorNombre, telefono: mejorTelefono, dni: mejorDni });
+        }
+        mapaMaestroCrm.set('NOM_' + normalizarTextoComparacion(mejorNombre), { nombre: mejorNombre, telefono: mejorTelefono, dni: mejorDni });
+        mapaMaestroCrm.set(clave, { nombre: mejorNombre, telefono: mejorTelefono, dni: mejorDni });
+
+        if (ops >= 380) {
+          await batch.commit();
+          batch = writeBatch(db);
+          ops = 0;
+        }
+      }
+
+      // 2. Revisar todas las órdenes de taller para agendar contactos faltantes y unificar cómo están escritos
+      for (const ord of misOrdenesTaller) {
+        const nomOrd = (ord.cliente?.nombre || '').trim();
+        const telOrd = (ord.cliente?.telefono || '').trim();
+        const dniOrd = (ord.cliente?.dni || '').trim();
+        const tel8 = telOrd.replace(/\D/g, '').slice(-8);
+        const nomNorm = normalizarTextoComparacion(nomOrd);
+
+        const claveTel = tel8.length >= 6 ? ('TEL_' + tel8) : '';
+        const claveNom = nomNorm ? ('NOM_' + nomNorm) : '';
+
+        const maestro = (claveTel && mapaMaestroCrm.get(claveTel)) || (claveNom && mapaMaestroCrm.get(claveNom));
+
+        if (maestro) {
+          // Si la orden tenía el nombre escrito distinto o le faltaba el DNI, estandarizarla
+          if (ord.cliente?.nombre !== maestro.nombre || (maestro.dni && !ord.cliente?.dni)) {
+            batch.update(doc(db, 'ordenes_taller', ord.id), {
+              cliente: {
+                nombre: maestro.nombre,
+                telefono: maestro.telefono || telOrd,
+                dni: ord.cliente?.dni || maestro.dni || ''
+              }
+            });
+            ops++;
+            ordenesEstandarizadas++;
+          }
+        } else if (nomOrd && tel8.length >= 6) {
+          // Si este cliente histórico de Taller no existía en clientes_crm, crearlo una única vez
+          const nuevoRef = doc(collection(db, 'clientes_crm'));
+          const eqStr = ((ord.equipo?.marca || '') + ' ' + (ord.equipo?.modelo || '')).trim();
+          batch.set(nuevoRef, {
+            ownerId: tenantId,
+            nombre: nomOrd,
+            telefono: telOrd,
+            dni: dniOrd,
+            ultimoEquipo: eqStr,
+            origen: 'Taller Unificado',
+            fechaAlta: new Date().toLocaleDateString(),
+            fechaTimestamp: serverTimestamp()
+          });
+          ops++;
+          nuevosAgendadosDeTaller++;
+
+          const nuevoMaestro = { nombre: nomOrd, telefono: telOrd, dni: dniOrd };
+          if (claveTel) mapaMaestroCrm.set(claveTel, nuevoMaestro);
+          if (claveNom) mapaMaestroCrm.set(claveNom, nuevoMaestro);
+        }
+
+        if (ops >= 380) {
+          await batch.commit();
+          batch = writeBatch(db);
+          ops = 0;
+        }
+      }
+
+      if (ops > 0) await batch.commit();
+
+      alert(
+        '✅ ¡Unificación y Limpieza de CRM Completada!\n\n' +
+        '▪️ Fichas duplicadas fusionadas y eliminadas: ' + duplicadosEliminados + '\n' +
+        '▪️ Clientes históricos de Taller agregados al CRM: ' + nuevosAgendadosDeTaller + '\n' +
+        '▪️ Órdenes de Taller estandarizadas con el mismo nombre: ' + ordenesEstandarizadas
+      );
+    } catch (e: any) {
+      alert('Error al unificar clientes: ' + e.message);
+    } finally {
+      setUnificandoDuplicados(false);
+    }
+  };
+
   const guardarClienteCrm = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nombreLimpio = crmNombre.trim();
+    const telLimpio = crmTelefono.trim();
+    const tel8 = telLimpio.replace(/\D/g, '').slice(-8);
+
     const payload = {
       ownerId: tenantId,
-      nombre: crmNombre,
-      telefono: crmTelefono,
-      dni: crmDni,
-      direccion: crmDireccion,
-      notas: crmNotas,
+      nombre: nombreLimpio,
+      telefono: telLimpio,
+      dni: crmDni.trim(),
+      direccion: crmDireccion.trim(),
+      notas: crmNotas.trim(),
       origen: 'Manual CRM',
       fechaAlta: new Date().toLocaleDateString()
     };
@@ -181,6 +366,20 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     if (idClienteEditando) {
       await updateDoc(doc(db, 'clientes_crm', idClienteEditando), payload);
       alert('✅ Ficha del cliente actualizada.');
+      limpiarFormCrm();
+      return;
+    }
+
+    // Evitar crear un duplicado si ya existe ese teléfono o nombre
+    const existente = misClientesGuardados.find(c => {
+      const cTel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
+      if (tel8.length >= 6 && cTel8 === tel8) return true;
+      return normalizarTextoComparacion(c.nombre) === normalizarTextoComparacion(nombreLimpio);
+    });
+
+    if (existente) {
+      await updateDoc(doc(db, 'clientes_crm', existente.id), payload);
+      alert('🔄 Ese cliente ya existía en tu CRM: se actualizaron y unificaron sus datos sin duplicarlo.');
       limpiarFormCrm();
       return;
     }
@@ -426,7 +625,6 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
     imprimirFacturaARCA({ ...movimiento, factura: facObj }, datosFiscalesActivos);
   };
 
-  // --- IMPRIMIR CIERRE DE CAJA DIARIO (SIN BACKTICKS ANIDADOS) ---
   const imprimirCierreCajaDiario = () => {
     const hoyStr = new Date().toLocaleDateString();
     const movsHoy = misFinanzas.filter(m => {
@@ -552,15 +750,26 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
             <div>
               <h3 className="glow-text-pink" style={{ margin: 0 }}>
-                📣 1. Campaña de Promociones y Fidelización por WhatsApp ({carteraClientesUnificada.length} clientes)
+                📣 1. Campaña de Promociones y Limpieza de Cartera CRM ({carteraClientesUnificada.length} clientes únicos)
               </h3>
               <small style={{ color: 'var(--text-muted)' }}>
-                Usa las etiquetas <b>{'{nombre}'}</b> y <b>{'{empresa}'}</b> para personalizar el mensaje automáticamente al tocar el botón de WhatsApp de cada cliente.
+                Usa las etiquetas <b>{'{nombre}'}</b> y <b>{'{empresa}'}</b> para personalizar el mensaje, o tocá <b>Unificar Duplicados</b> para limpiar contactos repetidos.
               </small>
             </div>
-            <button type="button" onClick={exportarClientesCsv} className="neon-btn neon-btn-green">
-              📥 Exportar Cartera a Excel (.CSV)
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button 
+                type="button" 
+                disabled={unificandoDuplicados}
+                onClick={ejecutarUnificacionDuplicadosCrm} 
+                className="neon-btn neon-btn-fillCyan"
+                title="Fusiona clientes con el mismo teléfono o nombre y estandariza las órdenes de taller"
+              >
+                {unificandoDuplicados ? '⏳ Unificando...' : '🧹 Unificar y Limpiar Duplicados'}
+              </button>
+              <button type="button" onClick={exportarClientesCsv} className="neon-btn neon-btn-green">
+                📥 Exportar Cartera (.CSV)
+              </button>
+            </div>
           </div>
           <textarea 
             className="neon-textarea" 
@@ -573,7 +782,7 @@ export const ModuloClientesGremioFinanzas: React.FC<PropsClientesGremioFinanzas>
         <form onSubmit={guardarClienteCrm} className="neon-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 className="glow-text-cyan" style={{ margin: 0 }}>
-              {idClienteEditando ? '✏️ Editando Ficha de Cliente' : '👤 2. Agendar Nuevo Cliente en CRM'}
+              {idClienteEditando ? '✏️ Editando Ficha de Cliente' : '👤 2. Agendar Nuevo Cliente en CRM (Con Detección Anti-Duplicados)'}
             </h3>
             {idClienteEditando && (
               <button type="button" onClick={limpiarFormCrm} className="neon-btn neon-btn-red">

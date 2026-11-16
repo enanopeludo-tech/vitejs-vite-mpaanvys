@@ -1,6 +1,6 @@
 // src/modulos/ModuloPresupuestos.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { aplicarRedondeo } from '../estilosTema';
 
@@ -35,9 +35,15 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   const [idPresupuestoEditando, setIdPresupuestoEditando] = useState<string | null>(null);
   const [numeroPresupuestoEditando, setNumeroPresupuestoEditando] = useState<string>('');
 
+  // Estados de Autocompletado de Clientes CRM
+  const [clientesCrmBd, setClientesCrmBd] = useState<any[]>([]);
+  const [ordenesHistoricasBd, setOrdenesHistoricasBd] = useState<any[]>([]);
+  const [mostrarSugerenciasCli, setMostrarSugerenciasCli] = useState<boolean>(false);
+
   // Datos del Cliente y Presupuesto
   const [presCliente, setPresCliente] = useState('');
   const [presTel, setPresTel] = useState('');
+  const [presDni, setPresDni] = useState('');
   const [presEquipo, setPresEquipo] = useState('');
   const [presValidez, setPresValidez] = useState('7');
   const [presNotas, setPresNotas] = useState('Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
@@ -45,18 +51,101 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   const [modalidadEntregaPres, setModalidadEntregaPres] = useState<'retira_local' | 'cadete_incluido' | 'cadete_a_cargo_cliente'>('retira_local');
   const [itemsPresupuesto, setItemsPresupuesto] = useState<any[]>([]);
 
-  // --- CALCULADORA RÁPIDA USD + COMISIONISTA + MANO DE OBRA EN PRESUPUESTOS ---
+  // Calculadora rápida USD + Comisionista + Mano de Obra
   const [calcDescRepuesto, setCalcDescRepuesto] = useState('Cambio de Módulo / Pantalla');
   const [calcCostoUsd, setCalcCostoUsd] = useState('');
   const [calcComisionista, setCalcComisionista] = useState('4500');
   const [calcManoObra, setCalcManoObra] = useState('0');
   const [calcPrecioListaResultante, setCalcPrecioListaResultante] = useState(0);
 
-  // Carga manual o desde stock separado (Proveedores vs Local)
+  // Carga manual o desde stock separado
   const [itemManualDesc, setItemManualDesc] = useState('');
   const [itemManualPrecio, setItemManualPrecio] = useState('');
   const [origenStockBuscador, setOrigenStockBuscador] = useState<'proveedores' | 'local'>('proveedores');
   const [busquedaProdPres, setBusquedaProdPres] = useState('');
+
+  useEffect(() => {
+    const unsubCrm = onSnapshot(query(collection(db, 'clientes_crm')), (snap) => {
+      setClientesCrmBd(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const unsubOrd = onSnapshot(query(collection(db, 'ordenes_taller')), (snap) => {
+      setOrdenesHistoricasBd(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => {
+      unsubCrm();
+      unsubOrd();
+    };
+  }, []);
+
+  // Construir directorio unificado de clientes para autocompletar en Presupuestos
+  const directorioClientesUnificado = React.useMemo(() => {
+    const mapa = new Map<string, any>();
+
+    clientesCrmBd
+      .filter(c => (c.ownerId || 'MASTER') === tenantId)
+      .forEach(c => {
+        const tel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
+        const clave = tel8 || (c.nombre || '').trim().toLowerCase();
+        if (!clave) return;
+        mapa.set(clave, {
+          crmId: c.id,
+          nombre: (c.nombre || '').trim(),
+          telefono: (c.telefono || '').trim(),
+          dni: (c.dni || '').trim(),
+          ultimoEquipo: c.ultimoEquipo || ''
+        });
+      });
+
+    ordenesHistoricasBd.forEach(o => {
+      const nom = (o.cliente?.nombre || '').trim();
+      const tel = (o.cliente?.telefono || '').trim();
+      const dni = (o.cliente?.dni || '').trim();
+      const tel8 = tel.replace(/\D/g, '').slice(-8);
+      const clave = tel8 || nom.toLowerCase();
+      if (!clave || !nom) return;
+      const eq = ((o.equipo?.marca || '') + ' ' + (o.equipo?.modelo || '')).trim();
+      const ex = mapa.get(clave);
+      if (ex) {
+        if (!ex.dni && dni) ex.dni = dni;
+        if (!ex.ultimoEquipo && eq) ex.ultimoEquipo = eq;
+      } else {
+        mapa.set(clave, {
+          crmId: null,
+          nombre: nom,
+          telefono: tel,
+          dni: dni,
+          ultimoEquipo: eq
+        });
+      }
+    });
+
+    return Array.from(mapa.values());
+  }, [clientesCrmBd, ordenesHistoricasBd, tenantId]);
+
+  const sugerenciasClientesPres = React.useMemo(() => {
+    if (!mostrarSugerenciasCli) return [];
+    const bNom = presCliente.trim().toLowerCase();
+    const bTel = presTel.replace(/\D/g, '');
+    if (bNom.length < 2 && bTel.length < 3) return [];
+
+    return directorioClientesUnificado
+      .filter(c => {
+        const matchN = bNom.length >= 2 && c.nombre.toLowerCase().includes(bNom);
+        const matchT = bTel.length >= 3 && c.telefono.replace(/\D/g, '').includes(bTel);
+        return matchN || matchT;
+      })
+      .slice(0, 6);
+  }, [mostrarSugerenciasCli, presCliente, presTel, directorioClientesUnificado]);
+
+  const seleccionarClienteSugeridoPres = (c: any) => {
+    setPresCliente(c.nombre || '');
+    setPresTel(c.telefono || '');
+    setPresDni(c.dni || '');
+    if (!presEquipo && c.ultimoEquipo) {
+      setPresEquipo(c.ultimoEquipo);
+    }
+    setMostrarSugerenciasCli(false);
+  };
 
   const opcionesComisionistas = (config.comisionistasLista || "Comisionista Mar del Plata:4500, Comisionista CABA:7500, Sin Flete:0")
     .split(',')
@@ -65,7 +154,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       return { nombre: partes[0]?.trim() || 'Comisionista', costo: Number(partes[1]) || 0 };
     });
 
-  // Cálculo automático en vivo de la Calculadora USD dentro de Presupuestos
   useEffect(() => {
     const usd = Number(calcCostoUsd);
     if (!usd || usd <= 0) {
@@ -96,7 +184,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
 
   const sumarDesdeCalculadoraUsd = () => {
     if (calcPrecioListaResultante <= 0) return alert('Ingresa un costo en USD válido.');
-    const nombreConDetalle = `${calcDescRepuesto || 'Reparación'} (Incluye repuesto y gestión)`;
+    const nombreConDetalle = (calcDescRepuesto || 'Reparación') + ' (Incluye repuesto y gestión)';
     setItemsPresupuesto([
       ...itemsPresupuesto, 
       { 
@@ -116,7 +204,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     const dolarHoy = Number(config.cotizacionDolar || 1200);
     const costoBaseArs = Number(p.costoProveedor || p.precio || 0);
     const usdEstimado = Math.max(1, Math.round((costoBaseArs / dolarHoy) * 10) / 10);
-    setCalcDescRepuesto(`Cambio de ${p.nombre}`);
+    setCalcDescRepuesto('Cambio de ' + p.nombre);
     setCalcCostoUsd(usdEstimado.toString());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -137,7 +225,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     setItemManualPrecio('');
   };
 
-  // Filtrar productos separando estrictamente Stock de Proveedores (Taller) vs Stock del Local (Accesorios)
   const productosFiltradosPorOrigen = misProductos.filter(p => {
     const esDeProv = Boolean(p.esDeProveedor || p.descripcion === 'Importado de lista');
     if (origenStockBuscador === 'proveedores' && !esDeProv) return false;
@@ -145,7 +232,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     return p.nombre.toLowerCase().includes(busquedaProdPres.toLowerCase());
   });
 
-  // Totales según Modalidad de Pago + Repartidor Local
   const costoCadeteIncluido = modalidadEntregaPres === 'cadete_incluido' ? Number(config.repartidorLocalCosto || 2000) : 0;
   const subtotalItemsLista = itemsPresupuesto.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
   const totalListaPresupuesto = subtotalItemsLista + costoCadeteIncluido;
@@ -167,7 +253,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     config.redondeoPrecios
   );
 
-  // Cálculo del 50% de adelanto
   const senaEfectivo50 = aplicarRedondeo(totalEfectivoPresupuesto * 0.5, config.redondeoPrecios);
   const senaLista50 = aplicarRedondeo(totalListaPresupuesto * 0.5, config.redondeoPrecios);
   const senaTarjeta50 = aplicarRedondeo(totalTarjeta1Pago * 0.5, config.redondeoPrecios);
@@ -177,7 +262,9 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     setNumeroPresupuestoEditando('');
     setPresCliente('');
     setPresTel('');
+    setPresDni('');
     setPresEquipo('');
+    setMostrarSugerenciasCli(false);
     setPresValidez('7');
     setPresNotas('Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
     setModalidadEntregaPres('retira_local');
@@ -189,7 +276,9 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     setNumeroPresupuestoEditando(pr.numero || '');
     setPresCliente(pr.cliente || '');
     setPresTel(pr.telefono || '');
+    setPresDni(pr.dni || '');
     setPresEquipo(pr.equipo || '');
+    setMostrarSugerenciasCli(false);
     setPresValidez(String(pr.validezDias || 7));
     setPresNotas(pr.notas || 'Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
     setTipoClientePres(pr.tipoCliente || (esSucursalExterna ? 'gremio' : 'publico'));
@@ -202,10 +291,15 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     e.preventDefault();
     if (itemsPresupuesto.length === 0) return alert('Agrega al menos un ítem o cotización USD al presupuesto.');
 
+    const nombreNormalizado = presCliente.trim();
+    const telNormalizado = presTel.trim();
+    const dniNormalizado = presDni.trim();
+
     const payloadPresupuesto = {
       ownerId: tenantId,
-      cliente: presCliente,
-      telefono: presTel,
+      cliente: nombreNormalizado,
+      telefono: telNormalizado,
+      dni: dniNormalizado,
       equipo: presEquipo,
       tipoCliente: tipoClientePres,
       modalidadEntrega: modalidadEntregaPres,
@@ -221,12 +315,45 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       senaEfectivo: senaEfectivo50
     };
 
+    // Sincronizar con clientes_crm sin duplicar
+    try {
+      const tel8 = telNormalizado.replace(/\D/g, '').slice(-8);
+      const existenteCrm = clientesCrmBd.find(c => {
+        if ((c.ownerId || 'MASTER') !== tenantId) return false;
+        const cTel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
+        if (tel8.length >= 6 && cTel8 === tel8) return true;
+        return (c.nombre || '').trim().toLowerCase() === nombreNormalizado.toLowerCase();
+      });
+
+      if (existenteCrm) {
+        await updateDoc(doc(db, 'clientes_crm', existenteCrm.id), {
+          nombre: nombreNormalizado,
+          telefono: telNormalizado || existenteCrm.telefono,
+          dni: dniNormalizado || existenteCrm.dni || '',
+          ultimoEquipo: presEquipo || existenteCrm.ultimoEquipo || ''
+        });
+      } else if (tel8.length >= 6) {
+        await addDoc(collection(db, 'clientes_crm'), {
+          ownerId: tenantId,
+          nombre: nombreNormalizado,
+          telefono: telNormalizado,
+          dni: dniNormalizado,
+          ultimoEquipo: presEquipo,
+          origen: 'Presupuesto',
+          fechaAlta: new Date().toLocaleDateString(),
+          fechaTimestamp: serverTimestamp()
+        });
+      }
+    } catch {
+      // Continuar
+    }
+
     if (idPresupuestoEditando) {
       await updateDoc(doc(db, 'presupuestos', idPresupuestoEditando), {
         ...payloadPresupuesto,
         fechaTexto: new Date().toLocaleDateString()
       });
-      alert(`✅ Presupuesto #${numeroPresupuestoEditando} actualizado correctamente.`);
+      alert('✅ Presupuesto #' + numeroPresupuestoEditando + ' actualizado correctamente.');
       limpiarFormularioPresupuesto();
       return;
     }
@@ -240,127 +367,119 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       fechaTexto: new Date().toLocaleDateString()
     });
     limpiarFormularioPresupuesto();
-    alert(`📄 Presupuesto #${numPres} generado y guardado.`);
+    alert('📄 Presupuesto #' + numPres + ' generado y guardado.');
   };
 
   const enviarPresupuestoWhatsApp = (pr: any) => {
     const senaEfvo = pr.senaEfectivo || Math.round((pr.totalEfectivo || 0) * 0.5);
-    let msg = `Hola *${pr.cliente}*, te enviamos el presupuesto *#${pr.numero}* de *${nombreNegocioActivo}*:\n`;
-    if (pr.equipo) msg += `📱 *Equipo:* ${pr.equipo}\n`;
-    msg += `\n📋 *TRABAJO A REALIZAR:*\n`;
+    let msg = 'Hola *' + pr.cliente + '*, te enviamos el presupuesto *#' + pr.numero + '* de *' + nombreNegocioActivo + '*:\n';
+    if (pr.equipo) msg += '📱 *Equipo:* ' + pr.equipo + '\n';
+    msg += '\n📋 *TRABAJO A REALIZAR:*\n';
     pr.items?.forEach((it: any) => {
-      msg += `▪️ ${it.cantidad}x ${it.nombre}\n`;
+      msg += '▪️ ' + it.cantidad + 'x ' + it.nombre + '\n';
     });
     if (pr.modalidadEntrega === 'cadete_incluido') {
-      msg += `🛵 *Incluye retiro/entrega con repartidor a domicilio ($${pr.costoCadeteIncluido || config.repartidorLocalCosto}).*\n`;
+      msg += '🛵 *Incluye retiro/entrega con repartidor a domicilio ($' + (pr.costoCadeteIncluido || config.repartidorLocalCosto) + ').*\n';
     } else if (pr.modalidadEntrega === 'cadete_a_cargo_cliente') {
-      msg += `🛵 *Entrega:* Retiro en local sin cargo o envío con repartidor ($${config.repartidorLocalCosto || 2000} a cargo del cliente).\n`;
+      msg += '🛵 *Entrega:* Retiro en local sin cargo o envío con repartidor ($' + (config.repartidorLocalCosto || 2000) + ' a cargo del cliente).\n';
     }
-    msg += `\n💰 *VALORES SEGÚN MODALIDAD DE PAGO:*\n`;
-    msg += `💵 *Efectivo (-${config.descuentoEfectivoPorcentaje}%): $${pr.totalEfectivo?.toLocaleString()}* (Seña 50%: $${senaEfvo.toLocaleString()})\n`;
-    msg += `🏦 *Transferencia (Lista): $${pr.totalLista?.toLocaleString()}* (Seña 50%: $${Math.round((pr.totalLista || 0) * 0.5).toLocaleString()})\n`;
-    msg += `💳 *Tarjeta 1 Pago: $${pr.totalTarjeta?.toLocaleString()}*\n`;
+    msg += '\n💰 *VALORES SEGÚN MODALIDAD DE PAGO:*\n';
+    msg += '💵 *Efectivo (-' + config.descuentoEfectivoPorcentaje + '%): $' + pr.totalEfectivo?.toLocaleString() + '* (Seña 50%: $' + senaEfvo.toLocaleString() + ')\n';
+    msg += '🏦 *Transferencia / MP (Lista): $' + pr.totalLista?.toLocaleString() + '* (Seña 50%: $' + Math.round((pr.totalLista || 0) * 0.5).toLocaleString() + ')\n';
+    msg += '💳 *Tarjeta 1 Pago: $' + pr.totalTarjeta?.toLocaleString() + '*\n';
     if (pr.totalTarjeta3) {
-      msg += `💳 *3 Cuotas:* $${pr.totalTarjeta3?.toLocaleString()} (3 de $${Math.round(pr.totalTarjeta3 / 3).toLocaleString()})\n`;
+      msg += '💳 *3 Cuotas:* $' + pr.totalTarjeta3?.toLocaleString() + ' (3 de $' + Math.round(pr.totalTarjeta3 / 3).toLocaleString() + ')\n';
     }
     if (pr.totalTarjeta6) {
-      msg += `💳 *6 Cuotas:* $${pr.totalTarjeta6?.toLocaleString()} (6 de $${Math.round(pr.totalTarjeta6 / 6).toLocaleString()})\n`;
+      msg += '💳 *6 Cuotas:* $' + pr.totalTarjeta6?.toLocaleString() + ' (6 de $' + Math.round(pr.totalTarjeta6 / 6).toLocaleString() + ')\n';
     }
-    msg += `\n📌 *Condición:* Se requiere el 50% de adelanto para encargar el repuesto y el 50% restante previo a la entrega del equipo.\n`;
-    msg += `⏳ *Validez:* ${pr.validezDias} días.`;
-    window.open(`https://wa.me/549${(pr.telefono || '').replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    msg += '\n📌 *Condición:* Se requiere el 50% de adelanto para encargar el repuesto y el 50% restante previo a la entrega del equipo.\n';
+    msg += '⏳ *Validez:* ' + pr.validezDias + ' días.';
+    window.open('https://wa.me/549' + (pr.telefono || '').replace(/\D/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
   };
 
   const imprimirPresupuestoPDF = (pr: any) => {
     const v = window.open('', '_blank');
     if (!v) return;
     const senaEfvo = pr.senaEfectivo || Math.round((pr.totalEfectivo || 0) * 0.5);
-    v.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Presupuesto #${pr.numero} - ${nombreNegocioActivo}</title>
-          <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; max-width: 780px; margin: 0 auto; padding: 30px; }
-            .header { display: flex; justify-content: space-between; border-bottom: 3px solid #007aff; padding-bottom: 15px; margin-bottom: 20px; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            th { background: #f2f2f7; padding: 10px; text-align: left; border-bottom: 2px solid #ccc; font-size: 13px; }
-            td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }
-            .totales { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }
-            .box-tot { border: 1px solid #ccc; border-radius: 10px; padding: 12px; text-align: center; background: #fafafa; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <h1 style="margin:0; color:#007aff;">${nombreNegocioActivo}</h1>
-              <div style="font-size:13px; color:#555;">📍 ${direccionNegocioActivo} | 📱 WhatsApp: ${whatsappNegocioActivo}</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:12px; font-weight:bold; color:#555;">PRESUPUESTO OFICIAL</div>
-              <div style="font-size:24px; font-weight:900;">#${pr.numero}</div>
-              <div style="font-size:12px;">Fecha: ${pr.fechaTexto} (Válido por ${pr.validezDias} días)</div>
-            </div>
-          </div>
-          <div style="background:#f8f9fa; padding:12px 16px; border-radius:8px; margin-bottom:15px;">
-            <b>Cliente:</b> ${pr.cliente} | <b>Teléfono:</b> ${pr.telefono || '-'} | <b>Equipo:</b> ${pr.equipo || 'Varios'}
-          </div>
-          <table>
-            <thead><tr><th>Cant.</th><th>Descripción de Repuesto / Servicio</th><th style="text-align:right;">Unitario (Lista)</th><th style="text-align:right;">Subtotal</th></tr></thead>
-            <tbody>
-              ${pr.items?.map((it: any) => `
-                <tr>
-                  <td><b>${it.cantidad}</b></td>
-                  <td>${it.nombre}</td>
-                  <td style="text-align:right;">$${it.precio?.toLocaleString()}</td>
-                  <td style="text-align:right; font-weight:bold;">$${(it.precio * it.cantidad).toLocaleString()}</td>
-                </tr>
-              `).join('')}
-              ${pr.costoCadeteIncluido > 0 ? `
-                <tr>
-                  <td><b>1</b></td>
-                  <td>🛵 Servicio de Repartidor / Cadetería a Domicilio</td>
-                  <td style="text-align:right;">$${pr.costoCadeteIncluido.toLocaleString()}</td>
-                  <td style="text-align:right; font-weight:bold;">$${pr.costoCadeteIncluido.toLocaleString()}</td>
-                </tr>
-              ` : ''}
-            </tbody>
-          </table>
-          <div class="totales">
-            <div class="box-tot" style="border-color:#28cd41; background:#f0fff4;">
-              <div style="font-size:11px; font-weight:bold; color:#198754;">EFECTIVO (-${config.descuentoEfectivoPorcentaje}%)</div>
-              <div style="font-size:20px; font-weight:900; color:#198754; margin-top:4px;">$${pr.totalEfectivo?.toLocaleString()}</div>
-              <div style="font-size:11px; margin-top:4px;">Seña 50%: <b>$${senaEfvo.toLocaleString()}</b></div>
-            </div>
-            <div class="box-tot" style="border-color:#007aff;">
-              <div style="font-size:11px; font-weight:bold; color:#007aff;">TRANSFERENCIA (LISTA)</div>
-              <div style="font-size:20px; font-weight:900; color:#007aff; margin-top:4px;">$${pr.totalLista?.toLocaleString()}</div>
-              <div style="font-size:11px; margin-top:4px;">Seña 50%: <b>$${Math.round((pr.totalLista || 0) * 0.5).toLocaleString()}</b></div>
-            </div>
-            <div class="box-tot">
-              <div style="font-size:11px; font-weight:bold; color:#666;">TARJETA 1 PAGO</div>
-              <div style="font-size:20px; font-weight:900; color:#333; margin-top:4px;">$${pr.totalTarjeta?.toLocaleString()}</div>
-              <div style="font-size:11px; margin-top:4px;">Seña 50%: <b>$${Math.round((pr.totalTarjeta || 0) * 0.5).toLocaleString()}</b></div>
-            </div>
-            <div class="box-tot">
-              <div style="font-size:11px; font-weight:bold; color:#666;">3 / 6 CUOTAS</div>
-              <div style="font-size:14px; font-weight:800; color:#333; margin-top:4px;">3x $${Math.round((pr.totalTarjeta3 || pr.totalTarjeta) / 3).toLocaleString()}</div>
-              <div style="font-size:14px; font-weight:800; color:#333;">6x $${Math.round((pr.totalTarjeta6 || pr.totalTarjeta) / 6).toLocaleString()}</div>
-            </div>
-          </div>
-          <p style="margin-top:25px; font-size:12px; color:#333; border-top:1px dashed #ccc; padding-top:10px;">
-            <b>Condiciones de Trabajo:</b> ${pr.notas || 'Se requiere el 50% de adelanto para encargar el repuesto y el 50% restante antes de retirar.'}
-          </p>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
+    const filasItems = (pr.items || []).map((it: any) =>
+      '<tr><td><b>' + it.cantidad + '</b></td><td>' + it.nombre + '</td><td style="text-align:right;">$' + it.precio?.toLocaleString() + '</td><td style="text-align:right; font-weight:bold;">$' + (it.precio * it.cantidad).toLocaleString() + '</td></tr>'
+    ).join('');
+
+    const htmlPres = [
+      '<!DOCTYPE html>',
+      '<html>',
+      '<head>',
+      '<title>Presupuesto #' + pr.numero + ' - ' + nombreNegocioActivo + '</title>',
+      '<style>',
+      'body { font-family: "Segoe UI", Arial, sans-serif; color: #111; max-width: 780px; margin: 0 auto; padding: 30px; }',
+      '.header { display: flex; justify-content: space-between; border-bottom: 3px solid #007aff; padding-bottom: 15px; margin-bottom: 20px; }',
+      'table { width: 100%; border-collapse: collapse; margin: 20px 0; }',
+      'th { background: #f2f2f7; padding: 10px; text-align: left; border-bottom: 2px solid #ccc; font-size: 13px; }',
+      'td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }',
+      '.totales { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }',
+      '.box-tot { border: 1px solid #ccc; border-radius: 10px; padding: 12px; text-align: center; background: #fafafa; }',
+      '</style>',
+      '</head>',
+      '<body>',
+      '<div class="header">',
+      '<div>',
+      '<h1 style="margin:0; color:#007aff;">' + nombreNegocioActivo + '</h1>',
+      '<div style="font-size:13px; color:#555;">📍 ' + direccionNegocioActivo + ' | 📱 WhatsApp: ' + whatsappNegocioActivo + '</div>',
+      '</div>',
+      '<div style="text-align:right;">',
+      '<div style="font-size:12px; font-weight:bold; color:#555;">PRESUPUESTO OFICIAL</div>',
+      '<div style="font-size:24px; font-weight:900;">#' + pr.numero + '</div>',
+      '<div style="font-size:12px;">Fecha: ' + pr.fechaTexto + ' (Válido por ' + pr.validezDias + ' días)</div>',
+      '</div>',
+      '</div>',
+      '<div style="background:#f8f9fa; padding:12px 16px; border-radius:8px; margin-bottom:15px;">',
+      '<b>Cliente:</b> ' + pr.cliente + ' | <b>Teléfono:</b> ' + (pr.telefono || '-') + ' | <b>Equipo:</b> ' + (pr.equipo || 'Varios'),
+      '</div>',
+      '<table>',
+      '<thead><tr><th>Cant.</th><th>Descripción de Repuesto / Servicio</th><th style="text-align:right;">Unitario (Lista)</th><th style="text-align:right;">Subtotal</th></tr></thead>',
+      '<tbody>',
+      filasItems,
+      (pr.costoCadeteIncluido > 0 ? '<tr><td><b>1</b></td><td>🛵 Servicio de Repartidor / Cadetería a Domicilio</td><td style="text-align:right;">$' + pr.costoCadeteIncluido.toLocaleString() + '</td><td style="text-align:right; font-weight:bold;">$' + pr.costoCadeteIncluido.toLocaleString() + '</td></tr>' : ''),
+      '</tbody>',
+      '</table>',
+      '<div class="totales">',
+      '<div class="box-tot" style="border-color:#28cd41; background:#f0fff4;">',
+      '<div style="font-size:11px; font-weight:bold; color:#198754;">EFECTIVO (-' + config.descuentoEfectivoPorcentaje + '%)</div>',
+      '<div style="font-size:20px; font-weight:900; color:#198754; margin-top:4px;">$' + pr.totalEfectivo?.toLocaleString() + '</div>',
+      '<div style="font-size:11px; margin-top:4px;">Seña 50%: <b>$' + senaEfvo.toLocaleString() + '</b></div>',
+      '</div>',
+      '<div class="box-tot" style="border-color:#007aff;">',
+      '<div style="font-size:11px; font-weight:bold; color:#007aff;">TRANSF. / MP (LISTA)</div>',
+      '<div style="font-size:20px; font-weight:900; color:#007aff; margin-top:4px;">$' + pr.totalLista?.toLocaleString() + '</div>',
+      '<div style="font-size:11px; margin-top:4px;">Seña 50%: <b>$' + Math.round((pr.totalLista || 0) * 0.5).toLocaleString() + '</b></div>',
+      '</div>',
+      '<div class="box-tot">',
+      '<div style="font-size:11px; font-weight:bold; color:#666;">TARJETA 1 PAGO</div>',
+      '<div style="font-size:20px; font-weight:900; color:#333; margin-top:4px;">$' + pr.totalTarjeta?.toLocaleString() + '</div>',
+      '<div style="font-size:11px; margin-top:4px;">Seña 50%: <b>$' + Math.round((pr.totalTarjeta || 0) * 0.5).toLocaleString() + '</b></div>',
+      '</div>',
+      '<div class="box-tot">',
+      '<div style="font-size:11px; font-weight:bold; color:#666;">3 / 6 CUOTAS</div>',
+      '<div style="font-size:14px; font-weight:800; color:#333; margin-top:4px;">3x $' + Math.round((pr.totalTarjeta3 || pr.totalTarjeta) / 3).toLocaleString() + '</div>',
+      '<div style="font-size:14px; font-weight:800; color:#333;">6x $' + Math.round((pr.totalTarjeta6 || pr.totalTarjeta) / 6).toLocaleString() + '</div>',
+      '</div>',
+      '</div>',
+      '<p style="margin-top:25px; font-size:12px; color:#333; border-top:1px dashed #ccc; padding-top:10px;">',
+      '<b>Condiciones de Trabajo:</b> ' + (pr.notas || 'Se requiere el 50% de adelanto para encargar el repuesto y el 50% restante antes de retirar.'),
+      '</p>',
+      '<script>window.print();</script>',
+      '</body>',
+      '</html>'
+    ].join('\n');
+
+    v.document.write(htmlPres);
     v.document.close();
   };
 
   const convertirPresupuestoEnOrden = async (pr: any) => {
     const metodoElegido = prompt(
-      `Convertir Presupuesto #${pr.numero} en Orden de Taller.\nElige la modalidad de pago confirmada por el cliente:\n1 = Efectivo ($${pr.totalEfectivo})\n2 = Transferencia Lista ($${pr.totalLista})\n3 = Tarjeta 1 Pago ($${pr.totalTarjeta})\n4 = Tarjeta 3 Cuotas ($${pr.totalTarjeta3 || pr.totalTarjeta})`,
+      'Convertir Presupuesto #' + pr.numero + ' en Orden de Taller.\nElige la modalidad de pago confirmada por el cliente:\n1 = Efectivo ($' + pr.totalEfectivo + ')\n2 = Transferencia / MP Lista ($' + pr.totalLista + ')\n3 = Tarjeta 1 Pago ($' + pr.totalTarjeta + ')\n4 = Tarjeta 3 Cuotas ($' + (pr.totalTarjeta3 || pr.totalTarjeta) + ')',
       "1"
     );
     if (!metodoElegido) return;
@@ -372,17 +491,17 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     if (metodoElegido === '4') { montoElegido = pr.totalTarjeta3 || pr.totalTarjeta; etiquetaMetodo = 'tarjeta_3'; }
 
     const senaSugerida = Math.round(Number(montoElegido || 0) * 0.5);
-    const senaAbonadaAhora = Number(prompt(`Total acordado (${etiquetaMetodo.toUpperCase()}): $${montoElegido}.\nIngresa la Seña del 50% recibida ahora ($):`, senaSugerida.toString())) || 0;
+    const senaAbonadaAhora = Number(prompt('Total acordado (' + etiquetaMetodo.toUpperCase() + '): $' + montoElegido + '.\nIngresa la Seña del 50% recibida ahora ($):', senaSugerida.toString())) || 0;
 
     const cod = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const resumenTrabajos = pr.items?.map((i: any) => `${i.cantidad}x ${i.nombre}`).join(' + ');
+    const resumenTrabajos = pr.items?.map((i: any) => i.cantidad + 'x ' + i.nombre).join(' + ');
     const estadoInicial = senaAbonadaAhora >= senaSugerida ? 'ingresado' : 'esperando sena 50%';
 
     await addDoc(collection(db, 'ordenes_taller'), {
       idTiendaOrigen: user.uid,
       tallerId: tenantId,
       tallerOrigen: esSucursalExterna ? sucursalAsociada.nombre : 'Mostrador Propio',
-      cliente: { nombre: pr.cliente, telefono: pr.telefono || '', dni: '' },
+      cliente: { nombre: pr.cliente, telefono: pr.telefono || '', dni: pr.dni || '' },
       equipo: { marca: pr.equipo || 'Equipo', modelo: '', imei: '', contrasena: '', condicionVisual: 'Según Presupuesto #' + pr.numero, checklist: [] },
       fallaDeclarada: resumenTrabajos,
       tecnicoAsignado: '',
@@ -393,14 +512,14 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       estado: estadoInicial,
       codigoSeguimiento: cod,
       fechaIngreso: serverTimestamp(),
-      historial: [{ estado: estadoInicial, fecha: new Date().toLocaleString(), comentario: `Creado desde Presupuesto #${pr.numero} (${etiquetaMetodo.toUpperCase()}) | Seña: $${senaAbonadaAhora}` }]
+      historial: [{ estado: estadoInicial, fecha: new Date().toLocaleString(), comentario: 'Creado desde Presupuesto #' + pr.numero + ' (' + etiquetaMetodo.toUpperCase() + ') | Seña: $' + senaAbonadaAhora }]
     });
 
     if (senaAbonadaAhora > 0) {
       await addDoc(collection(db, 'finanzas'), {
         ownerId: tenantId,
         tipo: 'ingreso',
-        concepto: `Seña 50% Presupuesto #${pr.numero} -> Orden #${cod} (${pr.cliente})`,
+        concepto: 'Seña 50% Presupuesto #' + pr.numero + ' -> Orden #' + cod + ' (' + pr.cliente + ')',
         monto: senaAbonadaAhora,
         metodoPago: etiquetaMetodo.startsWith('tarjeta') ? 'tarjeta' : etiquetaMetodo,
         fecha: serverTimestamp(),
@@ -409,7 +528,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     }
 
     await updateDoc(doc(db, 'presupuestos', pr.id), { estado: 'aprobado' });
-    alert(`✅ Convertido en Orden de Taller #${cod}.`);
+    alert('✅ Convertido en Orden de Taller #' + cod + '.');
     setPestaña('taller');
   };
 
@@ -418,8 +537,8 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
         <h2 className={idPresupuestoEditando ? 'glow-text-yellow' : 'glow-text-cyan'} style={{ margin: 0 }}>
           {idPresupuestoEditando 
-            ? `✏️ Editando Presupuesto Oficial #${numeroPresupuestoEditando}` 
-            : '📄 Generador de Presupuestos (Con Calculadora USD, Comisionistas, Cuotas y 50% Seña)'}
+            ? '✏️ Editando Presupuesto Oficial #' + numeroPresupuestoEditando 
+            : '📄 Generador de Presupuestos (Autocompletado CRM + Calculadora USD + 50% Seña)'}
         </h2>
         {idPresupuestoEditando && (
           <button type="button" onClick={limpiarFormularioPresupuesto} className="neon-btn neon-btn-red">
@@ -428,7 +547,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
         )}
       </div>
 
-      {/* BLOQUE 1: CALCULADORA DE REPUESTOS EN DÓLARES + COMISIONISTA DIRECTO EN PRESUPUESTOS */}
+      {/* BLOQUE 1: CALCULADORA DE REPUESTOS EN DÓLARES + COMISIONISTA */}
       <div className="neon-card neon-card-purple" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 className="glow-text-pink" style={{ margin: 0 }}>
@@ -438,7 +557,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
             <button 
               type="button" 
               onClick={() => setTipoClientePres('publico')} 
-              className={`neon-btn ${tipoClientePres === 'publico' ? 'neon-btn-fillCyan' : ''}`}
+              className={'neon-btn ' + (tipoClientePres === 'publico' ? 'neon-btn-fillCyan' : '')}
               style={{ padding: '6px 14px', fontSize: '12px' }}
             >
               🏪 Escala Cliente Final (Central)
@@ -446,7 +565,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
             <button 
               type="button" 
               onClick={() => setTipoClientePres('gremio')} 
-              className={`neon-btn ${tipoClientePres === 'gremio' ? 'neon-btn-fillCyan' : ''}`}
+              className={'neon-btn ' + (tipoClientePres === 'gremio' ? 'neon-btn-fillCyan' : '')}
               style={{ padding: '6px 14px', fontSize: '12px' }}
             >
               🏢 Escala Gremio / Taller
@@ -525,7 +644,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
             <button 
               type="button" 
               onClick={() => setOrigenStockBuscador('proveedores')} 
-              className={`neon-btn ${origenStockBuscador === 'proveedores' ? 'neon-btn-fillCyan' : ''}`}
+              className={'neon-btn ' + (origenStockBuscador === 'proveedores' ? 'neon-btn-fillCyan' : '')}
               style={{ flex: 1, fontSize: '13px' }}
             >
               🔧 Repuestos Proveedores (Taller)
@@ -533,7 +652,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
             <button 
               type="button" 
               onClick={() => setOrigenStockBuscador('local')} 
-              className={`neon-btn ${origenStockBuscador === 'local' ? 'neon-btn-fillCyan' : ''}`}
+              className={'neon-btn ' + (origenStockBuscador === 'local' ? 'neon-btn-fillCyan' : '')}
               style={{ flex: 1, fontSize: '13px' }}
             >
               🛍️ Accesorios del Local
@@ -563,7 +682,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
                     <td>
                       <b>{p.nombre}</b><br />
                       <small style={{ color: 'var(--text-muted)' }}>
-                        {p.proveedor ? `Prov: ${p.proveedor}` : `Stock Local: ${p.stock}`}
+                        {p.proveedor ? 'Prov: ' + p.proveedor : 'Stock Local: ' + p.stock}
                       </small>
                     </td>
                     <td className="glow-text-cyan" style={{ fontWeight: 'bold' }}>${p.precio?.toLocaleString()}</td>
@@ -591,19 +710,40 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
           </div>
         </div>
 
-        {/* BLOQUE 3: RESUMEN FINANCIERO MULTIPAGO + 50% DE SEÑA + CADETERÍA */}
-        <form onSubmit={guardarPresupuesto} className={`neon-card ${idPresupuestoEditando ? 'neon-card-yellow' : 'neon-card-green'}`} style={{ flex: '1 1 440px' }}>
+        {/* BLOQUE 3: CLIENTE CON AUTOCOMPLETADO CRM + RESUMEN FINANCIERO MULTIPAGO */}
+        <form onSubmit={guardarPresupuesto} className={'neon-card ' + (idPresupuestoEditando ? 'neon-card-yellow' : 'neon-card-green')} style={{ flex: '1 1 440px' }}>
           <h3 className={idPresupuestoEditando ? 'glow-text-yellow' : 'glow-text-green'} style={{ marginTop: 0 }}>
-            {idPresupuestoEditando ? `3. Editando Presupuesto #${numeroPresupuestoEditando}` : '3. Cliente, Entrega, Medios de Pago y 50% Seña'}
+            {idPresupuestoEditando ? '3. Editando Presupuesto #' + numeroPresupuestoEditando : '3. Cliente (Autocompleta CRM), Entrega y 50% Seña'}
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px', position: 'relative' }}>
             <div>
-              <label className="label-neon">Nombre del Cliente *</label>
-              <input type="text" className="neon-input" required value={presCliente} onChange={e => setPresCliente(e.target.value)} placeholder="Ej: Juan Pérez" />
+              <label className="label-neon">Nombre del Cliente (CRM) *</label>
+              <input 
+                type="text" 
+                className="neon-input" 
+                required 
+                value={presCliente} 
+                onFocus={() => setMostrarSugerenciasCli(true)}
+                onChange={e => {
+                  setPresCliente(e.target.value);
+                  setMostrarSugerenciasCli(true);
+                }} 
+                placeholder="Escribe para buscar en CRM..." 
+              />
             </div>
             <div>
               <label className="label-neon">WhatsApp</label>
-              <input type="text" className="neon-input" value={presTel} onChange={e => setPresTel(e.target.value)} placeholder="2262..." />
+              <input 
+                type="text" 
+                className="neon-input" 
+                value={presTel} 
+                onFocus={() => setMostrarSugerenciasCli(true)}
+                onChange={e => {
+                  setPresTel(e.target.value);
+                  setMostrarSugerenciasCli(true);
+                }} 
+                placeholder="2262..." 
+              />
             </div>
             <div>
               <label className="label-neon">Equipo / Modelo</label>
@@ -613,6 +753,61 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
               <label className="label-neon">Validez (Días)</label>
               <input type="number" className="neon-input" value={presValidez} onChange={e => setPresValidez(e.target.value)} />
             </div>
+
+            {/* DESPLEGABLE DE SUGERENCIAS CRM EN PRESUPUESTOS */}
+            {sugerenciasClientesPres.length > 0 && (
+              <div 
+                style={{ 
+                  position: 'absolute', 
+                  top: '72px', 
+                  left: 0, 
+                  right: 0, 
+                  zIndex: 90, 
+                  background: 'var(--bg-card)', 
+                  border: '2px solid var(--neon-cyan)', 
+                  borderRadius: '14px', 
+                  padding: '8px', 
+                  boxShadow: '0 12px 28px rgba(0,0,0,0.35)' 
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                  <small className="glow-text-cyan" style={{ fontWeight: 'bold' }}>👥 Seleccionar Cliente de tu CRM:</small>
+                  <button type="button" onClick={() => setMostrarSugerenciasCli(false)} className="neon-btn neon-btn-red" style={{ padding: '1px 7px', fontSize: '10px' }}>✕</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {sugerenciasClientesPres.map((c, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => seleccionarClienteSugeridoPres(c)}
+                      style={{
+                        textAlign: 'left',
+                        background: 'var(--bg-input)',
+                        border: '1px solid rgba(0,122,255,0.25)',
+                        borderRadius: '10px',
+                        padding: '7px 10px',
+                        cursor: 'pointer',
+                        color: 'var(--text-main)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <b style={{ color: 'var(--neon-cyan)', fontSize: '13px' }}>{c.nombre}</b>
+                        <small style={{ display: 'block', color: 'var(--text-muted)' }}>📱 {c.telefono}</small>
+                      </div>
+                      {c.ultimoEquipo && (
+                        <span className="neon-badge" style={{ background: 'rgba(40,205,65,0.15)', color: 'var(--neon-green)', fontSize: '10px' }}>
+                          {c.ultimoEquipo}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={{ gridColumn: '1 / -1' }}>
               <label className="label-neon">Logística de Entrega / Retiro</label>
               <select className="neon-select" value={modalidadEntregaPres} onChange={e => setModalidadEntregaPres(e.target.value as any)}>
@@ -636,7 +831,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
             {itemsPresupuesto.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>Usa el cotizador USD o la tabla para sumar ítems.</p>}
           </div>
 
-          {/* CUADRO COMPARATIVO DE MODALIDADES DE PAGO + 50% ADELANTO */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', background: 'var(--bg-input)', padding: '12px', borderRadius: '14px', marginBottom: '12px', textAlign: 'center' }}>
             <div>
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>💵 EFECTIVO (-{config.descuentoEfectivoPorcentaje}%)</span>
@@ -664,7 +858,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
 
           <div style={{ display: 'flex', gap: '10px' }}>
             <button type="submit" className="neon-btn neon-btn-fillCyan" style={{ flex: 1, padding: '14px' }}>
-              {idPresupuestoEditando ? `💾 Actualizar Presupuesto #${numeroPresupuestoEditando}` : '💾 Guardar Presupuesto Oficial'}
+              {idPresupuestoEditando ? '💾 Actualizar Presupuesto #' + numeroPresupuestoEditando : '💾 Guardar Presupuesto Oficial'}
             </button>
             {idPresupuestoEditando && (
               <button type="button" onClick={limpiarFormularioPresupuesto} className="neon-btn neon-btn-red">
@@ -703,7 +897,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
                   )}
                 </td>
                 <td><b>{pr.cliente}</b><br /><small style={{ color: 'var(--text-muted)' }}>{pr.equipo || '-'} | 📱 {pr.telefono}</small></td>
-                <td style={{ fontSize: '13px' }}>{pr.items?.map((i: any) => `${i.cantidad}x ${i.nombre}`).join(', ')}</td>
+                <td style={{ fontSize: '13px' }}>{pr.items?.map((i: any) => i.cantidad + 'x ' + i.nombre).join(', ')}</td>
                 <td>
                   <b className="glow-text-green">${pr.totalEfectivo?.toLocaleString()}</b><br />
                   <small style={{ color: 'var(--text-muted)' }}>50%: ${Math.round((pr.totalEfectivo || 0) * 0.5).toLocaleString()}</small>

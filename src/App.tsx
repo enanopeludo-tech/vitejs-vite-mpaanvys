@@ -209,17 +209,20 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [talleresGremio, setTalleresGremio] = useState<any[]>([]);
   const [rmas, setRmas] = useState<any[]>([]);
   const [presupuestos, setPresupuestos] = useState<any[]>([]);
+  const [clientesCrmGlobal, setClientesCrmGlobal] = useState<any[]>([]);
   const [pestaña, setPestaña] = useState('dashboard'); 
   const [escaneandoPara, setEscaneandoPara] = useState<'formulario' | 'buscador' | null>(null);
   const [ultimoCodigoEscaneado, setUltimoCodigoEscaneado] = useState<string>('');
   const [sincronizandoDolar, setSincronizandoDolar] = useState(false);
 
-  // Estados Caja POS Mostrador
+  // Estados Caja POS Mostrador + Autocompletado CRM
   const [carritoPOS, setCarritoPOS] = useState<any[]>([]);
   const [busquedaPOS, setBusquedaPOS] = useState('');
   const [metodoPagoPOS, setMetodoPagoPOS] = useState<'efectivo' | 'transferencia' | 'mercadopago' | 'tarjeta_1' | 'tarjeta_3' | 'tarjeta_6'>('efectivo');
   const [clientePOS, setClientePOS] = useState('Consumidor Final');
   const [cuitPOS, setCuitPOS] = useState('');
+  const [telefonoPOS, setTelefonoPOS] = useState('');
+  const [mostrarSugerenciasPos, setMostrarSugerenciasPos] = useState<boolean>(false);
   const [condicionIvaPOS, setCondicionIvaPOS] = useState('Consumidor Final');
   const [tipoFacturaPOS, setTipoFacturaPOS] = useState<'SIN_FACTURA' | 'C' | 'B' | 'A'>('SIN_FACTURA');
   const [imprimirTicketInternoPOS, setImprimirTicketInternoPOS] = useState(false);
@@ -301,9 +304,12 @@ const DashboardTaller = ({ user }: { user: User }) => {
       const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setPresupuestos(lista.sort((a: any, b: any) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0)));
     });
+    const unsubCrm = onSnapshot(query(collection(db, 'clientes_crm')), (snap) => {
+      setClientesCrmGlobal(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
     return () => { 
       unsubConf(); unsubOrd(); unsubProd(); unsubPedidos(); 
-      unsubFinanzas(); unsubRoles(); unsubTalleres(); unsubRmas(); unsubPres(); 
+      unsubFinanzas(); unsubRoles(); unsubTalleres(); unsubRmas(); unsubPres(); unsubCrm();
     };
   }, []);
 
@@ -432,6 +438,46 @@ const DashboardTaller = ({ user }: { user: User }) => {
     ? ordenes.filter(o => o.tallerId === sucursalAsociada.id || o.tallerOrigen === sucursalAsociada.nombre) 
     : ordenes;
 
+  // Directorio unificado de clientes para autocompletar en Caja POS
+  const directorioClientesPOS = React.useMemo(() => {
+    const mapa = new Map<string, any>();
+    clientesCrmGlobal
+      .filter(c => (c.ownerId || 'MASTER') === tenantId)
+      .forEach(c => {
+        const tel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
+        const clave = tel8 || (c.nombre || '').trim().toLowerCase();
+        if (!clave) return;
+        mapa.set(clave, {
+          id: c.id,
+          nombre: (c.nombre || '').trim(),
+          telefono: (c.telefono || '').trim(),
+          dni: (c.dni || '').trim()
+        });
+      });
+
+    misOrdenesTaller.forEach(o => {
+      const nom = (o.cliente?.nombre || '').trim();
+      const tel = (o.cliente?.telefono || '').trim();
+      const dni = (o.cliente?.dni || '').trim();
+      const tel8 = tel.replace(/\D/g, '').slice(-8);
+      const clave = tel8 || nom.toLowerCase();
+      if (!clave || !nom) return;
+      if (!mapa.has(clave)) {
+        mapa.set(clave, { id: null, nombre: nom, telefono: tel, dni: dni });
+      }
+    });
+    return Array.from(mapa.values());
+  }, [clientesCrmGlobal, misOrdenesTaller, tenantId]);
+
+  const sugerenciasClientesPOS = React.useMemo(() => {
+    if (!mostrarSugerenciasPos) return [];
+    const term = clientePOS.trim().toLowerCase();
+    if (!term || term === 'consumidor final' || term.length < 2) return [];
+    return directorioClientesPOS
+      .filter(c => c.nombre.toLowerCase().includes(term) || (c.dni && c.dni.includes(term)) || c.telefono.includes(term))
+      .slice(0, 6);
+  }, [mostrarSugerenciasPos, clientePOS, directorioClientesPOS]);
+
   const generarDatosFacturaARCA = (
     tipoCmp: string, 
     cuitReceptor: string, 
@@ -504,7 +550,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const ajusteFinancieroPOS = Math.round(subtotalPOS * (porcentajeAjustePOS / 100));
   const totalFinalPOS = aplicarRedondeo(subtotalPOS + ajusteFinancieroPOS, config.redondeoPrecios);
 
-  // Hook automático para generar Preferencia Dinámica de Mercado Pago en la Caja POS
   useEffect(() => {
     if (pestaña !== 'pos' || metodoPagoPOS !== 'mercadopago' || totalFinalPOS <= 0 || carritoPOS.length === 0) {
       setEsMpPosDinamico(false);
@@ -609,6 +654,28 @@ const DashboardTaller = ({ user }: { user: User }) => {
       factura: facturaArcaObj
     });
 
+    // Si se ingresó un cliente con teléfono en el POS y no existe en CRM, agendarlo sin duplicar
+    try {
+      const nomPosLimpio = clientePOS.trim();
+      const telPos8 = telefonoPOS.replace(/\D/g, '').slice(-8);
+      if (nomPosLimpio && nomPosLimpio.toLowerCase() !== 'consumidor final' && telPos8.length >= 6) {
+        const yaEnCrm = clientesCrmGlobal.find(c => (c.ownerId || 'MASTER') === tenantId && (c.telefono || '').replace(/\D/g, '').slice(-8) === telPos8);
+        if (!yaEnCrm) {
+          await addDoc(collection(db, 'clientes_crm'), {
+            ownerId: tenantId,
+            nombre: nomPosLimpio,
+            telefono: telefonoPOS.trim(),
+            dni: cuitPOS.trim(),
+            origen: 'Caja POS',
+            fechaAlta: new Date().toLocaleDateString(),
+            fechaTimestamp: serverTimestamp()
+          });
+        }
+      }
+    } catch {
+      // Continuar
+    }
+
     if (facturaArcaObj) {
       imprimirFacturaARCA(
         { id: docRef.id, monto: totalFinalPOS, metodoPago: metodoPagoPOS, items: itemsVenta, factura: facturaArcaObj }, 
@@ -622,6 +689,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
     setCarritoPOS([]); 
     setClientePOS('Consumidor Final'); 
     setCuitPOS(''); 
+    setTelefonoPOS('');
+    setMostrarSugerenciasPos(false);
     setTipoFacturaPOS('SIN_FACTURA');
   };
 
@@ -882,7 +951,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 2. CAJA POS MOSTRADOR (CON QR MERCADO PAGO DINÁMICO EN VIVO) */}
+        {/* 2. CAJA POS MOSTRADOR (CON AUTOCOMPLETADO CRM + QR MERCADO PAGO DINÁMICO) */}
         {pestaña === 'pos' && (
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div className="neon-card" style={{ flex: '2 1 480px' }}>
@@ -1003,14 +1072,85 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <option value="A">🏛️ Factura A Electrónica ARCA</option>
               </select>
 
-              <input 
-                type="text" 
-                className="neon-input" 
-                placeholder="Nombre del Cliente" 
-                value={clientePOS} 
-                onChange={e => setClientePOS(e.target.value)} 
-                style={{ marginBottom: '8px' }} 
-              />
+              {/* BUSCADOR DE CLIENTE CRM EN CAJA POS */}
+              <div style={{ position: 'relative', marginBottom: '8px' }}>
+                <label className="label-neon">Cliente (Escribe para buscar en CRM)</label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input 
+                    type="text" 
+                    className="neon-input" 
+                    placeholder="Nombre del Cliente" 
+                    value={clientePOS} 
+                    onFocus={() => {
+                      if (clientePOS === 'Consumidor Final') setClientePOS('');
+                      setMostrarSugerenciasPos(true);
+                    }}
+                    onChange={e => {
+                      setClientePOS(e.target.value);
+                      setMostrarSugerenciasPos(true);
+                    }} 
+                  />
+                  <input 
+                    type="text" 
+                    className="neon-input" 
+                    placeholder="WhatsApp (Opcional)" 
+                    value={telefonoPOS} 
+                    onChange={e => setTelefonoPOS(e.target.value)} 
+                    style={{ maxWidth: '135px' }}
+                  />
+                </div>
+
+                {sugerenciasClientesPOS.length > 0 && (
+                  <div 
+                    style={{ 
+                      position: 'absolute', 
+                      top: '100%', 
+                      left: 0, 
+                      right: 0, 
+                      zIndex: 95, 
+                      background: 'var(--bg-card)', 
+                      border: '2px solid var(--neon-cyan)', 
+                      borderRadius: '12px', 
+                      padding: '6px', 
+                      marginTop: '3px',
+                      boxShadow: '0 10px 24px rgba(0,0,0,0.35)' 
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <small className="glow-text-cyan" style={{ fontWeight: 'bold' }}>👥 Autocompletar de CRM:</small>
+                      <button type="button" onClick={() => setMostrarSugerenciasPos(false)} className="neon-btn neon-btn-red" style={{ padding: '1px 6px', fontSize: '10px' }}>✕</button>
+                    </div>
+                    {sugerenciasClientesPOS.map((c, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setClientePOS(c.nombre);
+                          if (c.dni) setCuitPOS(c.dni);
+                          if (c.telefono) setTelefonoPOS(c.telefono);
+                          setMostrarSugerenciasPos(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          background: 'var(--bg-input)',
+                          border: '1px solid rgba(0,122,255,0.2)',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          marginBottom: '4px',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)'
+                        }}
+                      >
+                        <b style={{ color: 'var(--neon-cyan)', fontSize: '12.5px' }}>{c.nombre}</b>
+                        <small style={{ display: 'block', color: 'var(--text-muted)' }}>
+                          📱 {c.telefono || '-'} {c.dni ? '| DNI/CUIT: ' + c.dni : ''}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {tipoFacturaPOS !== 'SIN_FACTURA' ? (
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -1053,7 +1193,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <option value="tarjeta_6">💳 Tarjeta 6 Cuotas (+{config.recargoTarjeta6Cuotas || 45}%)</option>
               </select>
 
-              {/* WIDGET QR MERCADO PAGO DINÁMICO EN CAJA POS */}
               {metodoPagoPOS === 'mercadopago' && (
                 <div style={{ background: 'rgba(0,158,227,0.1)', border: '1.5px solid #009ee3', borderRadius: '14px', padding: '10px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                   <div>
@@ -1204,7 +1343,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 12. CONFIGURACIÓN COMPLETA (CON INTEGRACIÓN OFICIAL MERCADO PAGO) */}
+        {/* 12. CONFIGURACIÓN COMPLETA */}
         {pestaña === 'configuracion' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
             {esSucursalExterna ? (
@@ -1255,7 +1394,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 }} 
                 style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
               >
-                {/* BLOQUE 1: DÓLAR GLOBAL */}
                 <div className="neon-card neon-card-green">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
                     <h3 className="glow-text-green" style={{ margin: 0 }}>
@@ -1308,7 +1446,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE 2: INTEGRACIÓN OFICIAL MERCADO PAGO */}
                 <div className="neon-card" style={{ borderColor: '#009ee3' }}>
                   <h3 style={{ marginTop: 0, color: '#009ee3' }}>
                     💠 2. Integración Oficial Mercado Pago (Link de Cobro, QR, Alias y Credenciales API)
@@ -1380,7 +1517,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE 3: COMISIONISTAS, REPARTIDOR Y ESCALAS USD */}
                 <div className="neon-card neon-card-purple">
                   <h3 className="glow-text-pink" style={{ marginTop: 0 }}>
                     🚚 3. Costos de Fletes (Comisionistas), Repartidor Local y Escalas en USD
@@ -1452,7 +1588,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
                   </div>
                 </div>
 
-                {/* BLOQUE 4: DATOS COMERCIALES, TALLER Y ARCA */}
                 <div className="neon-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
                   <h3 className="glow-text-cyan" style={{ gridColumn: '1 / -1', margin: 0 }}>
                     🏪 4. Datos Comerciales, Financiación con Tarjetas y Facturación ARCA
@@ -1590,7 +1725,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
               </form>
             )}
 
-            {/* BLOQUE 5: GESTIÓN DE USUARIOS, ROLES Y PERMISOS */}
             <div className="neon-card">
               <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>
                 {idUsuarioEditando ? '✏️ Editando Usuario y Permisos' : '🛡️ Gestión de Usuarios, Roles y Permisos (' + nombreNegocioActivo + ')'}
