@@ -1,5 +1,5 @@
 // src/modulos/ModuloPresupuestos.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { aplicarRedondeo } from '../estilosTema';
@@ -31,16 +31,16 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   config,
   setPestaña
 }) => {
-  // Estados de Edición de Presupuesto
   const [idPresupuestoEditando, setIdPresupuestoEditando] = useState<string | null>(null);
   const [numeroPresupuestoEditando, setNumeroPresupuestoEditando] = useState<string>('');
 
-  // Estados de Autocompletado de Clientes CRM
+  // Estados de Autocompletado de Clientes CRM con foco por campo y cierre exterior
   const [clientesCrmBd, setClientesCrmBd] = useState<any[]>([]);
   const [ordenesHistoricasBd, setOrdenesHistoricasBd] = useState<any[]>([]);
   const [mostrarSugerenciasCli, setMostrarSugerenciasCli] = useState<boolean>(false);
+  const [campoFocoPres, setCampoFocoPres] = useState<'nombre' | 'telefono' | null>(null);
+  const contenedorCliPresRef = useRef<HTMLDivElement | null>(null);
 
-  // Datos del Cliente y Presupuesto
   const [presCliente, setPresCliente] = useState('');
   const [presTel, setPresTel] = useState('');
   const [presDni, setPresDni] = useState('');
@@ -51,14 +51,12 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   const [modalidadEntregaPres, setModalidadEntregaPres] = useState<'retira_local' | 'cadete_incluido' | 'cadete_a_cargo_cliente'>('retira_local');
   const [itemsPresupuesto, setItemsPresupuesto] = useState<any[]>([]);
 
-  // Calculadora rápida USD + Comisionista + Mano de Obra
   const [calcDescRepuesto, setCalcDescRepuesto] = useState('Cambio de Módulo / Pantalla');
   const [calcCostoUsd, setCalcCostoUsd] = useState('');
   const [calcComisionista, setCalcComisionista] = useState('4500');
   const [calcManoObra, setCalcManoObra] = useState('0');
   const [calcPrecioListaResultante, setCalcPrecioListaResultante] = useState(0);
 
-  // Carga manual o desde stock separado
   const [itemManualDesc, setItemManualDesc] = useState('');
   const [itemManualPrecio, setItemManualPrecio] = useState('');
   const [origenStockBuscador, setOrigenStockBuscador] = useState<'proveedores' | 'local'>('proveedores');
@@ -77,7 +75,17 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     };
   }, []);
 
-  // Construir directorio unificado de clientes para autocompletar en Presupuestos
+  useEffect(() => {
+    const manejarClickFuera = (e: MouseEvent) => {
+      if (contenedorCliPresRef.current && !contenedorCliPresRef.current.contains(e.target as Node)) {
+        setMostrarSugerenciasCli(false);
+        setCampoFocoPres(null);
+      }
+    };
+    document.addEventListener('mousedown', manejarClickFuera);
+    return () => document.removeEventListener('mousedown', manejarClickFuera);
+  }, []);
+
   const directorioClientesUnificado = React.useMemo(() => {
     const mapa = new Map<string, any>();
 
@@ -123,19 +131,20 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
   }, [clientesCrmBd, ordenesHistoricasBd, tenantId]);
 
   const sugerenciasClientesPres = React.useMemo(() => {
-    if (!mostrarSugerenciasCli) return [];
+    if (!mostrarSugerenciasCli || !campoFocoPres) return [];
     const bNom = presCliente.trim().toLowerCase();
     const bTel = presTel.replace(/\D/g, '');
-    if (bNom.length < 2 && bTel.length < 3) return [];
+    if (campoFocoPres === 'nombre' && bNom.length < 2) return [];
+    if (campoFocoPres === 'telefono' && bTel.length < 3) return [];
 
     return directorioClientesUnificado
       .filter(c => {
-        const matchN = bNom.length >= 2 && c.nombre.toLowerCase().includes(bNom);
-        const matchT = bTel.length >= 3 && c.telefono.replace(/\D/g, '').includes(bTel);
-        return matchN || matchT;
+        if (campoFocoPres === 'nombre') return c.nombre.toLowerCase().includes(bNom);
+        if (campoFocoPres === 'telefono') return c.telefono.replace(/\D/g, '').includes(bTel);
+        return false;
       })
       .slice(0, 6);
-  }, [mostrarSugerenciasCli, presCliente, presTel, directorioClientesUnificado]);
+  }, [mostrarSugerenciasCli, campoFocoPres, presCliente, presTel, directorioClientesUnificado]);
 
   const seleccionarClienteSugeridoPres = (c: any) => {
     setPresCliente(c.nombre || '');
@@ -145,6 +154,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       setPresEquipo(c.ultimoEquipo);
     }
     setMostrarSugerenciasCli(false);
+    setCampoFocoPres(null);
   };
 
   const opcionesComisionistas = (config.comisionistasLista || "Comisionista Mar del Plata:4500, Comisionista CABA:7500, Sin Flete:0")
@@ -265,6 +275,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     setPresDni('');
     setPresEquipo('');
     setMostrarSugerenciasCli(false);
+    setCampoFocoPres(null);
     setPresValidez('7');
     setPresNotas('Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
     setModalidadEntregaPres('retira_local');
@@ -279,6 +290,7 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
     setPresDni(pr.dni || '');
     setPresEquipo(pr.equipo || '');
     setMostrarSugerenciasCli(false);
+    setCampoFocoPres(null);
     setPresValidez(String(pr.validezDias || 7));
     setPresNotas(pr.notas || 'Para iniciar el pedido del repuesto se requiere el 50% de adelanto. Saldo 50% contra entrega.');
     setTipoClientePres(pr.tipoCliente || (esSucursalExterna ? 'gremio' : 'publico'));
@@ -315,7 +327,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       senaEfectivo: senaEfectivo50
     };
 
-    // Sincronizar con clientes_crm sin duplicar
     try {
       const tel8 = telNormalizado.replace(/\D/g, '').slice(-8);
       const existenteCrm = clientesCrmBd.find(c => {
@@ -547,7 +558,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
         )}
       </div>
 
-      {/* BLOQUE 1: CALCULADORA DE REPUESTOS EN DÓLARES + COMISIONISTA */}
       <div className="neon-card neon-card-purple" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 className="glow-text-pink" style={{ margin: 0 }}>
@@ -627,7 +637,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
       </div>
 
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
-        {/* BLOQUE 2: BUSCADOR CON STOCK DE PROVEEDORES SEPARADO DEL STOCK DEL LOCAL */}
         <div className="neon-card" style={{ flex: '1 1 420px' }}>
           <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>2. O Sumar desde Base de Datos / Manual</h3>
           
@@ -710,23 +719,51 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
           </div>
         </div>
 
-        {/* BLOQUE 3: CLIENTE CON AUTOCOMPLETADO CRM + RESUMEN FINANCIERO MULTIPAGO */}
         <form onSubmit={guardarPresupuesto} className={'neon-card ' + (idPresupuestoEditando ? 'neon-card-yellow' : 'neon-card-green')} style={{ flex: '1 1 440px' }}>
           <h3 className={idPresupuestoEditando ? 'glow-text-yellow' : 'glow-text-green'} style={{ marginTop: 0 }}>
             {idPresupuestoEditando ? '3. Editando Presupuesto #' + numeroPresupuestoEditando : '3. Cliente (Autocompleta CRM), Entrega y 50% Seña'}
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px', position: 'relative' }}>
+          <div ref={contenedorCliPresRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px', position: 'relative' }}>
             <div>
-              <label className="label-neon">Nombre del Cliente (CRM) *</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="label-neon">Nombre del Cliente (CRM) *</label>
+                {(presCliente || presTel) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPresCliente('');
+                      setPresTel('');
+                      setPresDni('');
+                      setMostrarSugerenciasCli(false);
+                      setCampoFocoPres(null);
+                    }}
+                    className="neon-btn neon-btn-red"
+                    style={{ padding: '1px 6px', fontSize: '10px', marginBottom: '4px' }}
+                    title="Limpiar Cliente"
+                  >
+                    🧹
+                  </button>
+                )}
+              </div>
               <input 
                 type="text" 
                 className="neon-input" 
                 required 
                 value={presCliente} 
-                onFocus={() => setMostrarSugerenciasCli(true)}
+                onFocus={() => {
+                  setCampoFocoPres('nombre');
+                  if (presCliente.trim().length >= 2) setMostrarSugerenciasCli(true);
+                }}
+                onKeyDown={e => { if (e.key === 'Escape') setMostrarSugerenciasCli(false); }}
                 onChange={e => {
-                  setPresCliente(e.target.value);
-                  setMostrarSugerenciasCli(true);
+                  const val = e.target.value;
+                  setPresCliente(val);
+                  setCampoFocoPres('nombre');
+                  if (val.trim() === '') {
+                    setPresTel('');
+                    setPresDni('');
+                  }
+                  setMostrarSugerenciasCli(val.trim().length >= 2);
                 }} 
                 placeholder="Escribe para buscar en CRM..." 
               />
@@ -737,10 +774,16 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
                 type="text" 
                 className="neon-input" 
                 value={presTel} 
-                onFocus={() => setMostrarSugerenciasCli(true)}
+                onFocus={() => {
+                  setCampoFocoPres('telefono');
+                  if (presTel.replace(/\D/g, '').length >= 3) setMostrarSugerenciasCli(true);
+                }}
+                onKeyDown={e => { if (e.key === 'Escape') setMostrarSugerenciasCli(false); }}
                 onChange={e => {
-                  setPresTel(e.target.value);
-                  setMostrarSugerenciasCli(true);
+                  const val = e.target.value;
+                  setPresTel(val);
+                  setCampoFocoPres('telefono');
+                  setMostrarSugerenciasCli(val.replace(/\D/g, '').length >= 3);
                 }} 
                 placeholder="2262..." 
               />
@@ -754,7 +797,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
               <input type="number" className="neon-input" value={presValidez} onChange={e => setPresValidez(e.target.value)} />
             </div>
 
-            {/* DESPLEGABLE DE SUGERENCIAS CRM EN PRESUPUESTOS */}
             {sugerenciasClientesPres.length > 0 && (
               <div 
                 style={{ 
@@ -869,7 +911,6 @@ export const ModuloPresupuestos: React.FC<PropsPresupuestos> = ({
         </form>
       </div>
 
-      {/* HISTORIAL DE PRESUPUESTOS */}
       <div className="neon-card" style={{ overflowX: 'auto' }}>
         <h3 className="glow-text-cyan" style={{ marginTop: 0 }}>📋 Historial de Presupuestos Emitidos</h3>
         <table className="neon-table">

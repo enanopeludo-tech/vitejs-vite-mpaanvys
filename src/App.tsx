@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import { initializeApp, getApps } from 'firebase/app';
 import { 
@@ -215,7 +215,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [ultimoCodigoEscaneado, setUltimoCodigoEscaneado] = useState<string>('');
   const [sincronizandoDolar, setSincronizandoDolar] = useState(false);
 
-  // Estados Caja POS Mostrador + Autocompletado CRM
+  // Estados Caja POS Mostrador + Autocompletado CRM con foco por campo y cierre exterior
   const [carritoPOS, setCarritoPOS] = useState<any[]>([]);
   const [busquedaPOS, setBusquedaPOS] = useState('');
   const [metodoPagoPOS, setMetodoPagoPOS] = useState<'efectivo' | 'transferencia' | 'mercadopago' | 'tarjeta_1' | 'tarjeta_3' | 'tarjeta_6'>('efectivo');
@@ -223,6 +223,8 @@ const DashboardTaller = ({ user }: { user: User }) => {
   const [cuitPOS, setCuitPOS] = useState('');
   const [telefonoPOS, setTelefonoPOS] = useState('');
   const [mostrarSugerenciasPos, setMostrarSugerenciasPos] = useState<boolean>(false);
+  const [campoFocoPos, setCampoFocoPos] = useState<'nombre' | 'telefono' | 'cuit' | null>(null);
+  const contenedorCliPosRef = useRef<HTMLDivElement | null>(null);
   const [condicionIvaPOS, setCondicionIvaPOS] = useState('Consumidor Final');
   const [tipoFacturaPOS, setTipoFacturaPOS] = useState<'SIN_FACTURA' | 'C' | 'B' | 'A'>('SIN_FACTURA');
   const [imprimirTicketInternoPOS, setImprimirTicketInternoPOS] = useState(false);
@@ -254,6 +256,18 @@ const DashboardTaller = ({ user }: { user: User }) => {
     ingresosBrutos: '', 
     inicioActividades: '01/01/2023'
   });
+
+  // Cerrar sugerencias de Caja POS al hacer clic fuera del bloque de cliente
+  useEffect(() => {
+    const manejarClickFueraPos = (e: MouseEvent) => {
+      if (contenedorCliPosRef.current && !contenedorCliPosRef.current.contains(e.target as Node)) {
+        setMostrarSugerenciasPos(false);
+        setCampoFocoPos(null);
+      }
+    };
+    document.addEventListener('mousedown', manejarClickFueraPos);
+    return () => document.removeEventListener('mousedown', manejarClickFueraPos);
+  }, []);
 
   useEffect(() => {
     if (!(window as any).XLSX) {
@@ -469,14 +483,26 @@ const DashboardTaller = ({ user }: { user: User }) => {
     return Array.from(mapa.values());
   }, [clientesCrmGlobal, misOrdenesTaller, tenantId]);
 
+  // Filtrar sugerencias en Caja POS exclusivamente por el campo activo
   const sugerenciasClientesPOS = React.useMemo(() => {
-    if (!mostrarSugerenciasPos) return [];
-    const term = clientePOS.trim().toLowerCase();
-    if (!term || term === 'consumidor final' || term.length < 2) return [];
+    if (!mostrarSugerenciasPos || !campoFocoPos) return [];
+    const termNom = clientePOS.trim().toLowerCase();
+    const termTel = telefonoPOS.replace(/\D/g, '');
+    const termCuit = cuitPOS.trim().toLowerCase();
+
+    if (campoFocoPos === 'nombre' && (!termNom || termNom === 'consumidor final' || termNom.length < 2)) return [];
+    if (campoFocoPos === 'telefono' && termTel.length < 3) return [];
+    if (campoFocoPos === 'cuit' && termCuit.length < 3) return [];
+
     return directorioClientesPOS
-      .filter(c => c.nombre.toLowerCase().includes(term) || (c.dni && c.dni.includes(term)) || c.telefono.includes(term))
+      .filter(c => {
+        if (campoFocoPos === 'nombre') return c.nombre.toLowerCase().includes(termNom);
+        if (campoFocoPos === 'telefono') return c.telefono.replace(/\D/g, '').includes(termTel);
+        if (campoFocoPos === 'cuit') return (c.dni || '').toLowerCase().includes(termCuit);
+        return false;
+      })
       .slice(0, 6);
-  }, [mostrarSugerenciasPos, clientePOS, directorioClientesPOS]);
+  }, [mostrarSugerenciasPos, campoFocoPos, clientePOS, telefonoPOS, cuitPOS, directorioClientesPOS]);
 
   const generarDatosFacturaARCA = (
     tipoCmp: string, 
@@ -654,7 +680,6 @@ const DashboardTaller = ({ user }: { user: User }) => {
       factura: facturaArcaObj
     });
 
-    // Si se ingresó un cliente con teléfono en el POS y no existe en CRM, agendarlo sin duplicar
     try {
       const nomPosLimpio = clientePOS.trim();
       const telPos8 = telefonoPOS.replace(/\D/g, '').slice(-8);
@@ -691,6 +716,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
     setCuitPOS(''); 
     setTelefonoPOS('');
     setMostrarSugerenciasPos(false);
+    setCampoFocoPos(null);
     setTipoFacturaPOS('SIN_FACTURA');
   };
 
@@ -951,7 +977,7 @@ const DashboardTaller = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* 2. CAJA POS MOSTRADOR (CON AUTOCOMPLETADO CRM + QR MERCADO PAGO DINÁMICO) */}
+        {/* 2. CAJA POS MOSTRADOR (CON AUTOCOMPLETADO CRM CORREGIDO + QR MERCADO PAGO DINÁMICO) */}
         {pestaña === 'pos' && (
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div className="neon-card" style={{ flex: '2 1 480px' }}>
@@ -1072,9 +1098,27 @@ const DashboardTaller = ({ user }: { user: User }) => {
                 <option value="A">🏛️ Factura A Electrónica ARCA</option>
               </select>
 
-              {/* BUSCADOR DE CLIENTE CRM EN CAJA POS */}
-              <div style={{ position: 'relative', marginBottom: '8px' }}>
-                <label className="label-neon">Cliente (Escribe para buscar en CRM)</label>
+              {/* BUSCADOR DE CLIENTE CRM EN CAJA POS CON AUTO-CLEAR Y CIERRE AUTOMÁTICO */}
+              <div ref={contenedorCliPosRef} style={{ position: 'relative', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label className="label-neon" style={{ margin: 0 }}>Cliente (Escribe para buscar en CRM)</label>
+                  {(clientePOS && clientePOS !== 'Consumidor Final') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClientePOS('Consumidor Final');
+                        setTelefonoPOS('');
+                        setCuitPOS('');
+                        setMostrarSugerenciasPos(false);
+                        setCampoFocoPos(null);
+                      }}
+                      className="neon-btn neon-btn-red"
+                      style={{ padding: '1px 7px', fontSize: '10px' }}
+                    >
+                      🧹 Reset
+                    </button>
+                  )}
+                </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <input 
                     type="text" 
@@ -1083,11 +1127,23 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     value={clientePOS} 
                     onFocus={() => {
                       if (clientePOS === 'Consumidor Final') setClientePOS('');
-                      setMostrarSugerenciasPos(true);
+                      setCampoFocoPos('nombre');
+                      if (clientePOS && clientePOS !== 'Consumidor Final' && clientePOS.trim().length >= 2) {
+                        setMostrarSugerenciasPos(true);
+                      }
                     }}
+                    onKeyDown={e => { if (e.key === 'Escape') setMostrarSugerenciasPos(false); }}
                     onChange={e => {
-                      setClientePOS(e.target.value);
-                      setMostrarSugerenciasPos(true);
+                      const val = e.target.value;
+                      setClientePOS(val);
+                      setCampoFocoPos('nombre');
+                      if (val.trim() === '') {
+                        setTelefonoPOS('');
+                        setCuitPOS('');
+                        setMostrarSugerenciasPos(false);
+                      } else {
+                        setMostrarSugerenciasPos(val.trim().length >= 2);
+                      }
                     }} 
                   />
                   <input 
@@ -1095,7 +1151,17 @@ const DashboardTaller = ({ user }: { user: User }) => {
                     className="neon-input" 
                     placeholder="WhatsApp (Opcional)" 
                     value={telefonoPOS} 
-                    onChange={e => setTelefonoPOS(e.target.value)} 
+                    onFocus={() => {
+                      setCampoFocoPos('telefono');
+                      if (telefonoPOS.replace(/\D/g, '').length >= 3) setMostrarSugerenciasPos(true);
+                    }}
+                    onKeyDown={e => { if (e.key === 'Escape') setMostrarSugerenciasPos(false); }}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setTelefonoPOS(val);
+                      setCampoFocoPos('telefono');
+                      setMostrarSugerenciasPos(val.replace(/\D/g, '').length >= 3);
+                    }} 
                     style={{ maxWidth: '135px' }}
                   />
                 </div>
@@ -1126,9 +1192,10 @@ const DashboardTaller = ({ user }: { user: User }) => {
                         type="button"
                         onClick={() => {
                           setClientePOS(c.nombre);
-                          if (c.dni) setCuitPOS(c.dni);
-                          if (c.telefono) setTelefonoPOS(c.telefono);
+                          setCuitPOS(c.dni || '');
+                          setTelefonoPOS(c.telefono || '');
                           setMostrarSugerenciasPos(false);
+                          setCampoFocoPos(null);
                         }}
                         style={{
                           width: '100%',

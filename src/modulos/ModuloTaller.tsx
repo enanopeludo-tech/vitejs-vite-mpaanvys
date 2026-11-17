@@ -38,8 +38,10 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
   // --- ESTADOS BASE DE CLIENTES CRM PARA AUTOCOMPLETADO ---
   const [clientesCrmBd, setClientesCrmBd] = useState<any[]>([]);
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState<boolean>(false);
+  const [campoFocoCliente, setCampoFocoCliente] = useState<'nombre' | 'telefono' | 'dni' | null>(null);
   const [clienteCrmSeleccionadoId, setClienteCrmSeleccionadoId] = useState<string | null>(null);
   const [ultimoEquipoClienteSugerido, setUltimoEquipoClienteSugerido] = useState<string>('');
+  const contenedorClienteRef = useRef<HTMLDivElement | null>(null);
 
   // --- ESTADOS DATOS DEL CLIENTE Y EQUIPO ---
   const [cliNombre, setCliNombre] = useState('');
@@ -90,11 +92,22 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     return () => unsubCrm();
   }, []);
 
+  // Cerrar sugerencias al hacer clic fuera del bloque de cliente
+  useEffect(() => {
+    const manejarClickFuera = (e: MouseEvent) => {
+      if (contenedorClienteRef.current && !contenedorClienteRef.current.contains(e.target as Node)) {
+        setMostrarSugerenciasCliente(false);
+        setCampoFocoCliente(null);
+      }
+    };
+    document.addEventListener('mousedown', manejarClickFuera);
+    return () => document.removeEventListener('mousedown', manejarClickFuera);
+  }, []);
+
   // Construir directorio unificado de clientes (CRM + Histórico de Órdenes) sin duplicados
   const directorioClientesUnificado = React.useMemo(() => {
     const mapa = new Map<string, any>();
 
-    // 1. Primero cargar los contactos oficiales de clientes_crm de esta sucursal/tenant
     clientesCrmBd
       .filter(c => (c.ownerId || 'MASTER') === tenantId)
       .forEach(c => {
@@ -111,7 +124,6 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
         });
       });
 
-    // 2. Complementar con clientes de órdenes previas que aún no estén en el mapa
     misOrdenesTaller.forEach(o => {
       const nom = (o.cliente?.nombre || '').trim();
       const tel = (o.cliente?.telefono || '').trim();
@@ -141,32 +153,51 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     return Array.from(mapa.values());
   }, [clientesCrmBd, misOrdenesTaller, tenantId]);
 
-  // Filtrar sugerencias mientras el usuario escribe nombre, teléfono o DNI
+  // Filtrar sugerencias SOLO por el campo que el usuario está escribiendo actualmente
   const sugerenciasClientesActivas = React.useMemo(() => {
-    if (!mostrarSugerenciasCliente) return [];
+    if (!mostrarSugerenciasCliente || !campoFocoCliente) return [];
     const terminoNom = cliNombre.trim().toLowerCase();
     const terminoTel = cliTel.replace(/\D/g, '');
     const terminoDni = cliDni.trim().toLowerCase();
 
-    if (terminoNom.length < 2 && terminoTel.length < 3 && terminoDni.length < 3) return [];
+    if (campoFocoCliente === 'nombre' && terminoNom.length < 2) return [];
+    if (campoFocoCliente === 'telefono' && terminoTel.length < 3) return [];
+    if (campoFocoCliente === 'dni' && terminoDni.length < 3) return [];
 
     return directorioClientesUnificado
       .filter(c => {
-        const matchNom = terminoNom.length >= 2 && c.nombre.toLowerCase().includes(terminoNom);
-        const matchTel = terminoTel.length >= 3 && c.telefono.replace(/\D/g, '').includes(terminoTel);
-        const matchDni = terminoDni.length >= 3 && (c.dni || '').toLowerCase().includes(terminoDni);
-        return matchNom || matchTel || matchDni;
+        if (campoFocoCliente === 'nombre') {
+          return c.nombre.toLowerCase().includes(terminoNom);
+        }
+        if (campoFocoCliente === 'telefono') {
+          return c.telefono.replace(/\D/g, '').includes(terminoTel);
+        }
+        if (campoFocoCliente === 'dni') {
+          return (c.dni || '').toLowerCase().includes(terminoDni);
+        }
+        return false;
       })
       .slice(0, 6);
-  }, [mostrarSugerenciasCliente, cliNombre, cliTel, cliDni, directorioClientesUnificado]);
+  }, [mostrarSugerenciasCliente, campoFocoCliente, cliNombre, cliTel, cliDni, directorioClientesUnificado]);
 
   const seleccionarClienteDeSugerencia = (clienteElegido: any) => {
     setCliNombre(clienteElegido.nombre || '');
     setCliTel(clienteElegido.telefono || '');
     setCliDni(clienteElegido.dni || '');
-    setClienteCrmSeleccionadoId(clienteElegido.crmDocId || null);
+    setClienteCrmSeleccionadoId(clienteElegido.crmDocId || 'SELECCIONADO');
     setUltimoEquipoClienteSugerido(clienteElegido.ultimoEquipo || '');
     setMostrarSugerenciasCliente(false);
+    setCampoFocoCliente(null);
+  };
+
+  const limpiarCamposCliente = () => {
+    setCliNombre('');
+    setCliTel('');
+    setCliDni('');
+    setClienteCrmSeleccionadoId(null);
+    setUltimoEquipoClienteSugerido('');
+    setMostrarSugerenciasCliente(false);
+    setCampoFocoCliente(null);
   };
 
   const cargarUltimoEquipoDelCliente = () => {
@@ -307,12 +338,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setIdOrdenEditando(null);
     setCodigoOrdenEditando('');
     setSenaOriginalEditando(0);
-    setCliNombre('');
-    setCliTel('');
-    setCliDni('');
-    setClienteCrmSeleccionadoId(null);
-    setUltimoEquipoClienteSugerido('');
-    setMostrarSugerenciasCliente(false);
+    limpiarCamposCliente();
     setTallerOrigenOrden('Mostrador Propio');
     setMarca('');
     setModelo('');
@@ -342,6 +368,7 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
     setCliTel(orden.cliente?.telefono || '');
     setCliDni(orden.cliente?.dni || '');
     setMostrarSugerenciasCliente(false);
+    setCampoFocoCliente(null);
     setTallerOrigenOrden(orden.tallerOrigen || 'Mostrador Propio');
 
     setMarca(orden.equipo?.marca || '');
@@ -481,12 +508,12 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
       }]
     });
 
-    // Sincronizar con clientes_crm sin duplicar (busca por ID seleccionado, últimos 8 dígitos del teléfono o nombre exacto)
+    // Sincronizar con clientes_crm sin duplicar
     try {
       const telUltimos8 = telNormalizado.replace(/\D/g, '').slice(-8);
       const clienteExistenteCrm = clientesCrmBd.find(c => {
         if ((c.ownerId || 'MASTER') !== tenantId) return false;
-        if (clienteCrmSeleccionadoId && c.id === clienteCrmSeleccionadoId) return true;
+        if (clienteCrmSeleccionadoId && clienteCrmSeleccionadoId !== 'SELECCIONADO' && c.id === clienteCrmSeleccionadoId) return true;
         const cTel8 = (c.telefono || '').replace(/\D/g, '').slice(-8);
         if (telUltimos8.length >= 6 && cTel8 === telUltimos8) return true;
         return (c.nombre || '').trim().toLowerCase() === nombreNormalizado.toLowerCase();
@@ -1161,10 +1188,24 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(235px, 1fr))', gap: '14px', marginBottom: '14px' }}>
           {/* COLUMNA 1: CLIENTE CON AUTOCOMPLETADO INTELIGENTE EN VIVO DESDE EL CRM */}
-          <div style={{ position: 'relative' }}>
-            <label className="label-neon">
-              1. Origen & Cliente <span style={{ color: 'var(--neon-cyan)' }}>(Autocompleta desde CRM)</span>
-            </label>
+          <div ref={contenedorClienteRef} style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+              <label className="label-neon" style={{ margin: 0 }}>
+                1. Origen & Cliente <span style={{ color: 'var(--neon-cyan)' }}>(CRM)</span>
+              </label>
+              {(cliNombre || cliTel || cliDni) && (
+                <button
+                  type="button"
+                  onClick={limpiarCamposCliente}
+                  className="neon-btn neon-btn-red"
+                  style={{ padding: '2px 8px', fontSize: '11px' }}
+                  title="Vaciar Nombre, WhatsApp y DNI para cargar otro cliente"
+                >
+                  🧹 Limpiar Cliente
+                </button>
+              )}
+            </div>
+
             {!esSucursalExterna ? (
               <select className="neon-select" value={tallerOrigenOrden} onChange={e => setTallerOrigenOrden(e.target.value)} style={{ marginBottom: '8px' }}>
                 <option value="Mostrador Propio">🏪 Cliente Local Central (Pide 50% Seña)</option>
@@ -1181,11 +1222,26 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
               className="neon-input" 
               placeholder="Escribe Nombre o Apellido (Busca en CRM) *" 
               value={cliNombre} 
-              onFocus={() => setMostrarSugerenciasCliente(true)}
+              onFocus={() => {
+                setCampoFocoCliente('nombre');
+                if (cliNombre.trim().length >= 2) setMostrarSugerenciasCliente(true);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setMostrarSugerenciasCliente(false);
+              }}
               onChange={e => {
-                setCliNombre(e.target.value);
-                setClienteCrmSeleccionadoId(null);
-                setMostrarSugerenciasCliente(true);
+                const nuevoValor = e.target.value;
+                setCliNombre(nuevoValor);
+                setCampoFocoCliente('nombre');
+                if (clienteCrmSeleccionadoId) {
+                  setClienteCrmSeleccionadoId(null);
+                  setUltimoEquipoClienteSugerido('');
+                  if (nuevoValor.trim() === '') {
+                    setCliTel('');
+                    setCliDni('');
+                  }
+                }
+                setMostrarSugerenciasCliente(nuevoValor.trim().length >= 2);
               }} 
               required 
               style={{ marginBottom: '8px' }} 
@@ -1197,10 +1253,21 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                 className="neon-input" 
                 placeholder="WhatsApp (2262...) *" 
                 value={cliTel} 
-                onFocus={() => setMostrarSugerenciasCliente(true)}
+                onFocus={() => {
+                  setCampoFocoCliente('telefono');
+                  if (cliTel.replace(/\D/g, '').length >= 3) setMostrarSugerenciasCliente(true);
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') setMostrarSugerenciasCliente(false);
+                }}
                 onChange={e => {
-                  setCliTel(e.target.value);
-                  setMostrarSugerenciasCliente(true);
+                  const nuevoTel = e.target.value;
+                  setCliTel(nuevoTel);
+                  setCampoFocoCliente('telefono');
+                  if (nuevoTel.trim() === '') {
+                    setUltimoEquipoClienteSugerido('');
+                  }
+                  setMostrarSugerenciasCliente(nuevoTel.replace(/\D/g, '').length >= 3);
                 }} 
                 required 
               />
@@ -1209,10 +1276,18 @@ export const ModuloTaller: React.FC<PropsTaller> = ({
                 className="neon-input" 
                 placeholder="DNI" 
                 value={cliDni} 
-                onFocus={() => setMostrarSugerenciasCliente(true)}
+                onFocus={() => {
+                  setCampoFocoCliente('dni');
+                  if (cliDni.trim().length >= 3) setMostrarSugerenciasCliente(true);
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') setMostrarSugerenciasCliente(false);
+                }}
                 onChange={e => {
-                  setCliDni(e.target.value);
-                  setMostrarSugerenciasCliente(true);
+                  const nuevoDni = e.target.value;
+                  setCliDni(nuevoDni);
+                  setCampoFocoCliente('dni');
+                  setMostrarSugerenciasCliente(nuevoDni.trim().length >= 3);
                 }} 
               />
             </div>
